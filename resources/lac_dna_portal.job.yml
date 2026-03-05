@@ -1,0 +1,15 @@
+resources:
+  jobs:
+    lac_dna_portal_job:
+      name: lac_dna_portal_job
+      tasks:
+        - task_key: generate_data
+          spark_python_task:
+            python_file: ./src/lac_dna_portal/main.py
+          environment_key: default
+      environments:
+        - environment_key: default
+          spec:
+            client: '1'
+            dependencies:
+             

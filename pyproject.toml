@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lac_dna_portal"
+version = "0.1.0"
+description = "AI-Assisted Databricks Demo - lac_dna_portal"
+authors = [{name = "Databricks Demo Factory"}]
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "databricks-sdk>=0.12.0",
+
+    "pandas>=2.0.0",
+    "numpy>=1.24.0",
+    "faker>=19.0.0",
+    "delta-spark>=3.0.0",
+    "pyspark>=3.5.0"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "black>=23.0.0",
+    "flake8>=6.0.0"
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.black]
+line-length = 88
+target-version = ['py39']
+
+[tool.flake8]
+max-line-length = 88
+extend-ignore = ["E203", "W503"] 

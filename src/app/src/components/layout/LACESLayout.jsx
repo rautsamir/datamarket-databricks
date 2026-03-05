@@ -1,0 +1,238 @@
+import React, { useState } from 'react'
+import { Search, Menu, X, ChevronDown, ShieldCheck, Bell } from 'lucide-react'
+import { usePersona, personas } from '../../context/PersonaContext'
+
+const LACES_BLUE = '#003865'
+
+const personaBadgeColors = {
+  richard: 'bg-blue-500',
+  james: 'bg-emerald-500',
+  admin: 'bg-purple-600'
+}
+
+export function LACESLayout({ currentPage, onNavigate, children }) {
+  const [mobileOpen, setMobileOpen] = useState(false)
+  const [userMenuOpen, setUserMenuOpen] = useState(false)
+  const [personaMenuOpen, setPersonaMenuOpen] = useState(false)
+  const { persona, currentPersona, setCurrentPersona, pendingRequests } = usePersona()
+
+  const navItems = [
+    { id: 'home', label: 'Home' },
+    { id: 'data', label: 'Data' },
+    { id: 'library', label: 'Library' },
+  ]
+
+  const isActive = (id) => {
+    if (id === 'home') return currentPage === 'home'
+    if (id === 'data') return ['data', 'catalog', 'detail'].includes(currentPage)
+    if (id === 'library') return ['library', 'my-library', 'register'].includes(currentPage)
+    return false
+  }
+
+  const switchPersona = (id) => {
+    setCurrentPersona(id)
+    setPersonaMenuOpen(false)
+    setUserMenuOpen(false)
+    onNavigate('home')
+  }
+
+  return (
+    <div className="min-h-screen flex flex-col bg-gray-50">
+      {/* Demo Banner */}
+      <div className="text-center py-1.5 text-xs text-white font-medium"
+        style={{ backgroundColor: currentPersona === 'admin' ? '#7C3AED' : currentPersona === 'james' ? '#059669' : '#3B82F6' }}>
+        <ShieldCheck className="inline h-3 w-3 mr-1.5 mb-0.5" />
+        Demo mode — viewing as <strong>{persona.name}</strong> ({persona.role}, {persona.department})
+        {currentPersona !== 'admin' && ' · '}
+        {currentPersona === 'admin' && pendingRequests.length > 0 && (
+          <button onClick={() => onNavigate('admin')} className="underline ml-1">
+            {pendingRequests.length} pending approval{pendingRequests.length !== 1 ? 's' : ''} →
+          </button>
+        )}
+      </div>
+
+      {/* Top Nav */}
+      <header style={{ backgroundColor: LACES_BLUE }} className="sticky top-0 z-50 shadow-md">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6">
+          <div className="flex items-center justify-between h-16">
+            {/* Logo */}
+            <button onClick={() => onNavigate('home')} className="flex items-center gap-3 hover:opacity-90 transition-opacity">
+              <div className="w-8 h-8 rounded flex items-center justify-center bg-white">
+                <span className="text-xs font-bold" style={{ color: LACES_BLUE }}>LA</span>
+              </div>
+              <span className="text-white font-semibold text-base hidden sm:block tracking-wide">
+                LACES Data and Analytics Portal
+              </span>
+              <span className="text-white font-semibold text-sm sm:hidden">LACES Portal</span>
+            </button>
+
+            {/* Desktop Nav */}
+            <nav className="hidden md:flex items-center gap-1">
+              {navItems.map(item => (
+                <button
+                  key={item.id}
+                  onClick={() => onNavigate(item.id)}
+                  className={`px-4 py-2 rounded text-sm font-medium transition-colors ${
+                    isActive(item.id) ? 'bg-white/20 text-white' : 'text-white/80 hover:text-white hover:bg-white/10'
+                  }`}
+                >
+                  {item.label}
+                </button>
+              ))}
+              {currentPersona === 'admin' && (
+                <button
+                  onClick={() => onNavigate('admin')}
+                  className={`px-4 py-2 rounded text-sm font-medium transition-colors flex items-center gap-1.5 ${
+                    currentPage === 'admin' ? 'bg-white/20 text-white' : 'text-white/80 hover:text-white hover:bg-white/10'
+                  }`}
+                >
+                  Approvals
+                  {pendingRequests.length > 0 && (
+                    <span className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">
+                      {pendingRequests.length}
+                    </span>
+                  )}
+                </button>
+              )}
+            </nav>
+
+            {/* Right side */}
+            <div className="flex items-center gap-2">
+              {/* Notifications (admin only) */}
+              {currentPersona === 'admin' && pendingRequests.length > 0 && (
+                <button onClick={() => onNavigate('admin')} className="relative p-2 text-white/80 hover:text-white">
+                  <Bell className="h-5 w-5" />
+                  <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-red-500 rounded-full border border-[#003865]" />
+                </button>
+              )}
+
+              {/* Search */}
+              <div className="relative hidden sm:block">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-white/60" />
+                <input
+                  type="text"
+                  placeholder="Search..."
+                  className="pl-9 pr-4 py-1.5 rounded text-sm bg-white/15 text-white placeholder-white/60 border border-white/20 focus:outline-none focus:bg-white/25 w-40"
+                  onKeyDown={e => { if (e.key === 'Enter' && e.target.value) onNavigate('catalog') }}
+                />
+              </div>
+
+              {/* Persona / User menu */}
+              <div className="relative">
+                <button
+                  onClick={() => { setUserMenuOpen(!userMenuOpen); setPersonaMenuOpen(false) }}
+                  className="flex items-center gap-2 text-white/90 hover:text-white px-2 py-1 rounded hover:bg-white/10 transition-colors"
+                >
+                  <div className={`w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold ${personaBadgeColors[currentPersona]}`}>
+                    {persona.avatar}
+                  </div>
+                  <span className="text-sm hidden sm:block">{persona.name}</span>
+                  <ChevronDown className="h-3 w-3 hidden sm:block" />
+                </button>
+
+                {userMenuOpen && (
+                  <div className="absolute right-0 mt-1 w-64 bg-white rounded-xl shadow-xl border border-gray-200 py-2 z-50">
+                    {/* Current user info */}
+                    <div className="px-4 py-3 border-b border-gray-100">
+                      <div className="flex items-center gap-3">
+                        <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-bold ${personaBadgeColors[currentPersona]}`}>
+                          {persona.avatar}
+                        </div>
+                        <div>
+                          <p className="text-sm font-semibold text-gray-900">{persona.name}</p>
+                          <p className="text-xs text-gray-500">{persona.email}</p>
+                          <p className="text-xs text-gray-400">{persona.role}</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Quick links */}
+                    <div className="py-1 border-b border-gray-100">
+                      <button onClick={() => { onNavigate('my-library'); setUserMenuOpen(false) }} className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">My Library</button>
+                      {currentPersona === 'admin' && (
+                        <button onClick={() => { onNavigate('admin'); setUserMenuOpen(false) }} className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center justify-between">
+                          Approval Queue
+                          {pendingRequests.length > 0 && <span className="bg-red-100 text-red-700 text-xs font-medium px-2 py-0.5 rounded-full">{pendingRequests.length}</span>}
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Persona switcher */}
+                    <div className="py-2">
+                      <p className="px-4 py-1 text-[10px] font-semibold text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
+                        <ShieldCheck className="h-3 w-3" /> Switch Demo Persona
+                      </p>
+                      {Object.values(personas).map(p => (
+                        <button
+                          key={p.id}
+                          onClick={() => switchPersona(p.id)}
+                          className={`w-full text-left px-4 py-2.5 hover:bg-gray-50 flex items-center gap-3 ${currentPersona === p.id ? 'bg-blue-50' : ''}`}
+                        >
+                          <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold ${personaBadgeColors[p.id]}`}>
+                            {p.avatar}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-gray-900">{p.name} — {p.role}</p>
+                            <p className="text-xs text-gray-400 truncate">{p.description}</p>
+                          </div>
+                          {currentPersona === p.id && <span className="w-2 h-2 rounded-full bg-blue-500 shrink-0" />}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Mobile menu */}
+              <button onClick={() => setMobileOpen(!mobileOpen)} className="md:hidden text-white p-1">
+                {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Mobile Nav */}
+        {mobileOpen && (
+          <div className="md:hidden border-t border-white/20 px-4 pb-3">
+            {navItems.map(item => (
+              <button key={item.id} onClick={() => { onNavigate(item.id); setMobileOpen(false) }}
+                className="block w-full text-left px-3 py-2 text-sm text-white/90 hover:text-white hover:bg-white/10 rounded mt-1">
+                {item.label}
+              </button>
+            ))}
+            {currentPersona === 'admin' && (
+              <button onClick={() => { onNavigate('admin'); setMobileOpen(false) }}
+                className="block w-full text-left px-3 py-2 text-sm text-white/90 hover:text-white hover:bg-white/10 rounded mt-1">
+                Approvals {pendingRequests.length > 0 && `(${pendingRequests.length})`}
+              </button>
+            )}
+          </div>
+        )}
+      </header>
+
+      <main className="flex-1">
+        {children}
+      </main>
+
+      <footer className="border-t border-gray-200 bg-white mt-12">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="flex items-center gap-2">
+            <div className="w-6 h-6 rounded flex items-center justify-center" style={{ backgroundColor: LACES_BLUE }}>
+              <span className="text-white text-[10px] font-bold">LA</span>
+            </div>
+            <span className="text-sm text-gray-500">LACES Data and Analytics Portal</span>
+          </div>
+          <nav className="flex items-center gap-6">
+            {['About', 'FAQ', 'Contact'].map(item => (
+              <button key={item} className="text-sm text-gray-500 hover:text-gray-900 transition-colors">{item}</button>
+            ))}
+          </nav>
+        </div>
+      </footer>
+
+      {(userMenuOpen || personaMenuOpen || mobileOpen) && (
+        <div className="fixed inset-0 z-40" onClick={() => { setUserMenuOpen(false); setPersonaMenuOpen(false); setMobileOpen(false) }} />
+      )}
+    </div>
+  )
+}
