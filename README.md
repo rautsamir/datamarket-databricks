@@ -1,20 +1,22 @@
-# LACES Data Portal — LA County Auditor-Controller
+# DataMarket — Self-Service Data Product Marketplace on Databricks
 
-A production-ready demo of a governed data product marketplace built **entirely on Databricks**. Designed to show LA County that a modern data portal with AI features, real RBAC, and persistent workflows can be delivered natively — without a third-party vendor engagement.
+A production-ready demo of a governed, self-service data product marketplace built **entirely on Databricks**. Designed to show enterprise and public sector customers that a modern data portal — with AI features, real RBAC enforcement, and persistent workflows — can be delivered natively, without third-party vendor tooling.
+
+> **Original use case:** LA County Auditor-Controller, as an alternative to a costly Accenture Aspire engagement. Reusable across any industry vertical.
 
 ---
 
 ## What It Does
 
-- **Data Catalog** — Browse 12+ LA County data products (dashboards, datasets, reports) with domain filters, classification tags, and access status
-- **Access Request Workflow** — Request access with a business justification; requests persist to Lakebase Postgres in real time
-- **Admin Approval Queue** — Data Stewards approve/deny requests; each approval generates a Unity Catalog `GRANT SELECT` statement
-- **My Library** — Personal shelf of approved and pinned data products
-- **RBAC Demo** — Three personas (Analyst, Finance Manager, Data Steward) show the full access control story without requiring real user accounts
-- **AI Explorer** — Natural language → SQL backed by a live Genie Space on the UC gold layer
-- **Budget & Finance Dashboards** — Native Lakeview AI/BI dashboards replacing Power BI
+- **Data Catalog** — Browse and search data products (dashboards, datasets, reports) with domain filters, classification tags, and per-user access status
+- **Access Request Workflow** — Business users request access with a justification; requests persist to Lakebase Postgres in real time
+- **Admin Approval Queue** — Data Stewards approve/deny requests; each approval automatically generates a Unity Catalog `GRANT SELECT` statement
+- **My Library** — Personal shelf of approved and pinned data products per user
+- **RBAC Demo** — Three built-in personas (Analyst, Manager, Data Steward) demonstrate the full access control story without requiring real user accounts
+- **AI Explorer** — Natural language → SQL backed by a live Databricks Genie Space
+- **Analytics Dashboards** — Native Lakeview AI/BI dashboards embedded in the portal
 - **Document Assistant** — RAG-powered chat on data dictionaries and governance docs via Knowledge Assistant
-- **Audit Trail** — Every action logged to Lakebase with full persistence
+- **Audit Trail** — Every action logged persistently to Lakebase
 
 ---
 
@@ -22,18 +24,18 @@ A production-ready demo of a governed data product marketplace built **entirely 
 
 ```
 Browser (React + Tailwind)
-        │  Entra ID SSO
+        │  SSO (Entra ID / SAML)
         ▼
 Databricks App (Serverless Node.js / Express)
   /api/portal/products  · /requests  · /library  · /audit
         │                          │
   Lakebase (Postgres)        Unity Catalog (Delta)
-  laces_portal schema        samir_raut_demo.lac_dna_portal.*
-  ─ users                    ─ gold_departments
-  ─ data_products            ─ gold_budget_summary
-  ─ access_requests          ─ gold_vendor_payments
-  ─ audit_log                ─ gold_internal_billing
-  ─ user_library             ─ gold_data_products
+  datamarket schema          your_catalog.your_schema.*
+  ─ users                    ─ your gold/curated tables
+  ─ data_products
+  ─ access_requests
+  ─ audit_log
+  ─ user_library
         │
   AI/BI Dashboard · Genie Space · Knowledge Assistant
 ```
@@ -46,9 +48,9 @@ Databricks App (Serverless Node.js / Express)
 |---|---|
 | Frontend | React 18, Vite, Tailwind CSS, shadcn/ui, Recharts |
 | Backend | Node.js, Express.js |
-| Database (OLTP) | Lakebase (managed Postgres on `vibe-coding-demo`) |
+| Database (OLTP) | Lakebase (Databricks managed Postgres) |
 | Data / Governance | Unity Catalog (Delta tables, RBAC) |
-| Hosting | Databricks Apps (serverless, Entra ID auth) |
+| Hosting | Databricks Apps (serverless, SSO auth baked in) |
 | AI Features | Genie Space, Knowledge Assistant, AI/BI Dashboards |
 
 ---
@@ -60,6 +62,7 @@ src/app/
 ├── app.js              # Express server — Lakebase API routes
 ├── app.yaml            # Databricks Apps config
 ├── package.json        # Dependencies (pg, express, compression, cors, helmet)
+├── .env.example        # All required environment variables documented
 ├── src/
 │   ├── App.jsx         # Root router and layout
 │   ├── context/
@@ -79,12 +82,12 @@ src/app/
 │       └── layout/
 │           └── LACESLayout.jsx  # Top-nav shell with persona switcher
 docs/
-└── consumption_model.md         # DBU projection model
+└── consumption_model.md         # Platform consumption projection model
 ```
 
 ---
 
-## Lakebase Schema (`laces_portal`)
+## Lakebase Schema (`datamarket`)
 
 | Table | Purpose |
 |---|---|
@@ -94,7 +97,7 @@ docs/
 | `audit_log` | Every submit/approve/deny action |
 | `user_library` | Per-user pinned and approved products |
 
-UC-queryable at: `lac_infohub_lakebase.laces_portal.*`
+Once registered as a UC catalog, tables are queryable directly from Databricks SQL.
 
 ---
 
@@ -102,41 +105,86 @@ UC-queryable at: `lac_infohub_lakebase.laces_portal.*`
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/api/portal/products` | List data products (filterable) |
-| `GET` | `/api/portal/requests?email=` | Requests for a user |
+| `GET` | `/api/portal/products` | List data products (filterable by domain, type, search) |
+| `GET` | `/api/portal/requests?email=` | Requests for a specific user |
 | `GET` | `/api/portal/requests/pending` | Admin approval queue |
 | `POST` | `/api/portal/requests` | Submit new access request |
-| `PUT` | `/api/portal/requests/:id/approve` | Approve + log UC grant |
+| `PUT` | `/api/portal/requests/:id/approve` | Approve + log UC grant SQL |
 | `PUT` | `/api/portal/requests/:id/deny` | Deny with reason |
 | `GET` | `/api/portal/library?email=` | User's approved + pinned products |
 | `GET` | `/api/portal/audit` | Recent audit log entries |
 
 ---
 
-## Deployed Resources
+## Getting Started
 
-| Resource | ID |
-|---|---|
-| Databricks App | `lac-dna-portal` |
-| AI/BI Dashboard | `01f11210160c1964ba70f998f8be5a1f` |
-| Genie Space | `01f1120fc3f810f5bcc1e77f35ad1231` |
-| Knowledge Assistant | `08cf3e93-eb7a-4b34-b84d-081c9dff8c0b` |
-| Lakebase Instance | `vibe-coding-demo` |
-
----
-
-## Local Development
+### 1. Clone and install
 
 ```bash
-cd src/app
+git clone https://github.com/rautsamir/datamarket-databricks.git
+cd datamarket-databricks/src/app
 npm install
+```
+
+### 2. Configure environment variables
+
+```bash
+cp .env.example .env
+# Fill in your Databricks workspace, Lakebase instance, and user details
+```
+
+### 3. Set up Lakebase
+
+```bash
+# Create a database and run the schema migration
+databricks psql YOUR_INSTANCE --profile YOUR_PROFILE -- -d YOUR_DB -f schema/migrations.sql
+```
+
+### 4. Run locally
+
+```bash
 npm run dev          # Vite dev server on :5173
 node app.js          # Express API on :3000
 ```
 
-Set these env vars for Lakebase connectivity:
+### 5. Deploy to Databricks Apps
+
+```bash
+# Upload source to workspace and deploy
+databricks apps deploy YOUR_APP_NAME \
+  --source-code-path /Workspace/Users/you@domain.com/datamarket \
+  --profile YOUR_PROFILE
 ```
-DATABRICKS_HOST=https://your-workspace.azuredatabricks.net
-DATABRICKS_TOKEN=your-pat-token
-DATABRICKS_USER=you@databricks.com
-```
+
+---
+
+## Customizing for Your Customer
+
+| What to change | Where |
+|---|---|
+| Branding / org name | `src/components/layout/LACESLayout.jsx` |
+| Persona names and departments | `src/context/PersonaContext.jsx` |
+| Seed data products | `src/pages/LACESCatalogPage.jsx` + Lakebase seed script |
+| UC catalog and table names | `.env` → `LAKEBASE_DB`, `LAKEBASE_SCHEMA` |
+| Dashboard URL | `.env` → `VITE_DASHBOARD_URL` |
+| Genie Space ID | `src/pages/AIExplorerPage.jsx` |
+
+---
+
+## Why Databricks Native vs. Third-Party Portals
+
+| | Third-Party (e.g. Aspire, Collibra) | DataMarket (Databricks Native) |
+|---|---|---|
+| Data ownership | Data piped into vendor layer | Stays in Unity Catalog |
+| Access control | Vendor UI + separate policy | UC GRANT/REVOKE, enforced at engine |
+| AI features | Add-on / roadmap | Genie + Knowledge Assistant, live day one |
+| Infrastructure | Containers, VMs to manage | Serverless Databricks Apps |
+| Login | New identity system | Existing SSO (Entra ID / SAML) |
+| Audit trail | Internal to vendor | Persistent Postgres, SQL-queryable |
+| Change requests | Vendor SOW + cost | Edit a React file |
+
+---
+
+## License
+
+MIT — see [LICENSE](LICENSE)
