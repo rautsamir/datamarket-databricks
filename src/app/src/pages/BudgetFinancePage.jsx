@@ -148,7 +148,7 @@ export function BudgetFinancePage() {
               This page is also available as a native Databricks AI/BI Dashboard with drill-through capabilities, 
               scheduled email delivery, and embedded credentials for secure sharing.
             </p>
-            <a href="https://adb-3438839487639471.11.azuredatabricks.net/sql/dashboardsv3/01f11210160c1964ba70f998f8be5a1f" 
+            <a href={import.meta.env.VITE_DASHBOARD_URL || '#'} 
                target="_blank" rel="noopener noreferrer"
                className="text-sm font-medium text-blue-600 hover:text-blue-800 mt-2 inline-block">
               Open in Databricks Dashboard →

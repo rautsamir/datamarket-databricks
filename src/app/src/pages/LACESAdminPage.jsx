@@ -8,14 +8,14 @@ function UCGrantPanel({ request, action }) {
   const [open, setOpen] = useState(false)
 
   const grantSQL = request.ucGrantSql || `-- Unity Catalog RBAC — executed automatically on approval
-GRANT SELECT ON TABLE samir_raut_demo.lac_dna_portal.gold_data_products
+GRANT SELECT ON TABLE <your_catalog>.<your_schema>.<your_table>
   TO \`${request.requesterEmail}\`;
 
 -- Verify the grant was applied
-SHOW GRANTS ON TABLE samir_raut_demo.lac_dna_portal.gold_data_products;`
+SHOW GRANTS ON TABLE <your_catalog>.<your_schema>.<your_table>;`
 
   const revokeSQL = `-- Unity Catalog RBAC — executed automatically on denial
-REVOKE SELECT ON TABLE samir_raut_demo.lac_dna_portal.gold_data_products
+REVOKE SELECT ON TABLE <your_catalog>.<your_schema>.<your_table>
   FROM \`${request.requesterEmail}\`;`
 
   const sql = action === 'Approved' ? grantSQL : revokeSQL
@@ -36,7 +36,7 @@ REVOKE SELECT ON TABLE samir_raut_demo.lac_dna_portal.gold_data_products
             <div className="w-2 h-2 rounded-full bg-red-400" />
             <div className="w-2 h-2 rounded-full bg-yellow-400" />
             <div className="w-2 h-2 rounded-full bg-green-400" />
-            <span className="text-gray-400 text-[10px] ml-2">Unity Catalog — samir_raut_demo</span>
+            <span className="text-gray-400 text-[10px] ml-2">Unity Catalog — your_catalog</span>
           </div>
           <pre className="text-xs font-mono whitespace-pre text-green-400 leading-relaxed">{sql}</pre>
         </div>

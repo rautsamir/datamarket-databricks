@@ -15,10 +15,12 @@ const app = express();
 const PORT = process.env.DATABRICKS_APP_PORT || process.env.PORT || 3000;
 
 // ─── Lakebase connection config ──────────────────────────────────────────────
-const LAKEBASE_HOST = 'instance-56d8a240-b7f6-41d1-928f-ef7fd0bfd8df.database.azuredatabricks.net';
-const LAKEBASE_DB   = 'lac_infohub';
-const LAKEBASE_SCHEMA = 'laces_portal';
-const LAKEBASE_INSTANCE = 'vibe-coding-demo';
+// Set these environment variables to connect to your own Lakebase instance.
+// In Databricks Apps, DATABRICKS_HOST and DATABRICKS_TOKEN are injected automatically.
+const LAKEBASE_HOST     = process.env.LAKEBASE_HOST     || 'your-instance.database.azuredatabricks.net';
+const LAKEBASE_DB       = process.env.LAKEBASE_DB       || 'your_database';
+const LAKEBASE_SCHEMA   = process.env.LAKEBASE_SCHEMA   || 'datamarket';
+const LAKEBASE_INSTANCE = process.env.LAKEBASE_INSTANCE || 'your-lakebase-instance';
 
 let dbPool = null;
 let tokenExpiresAt = 0;
@@ -71,7 +73,7 @@ async function getPool() {
     host: LAKEBASE_HOST,
     port: 5432,
     database: LAKEBASE_DB,
-    user: process.env.DATABRICKS_USER || 'samir.raut@databricks.com',
+    user: process.env.DATABRICKS_USER || 'your-email@your-domain.com',
     password: pgPassword,
     ssl: { rejectUnauthorized: false },
     max: 5,
