@@ -2,7 +2,7 @@
 
 A production-ready demo of a governed, self-service data product marketplace built **entirely on Databricks**. Designed to show enterprise and public sector customers that a modern data portal — with AI features, real RBAC enforcement, and persistent workflows — can be delivered natively, without third-party vendor tooling.
 
-> **Original use case:** LA County Auditor-Controller, as an alternative to a costly Accenture Aspire engagement. Reusable across any industry vertical.
+> **Original use case:** As an alternative to a fully customized application that sits outside of Databricks. Reusable across any industry vertical.
 
 ---
 
