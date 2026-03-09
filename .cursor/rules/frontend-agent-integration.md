@@ -146,7 +146,7 @@ app.get('/api/agent/health', async (req, res) => {
 ### Environment Variables:
 ```bash
 # Development (Local)
-DATABRICKS_TOKEN=dapi1234567890abcdef...
+DATABRICKS_TOKEN=your-personal-access-token
 
 # Production (Databricks Apps)
 DATABRICKS_HOST=your-workspace.cloud.databricks.com
@@ -158,8 +158,8 @@ DATABRICKS_CLIENT_SECRET=your-service-principal-secret
 
 ### API Client Service Pattern:
 ```javascript
-// src/services/walgreensAgentAPI.js
-class WalgreensAgentAPI {
+// src/services/datamarketAgentAPI.js
+class DataMarketAgentAPI {
   constructor(endpointUrl = null, authToken = null) {
     // Always use backend proxy
     this.useProxy = true;
@@ -375,16 +375,16 @@ class WalgreensAgentAPI {
   }
 }
 
-export default WalgreensAgentAPI;
+export default DataMarketAgentAPI;
 ```
 
 ### React Hook for Agent:
 ```javascript
 // React Hook wrapper
-export const useWalgreensAgent = (endpointUrl = null, authToken = null) => {
+export const useDataMarketAgent = (endpointUrl = null, authToken = null) => {
   const [agent] = React.useState(() => {
     // Backend handles all authentication - no validation needed
-    return new WalgreensAgentAPI(endpointUrl, authToken);
+    return new DataMarketAgentAPI(endpointUrl, authToken);
   });
 
   const [connectionStatus, setConnectionStatus] = React.useState('disconnected');
@@ -427,7 +427,7 @@ export const useWalgreensAgent = (endpointUrl = null, authToken = null) => {
 ### Chat Interface Usage:
 ```javascript
 // src/components/ChatInterface.jsx
-import { useWalgreensAgent } from '../services/walgreensAgentAPI';
+import { useDataMarketAgent } from '../services/datamarketAgentAPI';
 
 const ChatInterface = ({ storeData, isOpen, onToggle }) => {
   const [messages, setMessages] = useState([]);
@@ -439,7 +439,7 @@ const ChatInterface = ({ storeData, isOpen, onToggle }) => {
     sendMessage: sendAgentMessage, 
     connectionStatus, 
     isAvailable 
-  } = useWalgreensAgent();
+  } = useDataMarketAgent();
   
   const sendMessage = async (message = inputValue) => {
     if (!message.trim() || isLoading || !isAvailable) return;

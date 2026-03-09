@@ -75,7 +75,9 @@ async function getPool() {
     database: LAKEBASE_DB,
     user: process.env.DATABRICKS_USER || 'your-email@your-domain.com',
     password: pgPassword,
-    ssl: { rejectUnauthorized: false },
+    ssl: process.env.LAKEBASE_SSL_REJECT_UNAUTHORIZED === 'false'
+      ? { rejectUnauthorized: false }
+      : { rejectUnauthorized: true },
     max: 5,
     idleTimeoutMillis: 30000,
     connectionTimeoutMillis: 5000,
@@ -344,7 +346,7 @@ app.use((err, req, res, next) => {
 });
 
 const server = app.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 DataMarket Portal running on 0.0.0.0:${PORT}`);
+  console.log(`🚀 DataMarket running on 0.0.0.0:${PORT}`);
   console.log(`🗄️  Lakebase: ${LAKEBASE_HOST}/${LAKEBASE_DB}/${LAKEBASE_SCHEMA}`);
   console.log(`📊 Health: http://localhost:${PORT}/api/health`);
   getPool().then(() => console.log('✅ Lakebase pool initialized')).catch(e => console.warn('⚠️  Lakebase init deferred:', e.message));

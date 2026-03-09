@@ -121,7 +121,7 @@ Once registered as a UC catalog, tables are queryable directly from Databricks S
 ### 1. Clone and install
 
 ```bash
-git clone https://github.com/rautsamir/datamarket-databricks.git
+git clone https://github.com/YOUR_ORG/datamarket-databricks.git
 cd datamarket-databricks/src/app
 npm install
 ```

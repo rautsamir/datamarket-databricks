@@ -20,7 +20,7 @@ const featuredProducts = [
     name: 'Enterprise Budget Expense Dashboard',
     tags: ['Budget', 'Financial', 'ERP'],
     type: 'Dashboard',
-    description: 'Comprehensive budget allocation, expenditure tracking, and variance analysis for FY2024-25 across all County departments.',
+    description: 'Comprehensive budget allocation, expenditure tracking, and variance analysis for FY2024-25 across all departments.',
     source: 'ERP',
     refreshFrequency: 'Daily',
     owner: 'john.doe'
@@ -104,7 +104,7 @@ export function DataMarketHomePage({ onNavigate, onOpenProduct }) {
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
             <input
               type="text"
-              placeholder={aiMode ? 'Ask a question about County data...' : 'Search data products, dashboards, reports...'}
+              placeholder={aiMode ? 'Ask a question about enterprise data...' : 'Search data products, dashboards, reports...'}
               className="w-full pl-12 pr-14 py-4 text-base border-2 border-gray-200 rounded-xl focus:outline-none focus:border-blue-500 shadow-sm"
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}

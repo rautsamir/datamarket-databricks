@@ -41,7 +41,7 @@ export function VendorAnalyticsPage() {
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <DatabricksCard title="Total Vendors" value="10" trend={{ direction: 'up', value: '+2 YTD' }} icon={Users} variant="accent" />
-        <DatabricksCard title="LSBE Vendors" value="6" trend={{ direction: 'up', value: '60%' }} icon={Users} variant="success" />
+        <DatabricksCard title="Certified Vendors" value="6" trend={{ direction: 'up', value: '60%' }} icon={Users} variant="success" />
         <DatabricksCard title="Prop A Vendors" value="4" trend={{ direction: 'up', value: '40%' }} icon={Users} variant="warning" />
         <DatabricksCard title="Flagged Payments" value="5" trend={{ direction: 'up', value: 'Requires review' }} icon={AlertTriangle} variant="info" />
       </div>

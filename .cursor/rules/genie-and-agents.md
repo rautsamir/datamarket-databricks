@@ -141,7 +141,7 @@ import mlflow
 from databricks import agents
 
 # 1. Write agent code to file (not inline notebook code)
-%%writefile walgreens_agent.py
+%%writefile your_agent.py
 # Agent implementation here (see full pattern in notebooks/15_*.py)
 
 # 2. Log model to MLflow with all resources
@@ -165,7 +165,7 @@ for tool in TOOLS:
 with mlflow.start_run():
     logged_agent_info = mlflow.pyfunc.log_model(
         name="your_agent_name",
-        python_model="walgreens_agent.py",  # File path, not code
+        python_model="your_agent.py",  # File path, not code
         resources=resources,
         pip_requirements=[
             "databricks-langchain",
@@ -199,8 +199,8 @@ print(f"Endpoint name: agents_{UC_MODEL_NAME.replace('.', '-')}")
 # https://<workspace-url>/serving-endpoints/agents_<catalog>-<schema>-<model_name>/invocations
 
 # Example:
-# Model: retail.agents.walgreens_inventory_intelligence
-# Endpoint: https://workspace.databricks.com/serving-endpoints/agents_retail-agents-walgreens_inventory_intelligence/invocations
+# Model: your_catalog.your_schema.your_agent_name
+# Endpoint: https://workspace.databricks.com/serving-endpoints/agents_your_catalog-your_schema-your_agent_name/invocations
 ```
 
 ## 📊 Agent Response Formatting
@@ -244,7 +244,7 @@ agent = create_react_agent(
 ### Business-Focused Prompts:
 ```python
 # Professional advisor tone for retail operations
-supervisor_prompt = f"""You are the Walgreens Store Intelligence Agent, a professional business advisor.
+supervisor_prompt = f"""You are the DataMarket Intelligence Agent, a professional business advisor.
 
 **Your Role:**
 - Provide data-driven insights with clear business recommendations
