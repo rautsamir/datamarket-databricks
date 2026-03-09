@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
-lac_dna_portal - Data Generation Script
-Generates synthetic data for Databricks demo using pure PySpark
+DataMarket — Data Generation Script
+Generates synthetic data for Databricks demo using PySpark.
+Configure via environment variables: CATALOG_NAME, SCHEMA_NAME, DATA_SCALE.
 """
 
 import os
@@ -12,9 +13,8 @@ from pyspark.sql import SparkSession
 from pyspark.sql.types import *
 
 def create_spark_session():
-    """Create and configure Spark session"""
     spark = SparkSession.builder \
-        .appName("lac_dna_portal_data_generation") \
+        .appName("datamarket_data_generation") \
         .config("spark.sql.adaptive.enabled", "true") \
         .config("spark.sql.ansi.enabled", "false") \
         .getOrCreate()
@@ -86,8 +86,8 @@ def main():
     
     industry = os.getenv("INDUSTRY", "finance")
     data_scale = os.getenv("DATA_SCALE", "medium") 
-    catalog = os.getenv("CATALOG_NAME", "samir_raut_demo")
-    schema = os.getenv("SCHEMA_NAME", "lac_dna_portal")
+    catalog = os.getenv("CATALOG_NAME", "your_catalog")
+    schema = os.getenv("SCHEMA_NAME", "datamarket")
     
     print(f"🚀 Starting data generation")
     print(f"📊 Scale: {data_scale}, Target: {catalog}.{schema}")

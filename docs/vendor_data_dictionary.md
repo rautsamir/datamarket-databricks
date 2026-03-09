@@ -1,8 +1,8 @@
-# Vendor Master Data - Data Dictionary
-## LA County Auditor-Controller DNA Platform
+# Vendor Master Data — Data Dictionary
+## DataMarket · Procurement Domain
 
 ### Overview
-The Vendor Master Data product provides a comprehensive registry of all vendors registered with LA County. It includes business information, compliance status (LSBE/Prop A), and AI-generated risk scoring.
+The Vendor Master Data product provides a comprehensive registry of vendors registered with your organization. Includes business information, compliance status, and AI-generated risk scoring. Customize to match your ERP or vendor management system.
 
 ### Table: gold_vendors
 | Column | Type | Description |
@@ -10,48 +10,39 @@ The Vendor Master Data product provides a comprehensive registry of all vendors 
 | vendor_id | INT | Unique vendor identifier |
 | vendor_name | STRING | Legal business name |
 | vendor_type | STRING | Business category (Construction, Healthcare, IT, Consulting, etc.) |
-| tax_id | STRING | Federal Tax ID (EIN) - masked for non-admin users |
+| tax_id | STRING | Federal Tax ID — masked for non-admin users |
 | address | STRING | Primary business address |
 | city | STRING | City |
 | state | STRING | State |
 | zip_code | STRING | ZIP code |
 | phone | STRING | Primary contact phone |
-| is_lsbe | BOOLEAN | Local Small Business Enterprise certified |
-| is_prop_a | BOOLEAN | Proposition A certified vendor |
-| registration_date | DATE | Date first registered with County |
-| risk_score | DECIMAL(5,2) | AI-generated risk score (0.00-1.00) |
-| total_payments_ytd | DECIMAL(15,2) | Year-to-date payment total |
-| contract_count | INT | Number of active contracts |
+| is_certified | BOOLEAN | Organization-specific certification flag |
+| is_preferred | BOOLEAN | Preferred vendor designation |
+| risk_score | DECIMAL(4,2) | AI-generated risk score (0–10) |
+| risk_flags | ARRAY<STRING> | Risk flag categories |
+| total_contracts | INT | Number of active/historical contracts |
+| total_paid | DECIMAL(15,2) | Total amount paid (lifetime) |
 
 ### Table: gold_vendor_payments
 | Column | Type | Description |
 |--------|------|-------------|
 | payment_id | INT | Unique payment identifier |
-| vendor_id | INT | FK to gold_vendors |
-| department_id | INT | FK to gold_departments |
-| payment_date | DATE | Date payment was processed |
-| payment_amount | DECIMAL(15,2) | Payment amount in USD |
-| payment_type | STRING | CHECK, EFT, ACH, WIRE |
+| vendor_id | INT | FK → gold_vendors |
+| payment_date | DATE | Payment date |
+| amount | DECIMAL(12,2) | Payment amount |
 | invoice_number | STRING | Vendor invoice reference |
-| purchase_order | STRING | County purchase order number |
-| fiscal_year | STRING | County fiscal year (e.g., FY2024-25) |
-| fiscal_period | INT | Fiscal period (1-12) |
-| commodity_code | STRING | County commodity classification code |
-| commodity_description | STRING | Description of goods/services |
-| is_flagged | BOOLEAN | Whether AI flagged this transaction |
-| flag_reason | STRING | Reason for flag (null if not flagged) |
+| department_id | INT | Paying department |
+| is_flagged | BOOLEAN | Flagged for review |
+| flag_reason | STRING | Reason for flagging (if applicable) |
 
-### Business Rules
-- Risk scores above 0.50 trigger enhanced review procedures
-- PO Box addresses are automatically flagged for additional verification
-- LSBE/Prop A status is verified quarterly through the County Clerk
-- Payments exceeding 3x the vendor's historical average are auto-flagged
-- Duplicate invoice detection runs daily using fuzzy matching
-- Vendors registered less than 30 days before first payment are flagged
-- Split purchase detection: multiple payments just under approval thresholds
+### Risk Score Methodology
+AI-generated risk scores (0–10) are computed using `ai_query()` on Foundation Model APIs against payment history patterns, contract compliance, and business registration data. Higher scores = more review warranted.
 
-### Data Freshness
-- Source: eCAPS (Enterprise County Accounting and Payroll System)
-- Refresh: Daily at 2:00 AM PST
-- Latency: T+1 business day
-- Quality Score: 94% (measured by completeness, accuracy, timeliness)
+### Access & Sensitivity
+- **Access Level**: Restricted (Procurement and authorized users only)
+- **Contains PII**: Partial (tax_id masked by row-level masking policy)
+- **Refresh**: Daily (from source ERP/vendor portal)
+- **Steward**: Procurement Data Platform team
+
+### Customization Note
+Replace table names, column definitions, and certification flags with your organization's actual vendor data model. These are sample definitions for demonstration purposes.

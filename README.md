@@ -121,7 +121,7 @@ Once registered as a UC catalog, tables are queryable directly from Databricks S
 ### 1. Clone and install
 
 ```bash
-git clone https://github.com/rautsamir/datamarket-databricks.git
+git clone https://github.com/YOUR_ORG/datamarket-databricks.git
 cd datamarket-databricks/src/app
 npm install
 ```
@@ -162,7 +162,7 @@ databricks apps deploy YOUR_APP_NAME \
 
 | What to change | Where |
 |---|---|
-| Branding / org name | `src/components/layout/LACESLayout.jsx` |
+| Branding / org name | `src/components/layout/DataMarketLayout.jsx` |
 | Persona names and departments | `src/context/PersonaContext.jsx` |
 | Seed data products | `src/pages/LACESCatalogPage.jsx` + Lakebase seed script |
 | UC catalog and table names | `.env` → `LAKEBASE_DB`, `LAKEBASE_SCHEMA` |

@@ -93,7 +93,7 @@ This guide explains how to effectively use Cursor AI with the Databricks Demo Fa
 
 ### 1. Template Initialization
 ```bash
-databricks bundle init https://github.com/briancline-db/sa-demo-template.git
+databricks bundle init https://github.com/YOUR_ORG/sa-demo-template.git
 ```
 
 ### 2. Requirements Definition

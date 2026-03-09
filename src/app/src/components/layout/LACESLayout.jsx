@@ -2,7 +2,7 @@ import React, { useState } from 'react'
 import { Search, Menu, X, ChevronDown, ShieldCheck, Bell } from 'lucide-react'
 import { usePersona, personas } from '../../context/PersonaContext'
 
-const LACES_BLUE = '#003865'
+const DataMarket_BLUE = '#003865'
 
 const personaBadgeColors = {
   richard: 'bg-blue-500',
@@ -10,7 +10,7 @@ const personaBadgeColors = {
   admin: 'bg-purple-600'
 }
 
-export function LACESLayout({ currentPage, onNavigate, children }) {
+export function DataMarketLayout({ currentPage, onNavigate, children }) {
   const [mobileOpen, setMobileOpen] = useState(false)
   const [userMenuOpen, setUserMenuOpen] = useState(false)
   const [personaMenuOpen, setPersonaMenuOpen] = useState(false)
@@ -52,18 +52,18 @@ export function LACESLayout({ currentPage, onNavigate, children }) {
       </div>
 
       {/* Top Nav */}
-      <header style={{ backgroundColor: LACES_BLUE }} className="sticky top-0 z-50 shadow-md">
+      <header style={{ backgroundColor: DataMarket_BLUE }} className="sticky top-0 z-50 shadow-md">
         <div className="max-w-7xl mx-auto px-4 sm:px-6">
           <div className="flex items-center justify-between h-16">
             {/* Logo */}
             <button onClick={() => onNavigate('home')} className="flex items-center gap-3 hover:opacity-90 transition-opacity">
               <div className="w-8 h-8 rounded flex items-center justify-center bg-white">
-                <span className="text-xs font-bold" style={{ color: LACES_BLUE }}>LA</span>
+                <span className="text-xs font-bold" style={{ color: DataMarket_BLUE }}>LA</span>
               </div>
               <span className="text-white font-semibold text-base hidden sm:block tracking-wide">
-                LACES Data and Analytics Portal
+                DataMarket Data and Analytics Portal
               </span>
-              <span className="text-white font-semibold text-sm sm:hidden">LACES Portal</span>
+              <span className="text-white font-semibold text-sm sm:hidden">DataMarket Portal</span>
             </button>
 
             {/* Desktop Nav */}
@@ -217,10 +217,10 @@ export function LACESLayout({ currentPage, onNavigate, children }) {
       <footer className="border-t border-gray-200 bg-white mt-12">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2">
-            <div className="w-6 h-6 rounded flex items-center justify-center" style={{ backgroundColor: LACES_BLUE }}>
+            <div className="w-6 h-6 rounded flex items-center justify-center" style={{ backgroundColor: DataMarket_BLUE }}>
               <span className="text-white text-[10px] font-bold">LA</span>
             </div>
-            <span className="text-sm text-gray-500">LACES Data and Analytics Portal</span>
+            <span className="text-sm text-gray-500">DataMarket Data and Analytics Portal</span>
           </div>
           <nav className="flex items-center gap-6">
             {['About', 'FAQ', 'Contact'].map(item => (

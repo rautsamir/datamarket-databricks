@@ -2,7 +2,7 @@ import React, { useState } from 'react'
 import { Search, ArrowRight, Clock, Sparkles, BarChart3, FileText, Database, TrendingUp } from 'lucide-react'
 import { usePersona } from '../context/PersonaContext'
 
-const LACES_BLUE = '#003865'
+const DataMarket_BLUE = '#003865'
 
 const featuredProducts = [
   {
@@ -20,7 +20,7 @@ const featuredProducts = [
     name: 'DnA Datahub Budget Expense Dashboard',
     tags: ['Budget', 'Financial', 'eCAPS'],
     type: 'Dashboard',
-    description: 'Comprehensive budget allocation, expenditure tracking, and variance analysis for FY2024-25 across all County departments.',
+    description: 'Comprehensive budget allocation, expenditure tracking, and variance analysis for FY2024-25 across all departments.',
     source: 'eCAPS',
     refreshFrequency: 'Daily',
     owner: 'john.doe'
@@ -30,7 +30,7 @@ const featuredProducts = [
     name: 'Property Tax Report 2024',
     tags: ['Property Tax', 'Revenue'],
     type: 'Report',
-    description: 'Annual property tax assessment, collection rates, delinquency analysis, and revenue projections for LA County.',
+    description: 'Annual property tax assessment, collection rates, delinquency analysis, and revenue projections for Your Organization.',
     source: 'Property Tax',
     refreshFrequency: 'Weekly',
     owner: 'Robert Lee'
@@ -57,7 +57,7 @@ const tagColors = {
 
 const typeIcons = { Dashboard: BarChart3, Report: FileText, Dataset: Database }
 
-export function LACESHomePage({ onNavigate, onOpenProduct }) {
+export function DataMarketHomePage({ onNavigate, onOpenProduct }) {
   const [searchQuery, setSearchQuery] = useState('')
   const [aiMode, setAiMode] = useState(false)
   const { persona } = usePersona()
@@ -87,14 +87,14 @@ export function LACESHomePage({ onNavigate, onOpenProduct }) {
             <button
               onClick={() => setAiMode(false)}
               className={`text-sm px-3 py-1.5 rounded-full transition-colors ${!aiMode ? 'text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
-              style={!aiMode ? { backgroundColor: LACES_BLUE } : {}}
+              style={!aiMode ? { backgroundColor: DataMarket_BLUE } : {}}
             >
               Search
             </button>
             <button
               onClick={() => setAiMode(true)}
               className={`text-sm px-3 py-1.5 rounded-full transition-colors flex items-center gap-1.5 ${aiMode ? 'text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
-              style={aiMode ? { backgroundColor: LACES_BLUE } : {}}
+              style={aiMode ? { backgroundColor: DataMarket_BLUE } : {}}
             >
               <Sparkles className="h-3 w-3" /> Ask AI
             </button>
@@ -104,16 +104,16 @@ export function LACESHomePage({ onNavigate, onOpenProduct }) {
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
             <input
               type="text"
-              placeholder={aiMode ? 'Ask a question about County data...' : 'Search data products, dashboards, reports...'}
+              placeholder={aiMode ? 'Ask a question about enterprise data...' : 'Search data products, dashboards, reports...'}
               className="w-full pl-12 pr-14 py-4 text-base border-2 border-gray-200 rounded-xl focus:outline-none focus:border-blue-500 shadow-sm"
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
-              style={{ borderColor: searchQuery ? LACES_BLUE : undefined }}
+              style={{ borderColor: searchQuery ? DataMarket_BLUE : undefined }}
             />
             <button
               type="submit"
               className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-lg text-white"
-              style={{ backgroundColor: LACES_BLUE }}
+              style={{ backgroundColor: DataMarket_BLUE }}
             >
               <ArrowRight className="h-4 w-4" />
             </button>
@@ -140,7 +140,7 @@ export function LACESHomePage({ onNavigate, onOpenProduct }) {
           <button
             onClick={() => onNavigate('catalog')}
             className="text-sm font-medium flex items-center gap-1 hover:gap-2 transition-all"
-            style={{ color: LACES_BLUE }}
+            style={{ color: DataMarket_BLUE }}
           >
             View All <ArrowRight className="h-4 w-4" />
           </button>
@@ -157,7 +157,7 @@ export function LACESHomePage({ onNavigate, onOpenProduct }) {
               >
                 <div className="flex items-start gap-3 mb-3">
                   <div className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: '#E8F0F7' }}>
-                    <Icon className="h-5 w-5" style={{ color: LACES_BLUE }} />
+                    <Icon className="h-5 w-5" style={{ color: DataMarket_BLUE }} />
                   </div>
                   <div className="flex-1 min-w-0">
                     <h3 className="font-semibold text-gray-900 text-sm leading-tight group-hover:text-blue-700 transition-colors">{product.name}</h3>
@@ -192,7 +192,7 @@ export function LACESHomePage({ onNavigate, onOpenProduct }) {
                 className="w-full flex items-center gap-4 px-5 py-4 hover:bg-gray-50 transition-colors text-left group"
               >
                 <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: '#E8F0F7' }}>
-                  <Icon className="h-4 w-4" style={{ color: LACES_BLUE }} />
+                  <Icon className="h-4 w-4" style={{ color: DataMarket_BLUE }} />
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-gray-900 group-hover:text-blue-700">{item.name}</p>

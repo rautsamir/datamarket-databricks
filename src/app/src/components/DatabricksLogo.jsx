@@ -26,7 +26,7 @@ export function DatabricksLogo({ variant = 'full', size = 'md' }) {
             <span className={`font-bold ${sizeClasses[size]}`} style={{ color: '#003366' }}>DNA</span>
             <span className={`font-light ${size === 'lg' ? 'text-lg' : 'text-base'} text-gray-500`}>Portal</span>
           </div>
-          <p className="text-[10px] text-gray-400 leading-tight">LA County Auditor-Controller</p>
+          <p className="text-[10px] text-gray-400 leading-tight">DataMarket</p>
         </div>
       </div>
     </div>

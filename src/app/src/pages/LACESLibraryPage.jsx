@@ -2,7 +2,7 @@ import React, { useState } from 'react'
 import { Search, Plus, BarChart3, FileText, Database, BookmarkCheck } from 'lucide-react'
 import { usePersona } from '../context/PersonaContext'
 
-const LACES_BLUE = '#003865'
+const DataMarket_BLUE = '#003865'
 
 const tagColors = {
   Budget: 'bg-blue-100 text-blue-800', Financial: 'bg-green-100 text-green-800',
@@ -30,7 +30,7 @@ const statusConfig = {
   Denied: 'bg-red-100 text-red-800',
 }
 
-export function LACESLibraryPage({ onNavigate, onOpenProduct }) {
+export function DataMarketLibraryPage({ onNavigate, onOpenProduct }) {
   const [search, setSearch] = useState('')
   const [activeTab, setActiveTab] = useState('Data Product')
   const { myRequests, persona } = usePersona()
@@ -66,7 +66,7 @@ export function LACESLibraryPage({ onNavigate, onOpenProduct }) {
         <button
           onClick={() => onNavigate('register')}
           className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white"
-          style={{ backgroundColor: LACES_BLUE }}
+          style={{ backgroundColor: DataMarket_BLUE }}
         >
           <Plus className="h-4 w-4" /> Register Product
         </button>
@@ -133,7 +133,7 @@ export function LACESLibraryPage({ onNavigate, onOpenProduct }) {
                           className="flex items-center gap-2.5 hover:text-blue-700 transition-colors text-left"
                         >
                           <div className="w-7 h-7 rounded flex items-center justify-center shrink-0" style={{ backgroundColor: '#E8F0F7' }}>
-                            <Icon className="h-3.5 w-3.5" style={{ color: LACES_BLUE }} />
+                            <Icon className="h-3.5 w-3.5" style={{ color: DataMarket_BLUE }} />
                           </div>
                           <span className="font-medium text-gray-900 text-xs">{item.name}</span>
                         </button>
@@ -150,7 +150,7 @@ export function LACESLibraryPage({ onNavigate, onOpenProduct }) {
                       <td className="py-3 px-4 text-xs text-gray-600">{item.owner}</td>
                       <td className="py-3 px-4 text-xs text-gray-600">{item.lastUpdated}</td>
                       <td className="py-3 px-4 text-center">
-                        <BookmarkCheck className="h-4 w-4 mx-auto" style={{ color: LACES_BLUE }} />
+                        <BookmarkCheck className="h-4 w-4 mx-auto" style={{ color: DataMarket_BLUE }} />
                       </td>
                       <td className="py-3 px-4 text-center">
                         <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${statusConfig[item.status]}`}>

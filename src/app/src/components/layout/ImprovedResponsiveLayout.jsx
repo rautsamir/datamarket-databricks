@@ -251,7 +251,7 @@ export function ImprovedResponsiveLayout({
                 <DropdownMenuLabel>
                   <div className="flex flex-col space-y-1">
                     <p className="text-sm font-medium">County Analyst</p>
-                    <p className="text-xs text-muted-foreground">analyst@lacounty.gov</p>
+                    <p className="text-xs text-muted-foreground">analyst@example.org</p>
                   </div>
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
@@ -306,7 +306,7 @@ export function ImprovedResponsiveLayout({
               <DropdownMenuLabel>
                 <div className="flex flex-col space-y-1">
                   <p className="text-sm font-medium">County Analyst</p>
-                  <p className="text-xs text-muted-foreground">analyst@lacounty.gov</p>
+                  <p className="text-xs text-muted-foreground">analyst@example.org</p>
                 </div>
               </DropdownMenuLabel>
               <DropdownMenuSeparator />

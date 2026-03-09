@@ -2,7 +2,7 @@ import React, { useState } from 'react'
 import { ArrowLeft, BarChart3, FileText, Database, X, Calendar, User, RefreshCw, Tag, Lock, ExternalLink, CheckCircle2, Clock } from 'lucide-react'
 import { usePersona } from '../context/PersonaContext'
 
-const LACES_BLUE = '#003865'
+const DataMarket_BLUE = '#003865'
 
 const tagColors = {
   Budget: 'bg-blue-100 text-blue-800', Financial: 'bg-green-100 text-green-800',
@@ -33,7 +33,7 @@ function AccessRequestModal({ product, onClose }) {
           <h3 className="text-xl font-bold text-gray-900 mb-2">Request Already Submitted</h3>
           <p className="text-gray-500 text-sm mb-2">You already have a <strong>{existingRequest.status}</strong> request for <strong>{product.name}</strong>.</p>
           {existingRequest.status === 'Pending' && <p className="text-xs text-gray-400 mb-6">Switch to the Admin persona to approve it.</p>}
-          <button onClick={onClose} className="w-full py-2.5 rounded-lg text-white font-medium" style={{ backgroundColor: LACES_BLUE }}>OK</button>
+          <button onClick={onClose} className="w-full py-2.5 rounded-lg text-white font-medium" style={{ backgroundColor: DataMarket_BLUE }}>OK</button>
         </div>
       </div>
     )
@@ -49,7 +49,7 @@ function AccessRequestModal({ product, onClose }) {
           <h3 className="text-xl font-bold text-gray-900 mb-2">Request Submitted</h3>
           <p className="text-gray-500 text-sm mb-2">Your access request for <strong>{product.name}</strong> is pending approval.</p>
           <p className="text-xs text-gray-400 mb-6">Switch to the <strong>Admin persona</strong> to see it in the approval queue.</p>
-          <button onClick={onClose} className="w-full py-2.5 rounded-lg text-white font-medium" style={{ backgroundColor: LACES_BLUE }}>
+          <button onClick={onClose} className="w-full py-2.5 rounded-lg text-white font-medium" style={{ backgroundColor: DataMarket_BLUE }}>
             Done
           </button>
         </div>
@@ -90,7 +90,7 @@ function AccessRequestModal({ product, onClose }) {
           <label className="flex items-start gap-3 cursor-pointer">
             <input type="checkbox" checked={form.agreed} onChange={e => setForm({ ...form, agreed: e.target.checked })} className="mt-0.5" />
             <span className="text-xs text-gray-500">
-              By submitting, you acknowledge that access to this data is governed by the LA County Data Governance Policy and will be used only for authorized purposes.
+              By submitting, you acknowledge that access to this data is governed by the Your Organization Data Governance Policy and will be used only for authorized purposes.
             </span>
           </label>
         </div>
@@ -100,7 +100,7 @@ function AccessRequestModal({ product, onClose }) {
             onClick={() => { if (form.name && form.team && form.reason && form.agreed) { submitRequest(product, form); setSubmitted(true) } }}
             disabled={!form.name || !form.team || !form.reason || !form.agreed}
             className="flex-1 py-2.5 rounded-lg text-sm font-medium text-white disabled:opacity-50"
-            style={{ backgroundColor: LACES_BLUE }}
+            style={{ backgroundColor: DataMarket_BLUE }}
           >
             Submit
           </button>
@@ -110,7 +110,7 @@ function AccessRequestModal({ product, onClose }) {
   )
 }
 
-export function LACESProductDetailPage({ product, onBack }) {
+export function DataMarketProductDetailPage({ product, onBack }) {
   const [showModal, setShowModal] = useState(false)
   const { hasAccess, myRequests } = usePersona()
   const Icon = typeIcons[product.type] || BarChart3
@@ -133,7 +133,7 @@ export function LACESProductDetailPage({ product, onBack }) {
           <div className="bg-white rounded-2xl border border-gray-200 p-6 sm:p-8">
             <div className="flex items-start gap-4 mb-5">
               <div className="w-14 h-14 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: '#E8F0F7' }}>
-                <Icon className="h-7 w-7" style={{ color: LACES_BLUE }} />
+                <Icon className="h-7 w-7" style={{ color: DataMarket_BLUE }} />
               </div>
               <div>
                 <h1 className="text-2xl font-bold text-gray-900 leading-tight">{product.name}</h1>
@@ -164,7 +164,7 @@ export function LACESProductDetailPage({ product, onBack }) {
                 <button
                   onClick={() => setShowModal(true)}
                   className="px-6 py-2 rounded-lg text-sm font-medium text-white flex items-center gap-2"
-                  style={{ backgroundColor: LACES_BLUE }}
+                  style={{ backgroundColor: DataMarket_BLUE }}
                 >
                   <Lock className="h-4 w-4" /> Request Access
                 </button>

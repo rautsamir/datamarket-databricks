@@ -3,9 +3,9 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "lac_dna_portal"
+name = "datamarket"
 version = "0.1.0"
-description = "AI-Assisted Databricks Demo - lac_dna_portal"
+description = "DataMarket — Self-Service Data Product Marketplace on Databricks"
 authors = [{name = "Databricks Demo Factory"}]
 readme = "README.md"
 requires-python = ">=3.9"

@@ -2,7 +2,7 @@ import React, { useState } from 'react'
 import { ShieldCheck, CheckCircle2, XCircle, Clock, Terminal, ChevronDown, ChevronUp, User, Calendar, Database } from 'lucide-react'
 import { usePersona } from '../context/PersonaContext'
 
-const LACES_BLUE = '#003865'
+const DataMarket_BLUE = '#003865'
 
 function UCGrantPanel({ request, action }) {
   const [open, setOpen] = useState(false)
@@ -63,7 +63,7 @@ function norm(r) {
   }
 }
 
-export function LACESAdminPage() {
+export function DataMarketAdminPage() {
   const { requests, approveRequest, denyRequest, currentPersona } = usePersona()
   const [filter, setFilter] = useState('Pending')
   const [denyModal, setDenyModal] = useState(null)
@@ -114,7 +114,7 @@ export function LACESAdminPage() {
       <div className="mb-6 flex items-start justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-            <ShieldCheck className="h-6 w-6" style={{ color: LACES_BLUE }} />
+            <ShieldCheck className="h-6 w-6" style={{ color: DataMarket_BLUE }} />
             Approval Queue
           </h1>
           <p className="text-sm text-gray-500 mt-1">Review and action data access requests — approvals automatically issue Unity Catalog grants</p>

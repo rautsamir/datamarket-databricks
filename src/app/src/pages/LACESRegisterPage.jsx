@@ -1,7 +1,7 @@
 import React, { useState } from 'react'
 import { CheckCircle2, ChevronRight, Users, Lock, Eye, X, Plus } from 'lucide-react'
 
-const LACES_BLUE = '#003865'
+const DataMarket_BLUE = '#003865'
 
 const steps = [
   { id: 1, label: 'Data Product Overview' },
@@ -16,7 +16,7 @@ const tagOptions = ['Budget', 'Financial', 'eCAPS', 'Payroll', 'HR', 'Property T
 const classificationOptions = ['Public', 'Internal', 'Confidential', 'Restricted']
 const accessLevelOptions = ['Read Only', 'Read + Export', 'Read + Write', 'Admin']
 
-export function LACESRegisterPage({ onNavigate }) {
+export function DataMarketRegisterPage({ onNavigate }) {
   const [currentStep, setCurrentStep] = useState(1)
   const [submitted, setSubmitted] = useState(false)
   const [form, setForm] = useState({
@@ -48,14 +48,14 @@ export function LACESRegisterPage({ onNavigate }) {
     return (
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-16 text-center">
         <div className="w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6" style={{ backgroundColor: '#E8F0F7' }}>
-          <CheckCircle2 className="h-10 w-10" style={{ color: LACES_BLUE }} />
+          <CheckCircle2 className="h-10 w-10" style={{ color: DataMarket_BLUE }} />
         </div>
         <h2 className="text-2xl font-bold text-gray-900 mb-2">Data Product Registered</h2>
         <p className="text-gray-500 max-w-md mx-auto mb-8">
           <strong>{form.name || 'Your data product'}</strong> has been submitted for review. It will appear in the catalog once approved by the data governance team.
         </p>
         <div className="flex justify-center gap-3">
-          <button onClick={() => onNavigate('catalog')} className="px-6 py-2.5 rounded-lg text-sm font-medium text-white" style={{ backgroundColor: LACES_BLUE }}>
+          <button onClick={() => onNavigate('catalog')} className="px-6 py-2.5 rounded-lg text-sm font-medium text-white" style={{ backgroundColor: DataMarket_BLUE }}>
             Browse Catalog
           </button>
           <button onClick={() => { setSubmitted(false); setCurrentStep(1); setForm({ name: '', description: '', type: 'Dashboard', source: '', tags: [], refreshFrequency: 'Daily', usageDescription: '', useCases: '', sla: '', dataOwner: '', steward: '', contributors: [], classification: 'Internal', accessLevel: 'Read Only', hasPII: false, retentionYears: '7' }) }} className="px-6 py-2.5 border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50">
@@ -100,7 +100,7 @@ export function LACESRegisterPage({ onNavigate }) {
                     key={t}
                     onClick={() => updateForm('type', t)}
                     className={`px-4 py-2 rounded-lg text-sm font-medium border transition-colors ${form.type === t ? 'text-white border-transparent' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}
-                    style={form.type === t ? { backgroundColor: LACES_BLUE } : {}}
+                    style={form.type === t ? { backgroundColor: DataMarket_BLUE } : {}}
                   >
                     {t}
                   </button>
@@ -126,7 +126,7 @@ export function LACESRegisterPage({ onNavigate }) {
                     key={tag}
                     onClick={() => toggleTag(tag)}
                     className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${form.tags.includes(tag) ? 'text-white border-transparent' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}
-                    style={form.tags.includes(tag) ? { backgroundColor: LACES_BLUE } : {}}
+                    style={form.tags.includes(tag) ? { backgroundColor: DataMarket_BLUE } : {}}
                   >
                     {form.tags.includes(tag) && <X className="h-3 w-3 inline mr-1" />}{tag}
                   </button>
@@ -163,12 +163,12 @@ export function LACESRegisterPage({ onNavigate }) {
           <div className="space-y-5">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Data Owner *</label>
-              <input type="text" placeholder="e.g. james.park@lacounty.gov" value={form.dataOwner} onChange={e => updateForm('dataOwner', e.target.value)} className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              <input type="text" placeholder="e.g. james.park@example.org" value={form.dataOwner} onChange={e => updateForm('dataOwner', e.target.value)} className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
               <p className="text-xs text-gray-400 mt-1">Accountable for data quality and governance</p>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Data Steward</label>
-              <input type="text" placeholder="e.g. sarah.kim@lacounty.gov" value={form.steward} onChange={e => updateForm('steward', e.target.value)} className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              <input type="text" placeholder="e.g. sarah.kim@example.org" value={form.steward} onChange={e => updateForm('steward', e.target.value)} className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
               <p className="text-xs text-gray-400 mt-1">Day-to-day management and quality monitoring</p>
             </div>
             <div>
@@ -190,7 +190,7 @@ export function LACESRegisterPage({ onNavigate }) {
                     if (input.value) { updateForm('contributors', [...form.contributors, input.value]); input.value = '' }
                   }}
                   className="p-2.5 rounded-lg text-white"
-                  style={{ backgroundColor: LACES_BLUE }}
+                  style={{ backgroundColor: DataMarket_BLUE }}
                 >
                   <Plus className="h-4 w-4" />
                 </button>
@@ -221,7 +221,7 @@ export function LACESRegisterPage({ onNavigate }) {
                     key={c}
                     onClick={() => updateForm('classification', c)}
                     className={`px-4 py-3 rounded-lg text-sm font-medium border-2 text-left transition-colors ${form.classification === c ? 'text-white border-transparent' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}
-                    style={form.classification === c ? { backgroundColor: LACES_BLUE } : {}}
+                    style={form.classification === c ? { backgroundColor: DataMarket_BLUE } : {}}
                   >
                     {c === 'Public' && '🌐 '}
                     {c === 'Internal' && '🔒 '}
@@ -248,7 +248,7 @@ export function LACESRegisterPage({ onNavigate }) {
               <button
                 onClick={() => updateForm('hasPII', !form.hasPII)}
                 className={`w-11 h-6 rounded-full transition-colors relative ${form.hasPII ? '' : 'bg-gray-200'}`}
-                style={form.hasPII ? { backgroundColor: LACES_BLUE } : {}}
+                style={form.hasPII ? { backgroundColor: DataMarket_BLUE } : {}}
               >
                 <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${form.hasPII ? 'translate-x-5' : 'translate-x-0.5'}`} />
               </button>
@@ -285,7 +285,7 @@ export function LACESRegisterPage({ onNavigate }) {
               ))}
             </div>
             <p className="text-xs text-gray-500">
-              By submitting, this data product will be queued for review by the LACES Data Governance team. 
+              By submitting, this data product will be queued for review by the DataMarket Data Governance team. 
               It will appear in the catalog once approved and will be governed by Unity Catalog RBAC.
             </p>
           </div>
@@ -315,7 +315,7 @@ export function LACESRegisterPage({ onNavigate }) {
                   : step.id === currentStep ? 'text-white'
                   : 'bg-gray-100 text-gray-400'
                 }`}
-                style={step.id === currentStep ? { backgroundColor: LACES_BLUE } : {}}
+                style={step.id === currentStep ? { backgroundColor: DataMarket_BLUE } : {}}
               >
                 {step.id < currentStep ? <CheckCircle2 className="h-4 w-4" /> : step.id}
               </div>
@@ -361,7 +361,7 @@ export function LACESRegisterPage({ onNavigate }) {
             <button
               onClick={() => setCurrentStep(s => s + 1)}
               className="px-6 py-2 rounded-lg text-sm font-medium text-white"
-              style={{ backgroundColor: LACES_BLUE }}
+              style={{ backgroundColor: DataMarket_BLUE }}
             >
               Next
             </button>
@@ -369,7 +369,7 @@ export function LACESRegisterPage({ onNavigate }) {
             <button
               onClick={() => setSubmitted(true)}
               className="px-6 py-2 rounded-lg text-sm font-medium text-white"
-              style={{ backgroundColor: LACES_BLUE }}
+              style={{ backgroundColor: DataMarket_BLUE }}
             >
               Submit
             </button>

@@ -6,10 +6,10 @@ import { Badge } from '@/components/ui/badge'
 
 const myRequests = [
   { id: 'AR-001', product: 'Employee Payroll & Benefits', requested: '2024-12-18', status: 'Approved', approver: 'Sarah Kim', dept: 'CEO', accessLevel: 'Read' },
-  { id: 'AR-002', product: 'Fraud Detection Risk Indicators', requested: '2024-12-20', status: 'Pending', approver: 'David Nguyen', dept: 'Auditor-Controller', accessLevel: 'Read' },
+  { id: 'AR-002', product: 'Fraud Detection Risk Indicators', requested: '2024-12-20', status: 'Pending', approver: 'David Nguyen', dept: 'Finance & Accounting', accessLevel: 'Read' },
   { id: 'AR-003', product: 'Property Tax Revenue', requested: '2024-12-22', status: 'Pending', approver: 'Robert Lee', dept: 'Treasurer-Tax Collector', accessLevel: 'Read' },
   { id: 'AR-004', product: 'Contract Management', requested: '2024-11-15', status: 'Denied', approver: 'Diana Torres', dept: 'Internal Services', accessLevel: 'Write', reason: 'Insufficient business justification' },
-  { id: 'AR-005', product: 'Vendor Master Data', requested: '2024-11-01', status: 'Approved', approver: 'Maria Chen', dept: 'Auditor-Controller', accessLevel: 'Read' }
+  { id: 'AR-005', product: 'Vendor Master Data', requested: '2024-11-01', status: 'Approved', approver: 'Maria Chen', dept: 'Finance & Accounting', accessLevel: 'Read' }
 ]
 
 const availableProducts = [

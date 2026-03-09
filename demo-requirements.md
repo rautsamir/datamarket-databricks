@@ -1,143 +1,87 @@
-# lac_dna_portal - Demo Requirements & AI Instructions
+# DataMarket — Demo Requirements & Implementation Guide
 
-## 🎯 Demo Overview
-**Project:** lac_dna_portal
-**Industry:** finance
-**Complexity:** advanced
-**Data Scale:** medium
-
-## 📋 Detailed Requirements
-LA County Auditor-Controller DNA Data Portal - A Databricks-native data marketplace replacing Accenture Aspire. The portal enables authenticated County employees to discover and browse enterprise data products (vendors, budgets, payments, internal billing, fraud detection) registered in Unity Catalog. Features include: data product catalog with metadata browsing and search, embedded AI/BI dashboards for financial analytics, Genie Spaces for natural language data exploration, AI-generated metadata descriptions, semantic search over vectorized metadata, document repository for data dictionaries and training materials, access request workflows, and role-based access controls via Entra ID. The portal serves 15+ County departments across Finance, Procurement, HR, and Operations domains with Gold layer data products from the DNA platform.
-
-## 🎨 Design Requirements
-- Professional Databricks branding and design system
-- Modern, executive-ready dashboard interface  
-- Interactive visualizations with drill-down capabilities
-- Responsive design optimized for presentations
-- Real-time data updates and live metrics
-
-## 📊 Data & Analytics Requirements
-- Industry-appropriate synthetic data for finance
-- Realistic business scenarios and edge cases
-- Scalable data generation (medium volume)
-- Time-series data for trend analysis
-- Demographic and behavioral segmentation
-
-
-
-
-## 🔄 OLTP Requirements  
-- Real-time transaction processing with Lakebase
-- Live dashboard updates from operational data
-- CRUD operations for interactive demos
-- Data synchronization between OLTP and analytical stores
-
-## 🤖 AI/LLM Requirements
-- Conversational analytics interface
-- RAG-enabled question answering about data
-- Natural language query capabilities
-- Predictive analytics and forecasting
-- Automated insights and recommendations
-
-
-## 🚀 Success Criteria
-- **Professional Impact:** Executive-ready presentation quality
-- **Business Value:** Clear ROI and actionable insights  
-- **Technical Excellence:** Showcases Databricks platform capabilities
-- **User Experience:** Intuitive, engaging, and interactive
-- **Deployment:** 5-minute setup and deployment process
+## Project Overview
+**Name:** DataMarket
+**Type:** Self-Service Data Product Marketplace
+**Platform:** Databricks (Apps, Unity Catalog, Lakebase, Genie, Knowledge Assistant)
+**Audience:** Enterprise and public sector customers evaluating Databricks as a full-stack application platform
 
 ---
 
-## 🤖 AI IMPLEMENTATION INSTRUCTIONS
+## What This Demo Shows
 
-**CURSOR AI: READ THIS SECTION FOR IMPLEMENTATION GUIDANCE**
+A governed, self-service data marketplace where business users can discover data products, request access, and get AI-powered analytics — all built natively on Databricks without third-party tooling.
 
-### 🎯 Primary Directive
-Implement the demo requirements above using the Databricks Demo Factory template structure. Focus on creating a professional, presentation-ready solution that showcases Databricks capabilities.
+**Business value demonstrated:**
+- Data discovery and catalog browsing with access controls
+- Self-service access request and approval workflow
+- Unity Catalog RBAC enforcement at the data layer
+- AI-powered natural language analytics via Genie
+- Document Q&A via Knowledge Assistant (RAG)
+- Persistent transactional workflows via Lakebase
 
-### 🏗️ Implementation Strategy
+---
 
-#### 1. Data Generation (Start Here)
-- **File:** `src/lac_dna_portal/main.py`
-- **Action:** Enhance with finance-specific synthetic data
-- **Scale:** Generate medium volume of realistic data
-- **Quality:** Ensure referential integrity and business logic
+## Customization Variables
 
-#### 2. API Development
-- **File:** `src/app/app.js` (generated from `app.js.tmpl`)
-- **Action:** Add industry-specific API endpoints
-- **Patterns:** Follow REST conventions, implement proper error handling
-- **Data:** Connect to Unity Catalog tables for dashboard consumption
+| Variable | Default | Description |
+|---|---|---|
+| `DATABRICKS_HOST` | — | Your workspace URL |
+| `LAKEBASE_HOST` | — | Your Lakebase instance DNS |
+| `LAKEBASE_INSTANCE` | — | Your Lakebase instance name |
+| `LAKEBASE_DB` | `your_database` | PostgreSQL database name |
+| `LAKEBASE_SCHEMA` | `datamarket` | PostgreSQL schema name |
+| `DATABRICKS_USER` | — | Your email (for Lakebase auth) |
+| `VITE_DASHBOARD_URL` | — | Published AI/BI Dashboard URL |
 
-#### 3. Dashboard Components
-- **Directory:** `src/app/src/components/`
-- **Action:** Build React components using Databricks design system
-- **Components:** KPI cards, charts, tables, filters, interactive elements
-- **Styling:** Use Tailwind CSS with Databricks brand colors
-- **Note:** Both `src/app/components/` (template components) and `src/app/src/components/` (React components) exist
+---
 
-#### 4. Main Dashboard
-- **File:** `src/app/src/App.jsx`
-- **Action:** Create comprehensive React dashboard layout
-- **Features:** Header with branding, KPI grid, visualizations, navigation
-- **Interactions:** Filters, drill-downs, real-time updates
+## Design Requirements
+- Professional enterprise branding (adaptable to customer colors)
+- Modern, executive-ready interface
+- Interactive visualizations with drill-down capabilities
+- Responsive design for presentations
+- Real-time data via Lakebase OLTP
 
+---
 
-#### 5. OLTP Integration
-- **Action:** Add Lakebase PostgreSQL integration
-- **Features:** Real-time data operations, live dashboard updates
-- **Patterns:** Connection pooling, transaction management, sync processes
+## Technical Components
 
+### Frontend
+- React 18 + Vite + Tailwind CSS + shadcn/ui
+- Persona switcher for RBAC demo (no real accounts needed)
+- Pages: Home, Catalog, Product Detail, Library, Register, Admin, AI Explorer, Dashboards, Documents
 
+### Backend
+- Node.js + Express.js
+- Lakebase (Postgres) for requests, approvals, audit log, user library
+- OAuth-based credential generation for Lakebase from Databricks token
 
-#### 6. LLM Agent Integration
-- **Action:** Integrate Mosaic AI Agent Framework
-- **Features:** Conversational interface, RAG capabilities, NL queries
-- **Implementation:** Chat component, agent API endpoints, context management
+### Databricks Services Used
+- **Databricks Apps** — Serverless hosting with SSO
+- **Unity Catalog** — Data governance, RBAC, Delta tables
+- **Lakebase** — Managed Postgres for OLTP workflows
+- **Genie Space** — Natural language → SQL on your data
+- **Knowledge Assistant** — RAG on documentation
+- **AI/BI Dashboards** — Lakeview native dashboards
 
+---
 
-### 🎨 Design Guidelines
-- Use `DatabricksCard` components for KPIs
-- Use `DatabricksChart` components for visualizations
-- Follow Databricks color palette: `#FF3621`, `#1B3139`, `#00A972`
-- Implement professional typography with Inter font
-- Create responsive layouts with proper spacing
+## Deployment Checklist
 
-### 📊 Industry-Specific Patterns
+1. Set environment variables (see `.env.example`)
+2. Create Lakebase database and run schema migration
+3. Register Lakebase database as Unity Catalog catalog
+4. Seed data products from your Unity Catalog gold layer
+5. Create Genie Space connected to your tables
+6. Create Knowledge Assistant connected to your docs volume
+7. Deploy app: `databricks apps deploy YOUR_APP_NAME --source-code-path /Workspace/...`
 
+---
 
-
-
-
-
-**Finance Focus:**
-- Portfolio performance and risk
-- Customer analytics and lifetime value
-- Fraud detection and prevention
-- Regulatory compliance and reporting
-
-
-### 🔧 Technical Standards
-- **Error Handling:** Implement comprehensive error boundaries
-- **Loading States:** Add skeleton loaders for all async operations
-- **Performance:** Optimize bundle size and load times
-- **Accessibility:** Use semantic HTML and ARIA labels
-- **Security:** Implement proper authentication patterns
-
-### 💡 Enhancement Suggestions
-Based on the requirements, consider adding:
-- Geographic visualizations for location-based data
-- Predictive analytics dashboards
-- Anomaly detection alerts
-- Export capabilities for reports
-- Mobile-responsive design optimizations
-
-### 🚀 Development Approach
-1. **Start with MVP:** Basic dashboard with core functionality
-2. **Iterate incrementally:** Add features based on complexity level
-3. **Test thoroughly:** Ensure all components work smoothly
-4. **Optimize performance:** Fast load times and smooth interactions
-5. **Polish presentation:** Professional appearance and user experience
-
-Remember: This demo represents Databricks' capabilities to potential customers. Every detail matters for creating a compelling, professional presentation that drives business value. 
+## Success Criteria
+- **Professional Impact:** Executive-ready presentation quality
+- **Business Value:** Clear demonstration of Databricks as a full-stack platform
+- **RBAC Story:** Access request → approval → UC grant enforcement shown end-to-end
+- **AI Story:** Genie + Knowledge Assistant live and answering questions
+- **Deployment:** Under 1 day to customize and deploy for a customer

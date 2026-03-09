@@ -1,7 +1,7 @@
 {
-  "name": "lac_dna_portal-dashboard",
+  "name": "datamarket",
   "version": "1.0.0",
-  "description": "Databricks Demo Dashboard - lac_dna_portal",
+  "description": "DataMarket — Self-Service Data Product Marketplace on Databricks",
   "main": "app.js",
   "type": "module",
   "scripts": {

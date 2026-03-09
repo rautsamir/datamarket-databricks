@@ -10,7 +10,7 @@ const documents = [
   { id: 3, name: 'DNA Portal User Guide', type: 'User Guide', domain: 'Platform', updated: '2024-12-20', author: 'DNA Team', pages: 24, format: 'MD' },
   { id: 4, name: 'Fraud Detection Methodology', type: 'Technical', domain: 'Analytics', updated: '2024-11-30', author: 'David Nguyen', pages: 15, format: 'PDF' },
   { id: 5, name: 'Data Classification Policy', type: 'Policy', domain: 'Governance', updated: '2024-10-15', author: 'IT Security', pages: 8, format: 'PDF' },
-  { id: 6, name: 'LSBE/Prop A Certification Guide', type: 'Guide', domain: 'Procurement', updated: '2024-09-20', author: 'Diana Torres', pages: 10, format: 'PDF' },
+  { id: 6, name: 'compliance Certification Guide', type: 'Guide', domain: 'Procurement', updated: '2024-09-20', author: 'Diana Torres', pages: 10, format: 'PDF' },
   { id: 7, name: 'Internal Billing Procedures', type: 'Procedures', domain: 'Finance', updated: '2024-11-05', author: 'James Park', pages: 14, format: 'PDF' },
   { id: 8, name: 'eCAPS Data Integration Guide', type: 'Technical', domain: 'Platform', updated: '2024-08-25', author: 'DNA Team', pages: 22, format: 'PDF' }
 ]

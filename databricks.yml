@@ -1,19 +1,19 @@
 bundle:
-  name: lac_dna_portal
+  name: datamarket
 
 targets:
   dev:
     default: true
     workspace:
-      host: https://e2-demo-field-eng.cloud.databricks.com
+      host: ${DATABRICKS_HOST}
     resources:
       jobs:
-        lac_dna_portal_job:
-          name: lac_dna_portal_job
+        datamarket_job:
+          name: datamarket_job
           tasks:
             - task_key: generate_data
               spark_python_task:
-                                   python_file: ./src/lac_dna_portal/main.py
+                python_file: ./src/datamarket/main.py
               environment_key: default
           environments:
             - environment_key: default
@@ -21,8 +21,7 @@ targets:
                 client: '1'
                 dependencies: []
       apps:
-        lac_dna_portal_app:
-          name: lac_dna_portal-dashboard
-          description: "lac_dna_portal Analytics Dashboard"
+        datamarket_app:
+          name: datamarket
+          description: "DataMarket — Self-Service Data Product Marketplace on Databricks"
           source_code_path: ./src/app
- 

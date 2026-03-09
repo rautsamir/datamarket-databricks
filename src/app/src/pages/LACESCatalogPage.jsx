@@ -1,7 +1,7 @@
 import React, { useState } from 'react'
 import { Search, SlidersHorizontal, BarChart3, FileText, Database, ChevronLeft, ChevronRight } from 'lucide-react'
 
-const LACES_BLUE = '#003865'
+const DataMarket_BLUE = '#003865'
 
 const categories = ['All', 'Property Tax', 'Audit', 'Accounting', 'eCAPS', 'Demographics', 'GIS', 'Health Services', 'Public Safety', 'eHR', 'Payroll', 'Budget']
 const types = ['All', 'Dashboard', 'Dataset', 'Report']
@@ -10,7 +10,7 @@ const allProducts = [
   { id: 1, name: 'Budget Expenditure Report', category: 'Budget', type: 'Dashboard', source: 'eCAPS', description: 'Departmental budget allocations and year-to-date expenditures with variance analysis across all County divisions.', refreshFrequency: 'Daily', owner: 'james.park', lastUpdated: '02/11/2025', tags: ['Budget', 'eCAPS'] },
   { id: 2, name: 'Employee Metrics Dashboard', category: 'eHR', type: 'Dashboard', source: 'eHR', description: 'Headcount, turnover rates, overtime trends, and compensation metrics segmented by department and bargaining unit.', refreshFrequency: 'Weekly', owner: 'sarah.kim', lastUpdated: '02/11/2025', tags: ['eHR', 'HR'] },
   { id: 3, name: 'Property Tax Report 2024', category: 'Property Tax', type: 'Report', source: 'Property Tax', description: 'Annual property tax assessments, collection rates, delinquency analysis, and revenue projections for FY2024.', refreshFrequency: 'Weekly', owner: 'robert.lee', lastUpdated: '02/11/2025', tags: ['Property Tax', 'Revenue'] },
-  { id: 4, name: 'Census 2023 Dataset', category: 'Demographics', type: 'Dataset', source: 'Demographics', description: 'LA County population demographics by census tract including age, income, household size, and language.', refreshFrequency: 'Annual', owner: 'diana.torres', lastUpdated: '02/11/2025', tags: ['Demographics'] },
+  { id: 4, name: 'Census 2023 Dataset', category: 'Demographics', type: 'Dataset', source: 'Demographics', description: 'Your Organization population demographics by census tract including age, income, household size, and language.', refreshFrequency: 'Annual', owner: 'diana.torres', lastUpdated: '02/11/2025', tags: ['Demographics'] },
   { id: 5, name: 'Service Ticket Tracking Report', category: 'Accounting', type: 'Report', source: 'IT', description: 'Internal IT service requests, resolution times, SLA compliance, and department utilization metrics.', refreshFrequency: 'Daily', owner: 'michael.chang', lastUpdated: '02/11/2025', tags: ['IT'] },
   { id: 6, name: 'Essential Service Usage Report', category: 'Health Services', type: 'Report', source: 'Health Services', description: 'Utilization rates for essential County services including health clinics, mental health centers, and social services.', refreshFrequency: 'Monthly', owner: 'angela.wright', lastUpdated: '02/11/2025', tags: ['Health Services'] },
   { id: 7, name: 'Payroll Dashboard', category: 'Payroll', type: 'Dashboard', source: 'eHR', description: 'County-wide payroll expenditures, overtime costs, benefits allocation, and headcount by department.', refreshFrequency: 'Daily', owner: 'james.park', lastUpdated: '02/11/2025', tags: ['Payroll', 'eHR'] },
@@ -34,7 +34,7 @@ const tagColors = {
 const typeIcons = { Dashboard: BarChart3, Report: FileText, Dataset: Database }
 const PAGE_SIZE = 6
 
-export function LACESCatalogPage({ onOpenProduct, initialSearch = '' }) {
+export function DataMarketCatalogPage({ onOpenProduct, initialSearch = '' }) {
   const [search, setSearch] = useState(initialSearch)
   const [selectedCategory, setSelectedCategory] = useState('All')
   const [selectedType, setSelectedType] = useState('All')
@@ -105,7 +105,7 @@ export function LACESCatalogPage({ onOpenProduct, initialSearch = '' }) {
                       ? 'font-medium text-white'
                       : 'text-gray-600 hover:bg-gray-100'
                   }`}
-                  style={selectedCategory === cat ? { backgroundColor: LACES_BLUE } : {}}
+                  style={selectedCategory === cat ? { backgroundColor: DataMarket_BLUE } : {}}
                 >
                   {cat}
                 </button>
@@ -124,7 +124,7 @@ export function LACESCatalogPage({ onOpenProduct, initialSearch = '' }) {
                   className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
                     selectedType === t ? 'text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                   }`}
-                  style={selectedType === t ? { backgroundColor: LACES_BLUE } : {}}
+                  style={selectedType === t ? { backgroundColor: DataMarket_BLUE } : {}}
                 >
                   {t}
                 </button>
@@ -164,7 +164,7 @@ export function LACESCatalogPage({ onOpenProduct, initialSearch = '' }) {
                 >
                   <div className="flex items-start gap-4">
                     <div className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: '#E8F0F7' }}>
-                      <Icon className="h-5 w-5" style={{ color: LACES_BLUE }} />
+                      <Icon className="h-5 w-5" style={{ color: DataMarket_BLUE }} />
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-start justify-between gap-3 flex-wrap">
@@ -203,7 +203,7 @@ export function LACESCatalogPage({ onOpenProduct, initialSearch = '' }) {
                   key={n}
                   onClick={() => setPage(n)}
                   className={`w-8 h-8 rounded text-sm font-medium transition-colors ${page === n ? 'text-white' : 'border border-gray-200 text-gray-600 hover:bg-gray-50'}`}
-                  style={page === n ? { backgroundColor: LACES_BLUE } : {}}
+                  style={page === n ? { backgroundColor: DataMarket_BLUE } : {}}
                 >
                   {n}
                 </button>

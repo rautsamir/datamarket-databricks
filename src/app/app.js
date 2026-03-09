@@ -75,7 +75,9 @@ async function getPool() {
     database: LAKEBASE_DB,
     user: process.env.DATABRICKS_USER || 'your-email@your-domain.com',
     password: pgPassword,
-    ssl: { rejectUnauthorized: false },
+    ssl: process.env.LAKEBASE_SSL_REJECT_UNAUTHORIZED === 'false'
+      ? { rejectUnauthorized: false }
+      : { rejectUnauthorized: true },
     max: 5,
     idleTimeoutMillis: 30000,
     connectionTimeoutMillis: 5000,
@@ -222,7 +224,7 @@ app.post('/api/portal/requests', async (req, res) => {
 app.put('/api/portal/requests/:id/approve', async (req, res) => {
   try {
     const { id } = req.params;
-    const { adminEmail = 'datasteward@lacounty.gov' } = req.body;
+    const { adminEmail = 'datasteward@example.org' } = req.body;
 
     const { rows: [req_] } = await query(`
       SELECT ar.*, dp.uc_full_name, dp.display_name AS product_name, u.email AS requester_email
@@ -257,7 +259,7 @@ app.put('/api/portal/requests/:id/approve', async (req, res) => {
 app.put('/api/portal/requests/:id/deny', async (req, res) => {
   try {
     const { id } = req.params;
-    const { adminEmail = 'datasteward@lacounty.gov', reason = '' } = req.body;
+    const { adminEmail = 'datasteward@example.org', reason = '' } = req.body;
 
     const { rows: [req_] } = await query(
       'SELECT request_id, request_ref FROM access_requests WHERE request_id = $1 OR request_ref = $1', [id]);
@@ -344,7 +346,7 @@ app.use((err, req, res, next) => {
 });
 
 const server = app.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 LACES Portal running on 0.0.0.0:${PORT}`);
+  console.log(`🚀 DataMarket running on 0.0.0.0:${PORT}`);
   console.log(`🗄️  Lakebase: ${LAKEBASE_HOST}/${LAKEBASE_DB}/${LAKEBASE_SCHEMA}`);
   console.log(`📊 Health: http://localhost:${PORT}/api/health`);
   getPool().then(() => console.log('✅ Lakebase pool initialized')).catch(e => console.warn('⚠️  Lakebase init deferred:', e.message));
