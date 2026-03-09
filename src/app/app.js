@@ -122,7 +122,7 @@ app.get('/api/health', async (req, res) => {
   } catch (e) {
     dbStatus = `error: ${e.message}`;
   }
-  res.json({ status: 'healthy', timestamp: new Date().toISOString(), service: 'laces-portal', lakebase: dbStatus });
+  res.json({ status: 'healthy', timestamp: new Date().toISOString(), service: 'datamarket', lakebase: dbStatus });
 });
 
 // ─── Data Products ────────────────────────────────────────────────────────────

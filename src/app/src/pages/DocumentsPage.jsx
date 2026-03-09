@@ -49,7 +49,7 @@ export function DocumentsPage() {
     setTimeout(() => {
       setQaMessages(prev => [...prev, {
         role: 'assistant',
-        content: `This is a demo of the Knowledge Assistant (LAC_DNA_Documentation_Assistant). In production, this would search across all uploaded documentation using RAG to provide accurate, cited answers. Your question: "${question}"`
+        content: `This is a demo of the Knowledge Assistant. In production, this connects to a real Databricks Knowledge Assistant endpoint and searches across all uploaded documentation using RAG to provide accurate, cited answers. Your question: "${question}"`
       }])
     }, 1000)
   }
