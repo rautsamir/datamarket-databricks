@@ -68,19 +68,19 @@ src/app/
 │   ├── context/
 │   │   └── PersonaContext.jsx   # RBAC persona state + API calls
 │   ├── pages/
-│   │   ├── LACESHomePage.jsx
-│   │   ├── LACESCatalogPage.jsx
-│   │   ├── LACESProductDetailPage.jsx
-│   │   ├── LACESLibraryPage.jsx
-│   │   ├── LACESRegisterPage.jsx
-│   │   ├── LACESAdminPage.jsx
+│   │   ├── DataMarketHomePage.jsx
+│   │   ├── DataMarketCatalogPage.jsx
+│   │   ├── DataMarketProductDetailPage.jsx
+│   │   ├── DataMarketLibraryPage.jsx
+│   │   ├── DataMarketRegisterPage.jsx
+│   │   ├── DataMarketAdminPage.jsx
 │   │   ├── AIExplorerPage.jsx
 │   │   ├── BudgetFinancePage.jsx
 │   │   ├── InternalBillingPage.jsx
 │   │   └── DocumentsPage.jsx
 │   └── components/
 │       └── layout/
-│           └── LACESLayout.jsx  # Top-nav shell with persona switcher
+│           └── DataMarketLayout.jsx  # Top-nav shell with persona switcher
 docs/
 └── consumption_model.md         # Platform consumption projection model
 ```
@@ -164,7 +164,7 @@ databricks apps deploy YOUR_APP_NAME \
 |---|---|
 | Branding / org name | `src/components/layout/DataMarketLayout.jsx` |
 | Persona names and departments | `src/context/PersonaContext.jsx` |
-| Seed data products | `src/pages/LACESCatalogPage.jsx` + Lakebase seed script |
+| Seed data products | `src/pages/DataMarketCatalogPage.jsx` + Lakebase seed script |
 | UC catalog and table names | `.env` → `LAKEBASE_DB`, `LAKEBASE_SCHEMA` |
 | Dashboard URL | `.env` → `VITE_DASHBOARD_URL` |
 | Genie Space ID | `src/pages/AIExplorerPage.jsx` |
