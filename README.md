@@ -1,5 +1,7 @@
 # DataMarket — Self-Service Data Product Marketplace on Databricks
 
+![DataMarket](docs/datamarket-thumbnail.png)
+
 A production-ready demo of a governed, self-service data product marketplace built **entirely on Databricks**. Designed to show enterprise and public sector customers that a modern data portal — with AI features, real RBAC enforcement, and persistent workflows — can be delivered natively, without third-party vendor tooling.
 
 > **Origin:** Built as a proof-of-concept to show how Databricks can replace proprietary third-party data portals. Reusable across any industry vertical.
