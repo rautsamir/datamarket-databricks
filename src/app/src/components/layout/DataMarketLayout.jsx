@@ -58,7 +58,9 @@ export function DataMarketLayout({ currentPage, onNavigate, children }) {
             {/* Logo */}
             <button onClick={() => onNavigate('home')} className="flex items-center gap-3 hover:opacity-90 transition-opacity">
               <div className="w-8 h-8 rounded flex items-center justify-center bg-white">
-                <span className="text-xs font-bold" style={{ color: DataMarket_BLUE }}>LA</span>
+                <svg viewBox="0 0 24 24" className="w-5 h-5" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="#1B3A6B" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
               </div>
               <span className="text-white font-semibold text-base hidden sm:block tracking-wide">
                 DataMarket Data and Analytics Portal
@@ -218,7 +220,9 @@ export function DataMarketLayout({ currentPage, onNavigate, children }) {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2">
             <div className="w-6 h-6 rounded flex items-center justify-center" style={{ backgroundColor: DataMarket_BLUE }}>
-              <span className="text-white text-[10px] font-bold">LA</span>
+              <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
             </div>
             <span className="text-sm text-gray-500">DataMarket Data and Analytics Portal</span>
           </div>

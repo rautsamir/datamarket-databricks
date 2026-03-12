@@ -19,7 +19,9 @@ export function DatabricksLogo({ variant = 'full', size = 'md' }) {
     <div className="flex flex-col">
       <div className="flex items-center gap-2">
         <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: '#003366' }}>
-          <span className="text-white font-bold text-sm">LA</span>
+          <svg viewBox="0 0 24 24" className="w-5 h-5" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
         </div>
         <div>
           <div className="flex items-baseline gap-1">
