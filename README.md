@@ -138,11 +138,48 @@ cp .env.example .env
 ### 3. Set up Lakebase
 
 ```bash
-# Create a database and run the schema migration
-databricks psql YOUR_INSTANCE --profile YOUR_PROFILE -- -d YOUR_DB -f schema/migrations.sql
+# Create a Lakebase instance (CU_1 is sufficient for demos)
+databricks database create-database-instance YOUR_INSTANCE_NAME \
+  --enable-pg-native-login \
+  --capacity CU_1 \
+  --profile YOUR_PROFILE
+
+# Generate a short-lived credential and connect via psql to seed the schema
+LAKEBASE_TOKEN=$(databricks database generate-database-credential \
+  --json '{"instance_names": ["YOUR_INSTANCE_NAME"]}' \
+  --profile YOUR_PROFILE --output json | python3 -c "import sys,json; print(json.load(sys.stdin)['token'])")
+
+PGPASSWORD="$LAKEBASE_TOKEN" psql \
+  -h YOUR_LAKEBASE_HOST -p 5432 \
+  -U YOUR_EMAIL -d databricks_postgres \
+  --set=sslmode=require \
+  -c "CREATE SCHEMA IF NOT EXISTS datamarket;"
+
+# Then run the seed script (see schema/seed.sql)
+PGPASSWORD="$LAKEBASE_TOKEN" psql \
+  -h YOUR_LAKEBASE_HOST -p 5432 \
+  -U YOUR_EMAIL -d databricks_postgres \
+  --set=sslmode=require \
+  -f schema/seed.sql
 ```
 
-### 4. Run locally
+> **Tip — Lakebase host:** Find it under `read_write_dns` in the output of `databricks database get-database-instance YOUR_INSTANCE_NAME`.
+
+### 4. Expose Lakebase to Unity Catalog (recommended)
+
+This step creates a federated catalog so you can query Lakebase tables directly from notebooks, SQL Editor, and AI/BI dashboards — and is the recommended way to demo the Lakehouse integration:
+
+```bash
+databricks database create-database-catalog \
+  datamarket_lakebase \
+  YOUR_INSTANCE_NAME \
+  databricks_postgres \
+  --profile YOUR_PROFILE
+```
+
+After this, `SELECT * FROM datamarket_lakebase.datamarket.access_requests` works in any notebook or SQL Editor in the workspace.
+
+### 5. Run locally
 
 ```bash
 npm run dev          # Vite dev server on :5173
