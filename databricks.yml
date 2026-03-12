@@ -25,3 +25,49 @@ targets:
           name: datamarket
           description: "DataMarket — Self-Service Data Product Marketplace on Databricks"
           source_code_path: ./src/app
+
+  fevm:
+    workspace:
+      host: https://adb-7405614431376790.10.azuredatabricks.net
+    resources:
+      jobs:
+        datamarket_job:
+          name: datamarket_job
+          tasks:
+            - task_key: generate_data
+              spark_python_task:
+                python_file: ./src/datamarket/main.py
+              environment_key: default
+          environments:
+            - environment_key: default
+              spec:
+                client: '1'
+                dependencies: []
+      apps:
+        datamarket_app:
+          name: datamarket
+          description: "DataMarket — Self-Service Data Product Marketplace on Databricks"
+          source_code_path: ./src/app
+
+  west:
+    workspace:
+      host: https://e2-demo-west.cloud.databricks.com
+    resources:
+      jobs:
+        datamarket_job:
+          name: datamarket_job
+          tasks:
+            - task_key: generate_data
+              spark_python_task:
+                python_file: ./src/datamarket/main.py
+              environment_key: default
+          environments:
+            - environment_key: default
+              spec:
+                client: '1'
+                dependencies: []
+      apps:
+        datamarket_app:
+          name: datamarket
+          description: "DataMarket — Self-Service Data Product Marketplace on Databricks"
+          source_code_path: ./src/app
