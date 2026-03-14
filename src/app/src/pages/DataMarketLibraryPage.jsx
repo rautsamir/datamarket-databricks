@@ -6,21 +6,21 @@ const DataMarket_BLUE = '#003865'
 
 const tagColors = {
   Budget: 'bg-blue-100 text-blue-800', Financial: 'bg-green-100 text-green-800',
-  eCAPS: 'bg-purple-100 text-purple-800', Payroll: 'bg-orange-100 text-orange-800',
+  'ERP System': 'bg-purple-100 text-purple-800', Payroll: 'bg-orange-100 text-orange-800',
   HR: 'bg-pink-100 text-pink-800', 'Property Tax': 'bg-amber-100 text-amber-800',
-  Revenue: 'bg-teal-100 text-teal-800', eHR: 'bg-indigo-100 text-indigo-800',
+  Revenue: 'bg-teal-100 text-teal-800', HRIS: 'bg-indigo-100 text-indigo-800',
   Demographics: 'bg-rose-100 text-rose-800', Audit: 'bg-red-100 text-red-800',
   'Health Services': 'bg-emerald-100 text-emerald-800',
 }
 
 const myItems = [
-  { id: 1, name: 'Budget Expenditure Report', tags: ['Budget', 'eCAPS'], type: 'Dashboard', source: 'eCAPS', refreshFrequency: 'Daily', owner: 'james.park', lastUpdated: '02/11/2025', status: 'Approved' },
-  { id: 2, name: 'Employee Metrics Dashboard', tags: ['eHR'], type: 'Dashboard', source: 'eHR', refreshFrequency: 'Weekly', owner: 'sarah.kim', lastUpdated: '02/11/2025', status: 'Approved' },
+  { id: 1, name: 'Budget Expenditure Report', tags: ['Budget', 'ERP'], type: 'Dashboard', source: 'ERP', refreshFrequency: 'Daily', owner: 'james.park', lastUpdated: '02/11/2025', status: 'Approved' },
+  { id: 2, name: 'Employee Metrics Dashboard', tags: ['HRIS'], type: 'Dashboard', source: 'HRIS', refreshFrequency: 'Weekly', owner: 'sarah.kim', lastUpdated: '02/11/2025', status: 'Approved' },
   { id: 3, name: 'Property Tax Report 2024', tags: ['Property Tax'], type: 'Report', source: 'Property Tax', refreshFrequency: 'Weekly', owner: 'robert.lee', lastUpdated: '02/11/2025', status: 'Approved' },
   { id: 4, name: 'Census 2023 Dataset', tags: ['Demographics'], type: 'Dataset', source: 'Demographics', refreshFrequency: 'Annual', owner: 'diana.torres', lastUpdated: '02/11/2025', status: 'Pending' },
-  { id: 5, name: 'Payroll Dashboard', tags: ['Payroll', 'eHR'], type: 'Dashboard', source: 'eHR', refreshFrequency: 'Daily', owner: 'james.park', lastUpdated: '02/11/2025', status: 'Approved' },
+  { id: 5, name: 'Payroll Dashboard', tags: ['Payroll', 'HRIS'], type: 'Dashboard', source: 'HRIS', refreshFrequency: 'Daily', owner: 'james.park', lastUpdated: '02/11/2025', status: 'Approved' },
   { id: 6, name: 'Essential Service Usage Report', tags: ['Health Services'], type: 'Report', source: 'Health Services', refreshFrequency: 'Monthly', owner: 'angela.wright', lastUpdated: '02/11/2025', status: 'Pending' },
-  { id: 7, name: 'DnA Datahub Budget Expense Dashboard', tags: ['Budget', 'Financial', 'eCAPS'], type: 'Dashboard', source: 'eCAPS', refreshFrequency: 'Daily', owner: 'john.doe', lastUpdated: '02/11/2025', status: 'Approved' },
+  { id: 7, name: 'Enterprise Budget Analytics Dashboard', tags: ['Budget', 'Financial', 'ERP'], type: 'Dashboard', source: 'ERP', refreshFrequency: 'Daily', owner: 'john.doe', lastUpdated: '02/11/2025', status: 'Approved' },
   { id: 8, name: 'Audit Finding Tracker', tags: ['Audit'], type: 'Report', source: 'Audit', refreshFrequency: 'Weekly', owner: 'david.nguyen', lastUpdated: '02/11/2025', status: 'Approved' },
 ]
 

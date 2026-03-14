@@ -11,8 +11,8 @@ const steps = [
   { id: 5, label: 'Review' },
 ]
 
-const sourceOptions = ['eCAPS', 'eHR', 'Property Tax', 'GIS', 'Demographics', 'Health Services', 'IT', 'Audit', 'Payroll', 'Other']
-const tagOptions = ['Budget', 'Financial', 'eCAPS', 'Payroll', 'HR', 'Property Tax', 'Revenue', 'eHR', 'Demographics', 'Audit', 'GIS', 'Health Services']
+const sourceOptions = ['ERP', 'HRIS', 'Property Tax', 'GIS', 'Demographics', 'Health Services', 'IT', 'Audit', 'Payroll', 'Other']
+const tagOptions = ['Budget', 'Financial', 'ERP', 'Payroll', 'HR', 'Property Tax', 'Revenue', 'HRIS', 'Demographics', 'Audit', 'GIS', 'Health Services']
 const classificationOptions = ['Public', 'Internal', 'Confidential', 'Restricted']
 const accessLevelOptions = ['Read Only', 'Read + Export', 'Read + Write', 'Admin']
 

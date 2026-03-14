@@ -12,7 +12,7 @@ const documents = [
   { id: 5, name: 'Data Classification Policy', type: 'Policy', domain: 'Governance', updated: '2024-10-15', author: 'IT Security', pages: 8, format: 'PDF' },
   { id: 6, name: 'compliance Certification Guide', type: 'Guide', domain: 'Procurement', updated: '2024-09-20', author: 'Diana Torres', pages: 10, format: 'PDF' },
   { id: 7, name: 'Internal Billing Procedures', type: 'Procedures', domain: 'Finance', updated: '2024-11-05', author: 'James Park', pages: 14, format: 'PDF' },
-  { id: 8, name: 'eCAPS Data Integration Guide', type: 'Technical', domain: 'Platform', updated: '2024-08-25', author: 'DNA Team', pages: 22, format: 'PDF' }
+  { id: 8, name: 'ERP System Data Integration Guide', type: 'Technical', domain: 'Platform', updated: '2024-08-25', author: 'DNA Team', pages: 22, format: 'PDF' }
 ]
 
 const typeColors = {

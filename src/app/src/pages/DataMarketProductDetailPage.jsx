@@ -6,9 +6,9 @@ const DataMarket_BLUE = '#003865'
 
 const tagColors = {
   Budget: 'bg-blue-100 text-blue-800', Financial: 'bg-green-100 text-green-800',
-  eCAPS: 'bg-purple-100 text-purple-800', Payroll: 'bg-orange-100 text-orange-800',
+  'ERP System': 'bg-purple-100 text-purple-800', Payroll: 'bg-orange-100 text-orange-800',
   HR: 'bg-pink-100 text-pink-800', 'Property Tax': 'bg-amber-100 text-amber-800',
-  Revenue: 'bg-teal-100 text-teal-800', eHR: 'bg-indigo-100 text-indigo-800',
+  Revenue: 'bg-teal-100 text-teal-800', HRIS: 'bg-indigo-100 text-indigo-800',
   Demographics: 'bg-rose-100 text-rose-800', Audit: 'bg-red-100 text-red-800',
   IT: 'bg-gray-100 text-gray-800', GIS: 'bg-cyan-100 text-cyan-800',
   'Health Services': 'bg-emerald-100 text-emerald-800',

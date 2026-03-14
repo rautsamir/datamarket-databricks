@@ -3,29 +3,29 @@ import { Search, SlidersHorizontal, BarChart3, FileText, Database, ChevronLeft, 
 
 const DataMarket_BLUE = '#003865'
 
-const categories = ['All', 'Property Tax', 'Audit', 'Accounting', 'eCAPS', 'Demographics', 'GIS', 'Health Services', 'Public Safety', 'eHR', 'Payroll', 'Budget']
+const categories = ['All', 'Property Tax', 'Audit', 'Accounting', 'ERP', 'Demographics', 'GIS', 'Health Services', 'Public Safety', 'HRIS', 'Payroll', 'Budget']
 const types = ['All', 'Dashboard', 'Dataset', 'Report']
 
 const allProducts = [
-  { id: 1, name: 'Budget Expenditure Report', category: 'Budget', type: 'Dashboard', source: 'eCAPS', description: 'Departmental budget allocations and year-to-date expenditures with variance analysis across all County divisions.', refreshFrequency: 'Daily', owner: 'james.park', lastUpdated: '02/11/2025', tags: ['Budget', 'eCAPS'] },
-  { id: 2, name: 'Employee Metrics Dashboard', category: 'eHR', type: 'Dashboard', source: 'eHR', description: 'Headcount, turnover rates, overtime trends, and compensation metrics segmented by department and bargaining unit.', refreshFrequency: 'Weekly', owner: 'sarah.kim', lastUpdated: '02/11/2025', tags: ['eHR', 'HR'] },
+  { id: 1, name: 'Budget Expenditure Report', category: 'Budget', type: 'Dashboard', source: 'ERP', description: 'Departmental budget allocations and year-to-date expenditures with variance analysis across all departments.', refreshFrequency: 'Daily', owner: 'james.park', lastUpdated: '02/11/2025', tags: ['Budget', 'ERP'] },
+  { id: 2, name: 'Employee Metrics Dashboard', category: 'HRIS', type: 'Dashboard', source: 'HRIS', description: 'Headcount, turnover rates, overtime trends, and compensation metrics segmented by department and bargaining unit.', refreshFrequency: 'Weekly', owner: 'sarah.kim', lastUpdated: '02/11/2025', tags: ['HRIS', 'HR'] },
   { id: 3, name: 'Property Tax Report 2024', category: 'Property Tax', type: 'Report', source: 'Property Tax', description: 'Annual property tax assessments, collection rates, delinquency analysis, and revenue projections for FY2024.', refreshFrequency: 'Weekly', owner: 'robert.lee', lastUpdated: '02/11/2025', tags: ['Property Tax', 'Revenue'] },
   { id: 4, name: 'Census 2023 Dataset', category: 'Demographics', type: 'Dataset', source: 'Demographics', description: 'Your Organization population demographics by census tract including age, income, household size, and language.', refreshFrequency: 'Annual', owner: 'diana.torres', lastUpdated: '02/11/2025', tags: ['Demographics'] },
   { id: 5, name: 'Service Ticket Tracking Report', category: 'Accounting', type: 'Report', source: 'IT', description: 'Internal IT service requests, resolution times, SLA compliance, and department utilization metrics.', refreshFrequency: 'Daily', owner: 'michael.chang', lastUpdated: '02/11/2025', tags: ['IT'] },
   { id: 6, name: 'Essential Service Usage Report', category: 'Health Services', type: 'Report', source: 'Health Services', description: 'Utilization rates for essential County services including health clinics, mental health centers, and social services.', refreshFrequency: 'Monthly', owner: 'angela.wright', lastUpdated: '02/11/2025', tags: ['Health Services'] },
-  { id: 7, name: 'Payroll Dashboard', category: 'Payroll', type: 'Dashboard', source: 'eHR', description: 'County-wide payroll expenditures, overtime costs, benefits allocation, and headcount by department.', refreshFrequency: 'Daily', owner: 'james.park', lastUpdated: '02/11/2025', tags: ['Payroll', 'eHR'] },
+  { id: 7, name: 'Payroll Dashboard', category: 'Payroll', type: 'Dashboard', source: 'HRIS', description: 'Organization-wide payroll expenditures, overtime costs, benefits allocation, and headcount by department.', refreshFrequency: 'Daily', owner: 'james.park', lastUpdated: '02/11/2025', tags: ['Payroll', 'HRIS'] },
   { id: 8, name: 'Property Tax Dashboard', category: 'Property Tax', type: 'Dashboard', source: 'Property Tax', description: 'Real-time property tax collection status, delinquency rates, and revenue tracking against annual targets.', refreshFrequency: 'Daily', owner: 'robert.lee', lastUpdated: '02/11/2025', tags: ['Property Tax'] },
   { id: 9, name: 'Population by Age 2020 Dataset', category: 'Demographics', type: 'Dataset', source: 'Demographics', description: 'Age-stratified population data from the 2020 Census, segmented by supervisorial district and community.', refreshFrequency: 'Annual', owner: 'diana.torres', lastUpdated: '02/11/2025', tags: ['Demographics'] },
-  { id: 10, name: 'DnA Datahub Budget Expense Dashboard', category: 'Budget', type: 'Dashboard', source: 'eCAPS', description: 'Comprehensive budget allocation, expenditure tracking, and variance analysis for FY2024-25.', refreshFrequency: 'Daily', owner: 'john.doe', lastUpdated: '02/11/2025', tags: ['Budget', 'Financial', 'eCAPS'] },
+  { id: 10, name: 'Enterprise Budget Analytics Dashboard', category: 'Budget', type: 'Dashboard', source: 'ERP', description: 'Comprehensive budget allocation, expenditure tracking, and variance analysis for FY2024-25.', refreshFrequency: 'Daily', owner: 'john.doe', lastUpdated: '02/11/2025', tags: ['Budget', 'Financial', 'ERP'] },
   { id: 11, name: 'Audit Finding Tracker', category: 'Audit', type: 'Report', source: 'Audit', description: 'Open and resolved audit findings by department, risk level, and remediation timeline.', refreshFrequency: 'Weekly', owner: 'david.nguyen', lastUpdated: '02/11/2025', tags: ['Audit'] },
   { id: 12, name: 'GIS Infrastructure Map', category: 'GIS', type: 'Dataset', source: 'GIS', description: 'Geospatial data for County infrastructure including roads, utilities, facilities, and service boundaries.', refreshFrequency: 'Monthly', owner: 'john.doe', lastUpdated: '02/11/2025', tags: ['GIS'] },
 ]
 
 const tagColors = {
   Budget: 'bg-blue-100 text-blue-800', Financial: 'bg-green-100 text-green-800',
-  eCAPS: 'bg-purple-100 text-purple-800', Payroll: 'bg-orange-100 text-orange-800',
+  'ERP System': 'bg-purple-100 text-purple-800', Payroll: 'bg-orange-100 text-orange-800',
   HR: 'bg-pink-100 text-pink-800', 'Property Tax': 'bg-amber-100 text-amber-800',
-  Revenue: 'bg-teal-100 text-teal-800', eHR: 'bg-indigo-100 text-indigo-800',
+  Revenue: 'bg-teal-100 text-teal-800', HRIS: 'bg-indigo-100 text-indigo-800',
   Demographics: 'bg-rose-100 text-rose-800', Audit: 'bg-red-100 text-red-800',
   IT: 'bg-gray-100 text-gray-800', GIS: 'bg-cyan-100 text-cyan-800',
   'Health Services': 'bg-emerald-100 text-emerald-800',
