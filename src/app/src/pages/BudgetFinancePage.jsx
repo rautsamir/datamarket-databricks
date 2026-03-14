@@ -77,7 +77,7 @@ export function BudgetFinancePage() {
           xKey="category"
           yKeys={['amount']}
           title="Budget by Category"
-          subtitle="County-wide budget allocation"
+          subtitle="Organization-wide budget allocation"
           height={320}
         />
       </div>

@@ -6,7 +6,7 @@ const DataMarket_BLUE = '#003865'
 
 const tagColors = {
   Budget: 'bg-blue-100 text-blue-800', Financial: 'bg-green-100 text-green-800',
-  ERP: 'bg-purple-100 text-purple-800', Payroll: 'bg-orange-100 text-orange-800',
+  'ERP System': 'bg-purple-100 text-purple-800', Payroll: 'bg-orange-100 text-orange-800',
   HR: 'bg-pink-100 text-pink-800', 'Property Tax': 'bg-amber-100 text-amber-800',
   Revenue: 'bg-teal-100 text-teal-800', HRIS: 'bg-indigo-100 text-indigo-800',
   Demographics: 'bg-rose-100 text-rose-800', Audit: 'bg-red-100 text-red-800',
@@ -20,7 +20,7 @@ const myItems = [
   { id: 4, name: 'Census 2023 Dataset', tags: ['Demographics'], type: 'Dataset', source: 'Demographics', refreshFrequency: 'Annual', owner: 'diana.torres', lastUpdated: '02/11/2025', status: 'Pending' },
   { id: 5, name: 'Payroll Dashboard', tags: ['Payroll', 'HRIS'], type: 'Dashboard', source: 'HRIS', refreshFrequency: 'Daily', owner: 'james.park', lastUpdated: '02/11/2025', status: 'Approved' },
   { id: 6, name: 'Essential Service Usage Report', tags: ['Health Services'], type: 'Report', source: 'Health Services', refreshFrequency: 'Monthly', owner: 'angela.wright', lastUpdated: '02/11/2025', status: 'Pending' },
-  { id: 7, name: 'Enterprise Budget Expense Dashboard', tags: ['Budget', 'Financial', 'ERP'], type: 'Dashboard', source: 'ERP', refreshFrequency: 'Daily', owner: 'john.doe', lastUpdated: '02/11/2025', status: 'Approved' },
+  { id: 7, name: 'Enterprise Budget Analytics Dashboard', tags: ['Budget', 'Financial', 'ERP'], type: 'Dashboard', source: 'ERP', refreshFrequency: 'Daily', owner: 'john.doe', lastUpdated: '02/11/2025', status: 'Approved' },
   { id: 8, name: 'Audit Finding Tracker', tags: ['Audit'], type: 'Report', source: 'Audit', refreshFrequency: 'Weekly', owner: 'david.nguyen', lastUpdated: '02/11/2025', status: 'Approved' },
 ]
 

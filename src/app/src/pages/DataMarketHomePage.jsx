@@ -10,14 +10,14 @@ const featuredProducts = [
     name: 'Payroll Dashboard',
     tags: ['Payroll', 'HR'],
     type: 'Dashboard',
-    description: 'County-wide payroll expenditure, headcount trends, and compensation analytics across all departments and bargaining units.',
+    description: 'Organization-wide payroll expenditure, headcount trends, and compensation analytics across all departments and bargaining units.',
     source: 'HRIS',
     refreshFrequency: 'Daily',
     owner: 'James Park'
   },
   {
     id: 2,
-    name: 'Enterprise Budget Expense Dashboard',
+    name: 'Enterprise Budget Analytics Dashboard',
     tags: ['Budget', 'Financial', 'ERP'],
     type: 'Dashboard',
     description: 'Comprehensive budget allocation, expenditure tracking, and variance analysis for FY2024-25 across all departments.',
@@ -46,7 +46,7 @@ const recentlyAccessed = [
 const tagColors = {
   Budget: 'bg-blue-100 text-blue-800',
   Financial: 'bg-green-100 text-green-800',
-  ERP: 'bg-purple-100 text-purple-800',
+  'ERP System': 'bg-purple-100 text-purple-800',
   Payroll: 'bg-orange-100 text-orange-800',
   HR: 'bg-pink-100 text-pink-800',
   'Property Tax': 'bg-amber-100 text-amber-800',
