@@ -1,5 +1,5 @@
-import React, { useState } from 'react'
-import { Bot, Send, Sparkles, Database, BarChart3, Table2, Lightbulb } from 'lucide-react'
+import React, { useState, useRef, useEffect } from 'react'
+import { Bot, Send, Sparkles, Database, BarChart3, Table2, Lightbulb, RotateCcw } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -138,20 +138,37 @@ export function AIExplorerPage({ initialQuestion = '' }) {
   })
   const [input, setInput] = useState('')
   const [isThinking, setIsThinking] = useState(false)
+  const bottomRef = useRef(null)
+  const inputRef = useRef(null)
 
-  const handleSend = () => {
-    if (!input.trim()) return
-    const userMsg = { role: 'user', content: input }
-    const question = input
-    setMessages(prev => [...prev, userMsg])
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages, isThinking])
+
+  const sendQuestion = (question) => {
+    if (!question.trim() || isThinking) return
+    setMessages(prev => [...prev, { role: 'user', content: question }])
     setInput('')
     setIsThinking(true)
-
     setTimeout(() => {
       const response = getAIResponse(question)
       setMessages(prev => [...prev, { role: 'assistant', ...response }])
       setIsThinking(false)
-    }, 1500)
+    }, 1200)
+  }
+
+  const handleSend = () => sendQuestion(input)
+
+  const handleSampleClick = (text) => {
+    setInput(text)
+    sendQuestion(text)
+  }
+
+  const handleReset = () => {
+    setMessages(demoConversation)
+    setInput('')
+    setIsThinking(false)
+    setTimeout(() => inputRef.current?.focus(), 100)
   }
 
   return (
@@ -171,7 +188,7 @@ export function AIExplorerPage({ initialQuestion = '' }) {
       <div className="grid grid-cols-1 xl:grid-cols-4 gap-6">
         <div className="xl:col-span-3 space-y-4">
           <Card className="min-h-[500px] flex flex-col">
-            <CardContent className="flex-1 p-4 space-y-4 overflow-y-auto">
+            <CardContent className="flex-1 p-4 space-y-4 overflow-y-auto max-h-[520px]">
               {messages.map((msg, i) => (
                 <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                   <div className={`max-w-[85%] rounded-xl px-4 py-3 ${
@@ -233,11 +250,13 @@ export function AIExplorerPage({ initialQuestion = '' }) {
                   </div>
                 </div>
               )}
+              <div ref={bottomRef} />
             </CardContent>
 
             <div className="border-t p-4">
               <div className="flex gap-2">
                 <input
+                  ref={inputRef}
                   type="text"
                   placeholder="Ask a question about your data..."
                   className="flex-1 px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -245,8 +264,11 @@ export function AIExplorerPage({ initialQuestion = '' }) {
                   onChange={e => setInput(e.target.value)}
                   onKeyDown={e => e.key === 'Enter' && handleSend()}
                 />
-                <Button onClick={handleSend} style={{ backgroundColor: '#003366' }}>
+                <Button onClick={handleSend} disabled={isThinking} style={{ backgroundColor: '#003366' }}>
                   <Send className="h-4 w-4" />
+                </Button>
+                <Button variant="outline" onClick={handleReset} title="Reset conversation">
+                  <RotateCcw className="h-4 w-4 text-gray-500" />
                 </Button>
               </div>
             </div>
@@ -265,7 +287,7 @@ export function AIExplorerPage({ initialQuestion = '' }) {
               {sampleQuestions.map((q, i) => (
                 <button
                   key={i}
-                  onClick={() => setInput(q.text)}
+                  onClick={() => handleSampleClick(q.text)}
                   className="w-full text-left p-2.5 rounded-lg border border-gray-100 hover:bg-gray-50 hover:border-gray-200 transition-colors group"
                 >
                   <div className="flex items-start gap-2">
