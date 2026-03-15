@@ -31,7 +31,7 @@ const statusColor = (status) => {
   return 'text-amber-700 bg-amber-50 border-amber-200'
 }
 
-function buildResponse(input, persona, myRequests, hasAccess, apiAvailable, onNudge) {
+function buildResponse(input, persona, myRequests, pendingRequests, hasAccess, apiAvailable, onNudge) {
   const q = input.toLowerCase()
 
   // ── Status of my requests ─────────────────────────────────────────────────
@@ -145,18 +145,15 @@ function buildResponse(input, persona, myRequests, hasAccess, apiAvailable, onNu
         chips: ['Check my request status']
       }
     }
-    const pending = myRequests.length > 0
-      ? myRequests.filter(r => r.status === 'Pending')
-      : []
-    if (pending.length === 0) {
+    if (pendingRequests.length === 0) {
       return {
         text: `No pending approvals right now — you're all caught up! All submitted requests have been resolved.`,
         actions: [{ label: 'Open Admin Panel', page: 'admin' }]
       }
     }
     return {
-      text: `You have ${pending.length} request${pending.length > 1 ? 's' : ''} waiting for your review:`,
-      requests: pending.slice(0, 4),
+      text: `You have ${pendingRequests.length} request${pendingRequests.length > 1 ? 's' : ''} waiting for your review:`,
+      requests: pendingRequests.slice(0, 4),
       followUp: `Head to the Admin panel to approve or deny with a single click.`,
       actions: [{ label: 'Open Admin Panel', page: 'admin' }]
     }
@@ -406,7 +403,7 @@ export function DataMarketAssistant({ onNavigate }) {
     setMessages(prev => [...prev, { role: 'user', content: userText }])
 
     setTimeout(() => {
-      const response = buildResponse(userText, persona, myRequests, hasAccess, apiAvailable, handleNudge)
+      const response = buildResponse(userText, persona, myRequests, pendingRequests, hasAccess, apiAvailable, handleNudge)
       addAssistantMessage(response)
     }, 400)
   }
