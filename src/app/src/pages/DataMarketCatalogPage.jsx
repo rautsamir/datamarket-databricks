@@ -42,7 +42,14 @@ export function DataMarketCatalogPage({ onOpenProduct, initialSearch = '' }) {
   const [page, setPage] = useState(1)
 
   const filtered = allProducts.filter(p => {
-    const matchesSearch = !search || p.name.toLowerCase().includes(search.toLowerCase()) || p.tags.some(t => t.toLowerCase().includes(search.toLowerCase())) || p.description.toLowerCase().includes(search.toLowerCase())
+    const words = search.toLowerCase().split(/\s+/).filter(Boolean)
+    const matchesSearch = !search || words.every(w =>
+      p.name.toLowerCase().includes(w) ||
+      p.description.toLowerCase().includes(w) ||
+      p.tags.some(t => t.toLowerCase().includes(w)) ||
+      p.category.toLowerCase().includes(w) ||
+      p.source.toLowerCase().includes(w)
+    )
     const matchesCat = selectedCategory === 'All' || p.category === selectedCategory
     const matchesType = selectedType === 'All' || p.type === selectedType
     return matchesSearch && matchesCat && matchesType

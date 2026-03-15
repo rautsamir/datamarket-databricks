@@ -7,6 +7,7 @@ import { DataMarketProductDetailPage } from './pages/DataMarketProductDetailPage
 import { DataMarketLibraryPage } from './pages/DataMarketLibraryPage'
 import { DataMarketRegisterPage } from './pages/DataMarketRegisterPage'
 import { DataMarketAdminPage } from './pages/DataMarketAdminPage'
+import { AIExplorerPage } from './pages/AIExplorerPage'
 
 function AppInner() {
   const [currentPage, setCurrentPage] = useState('home')
@@ -31,14 +32,15 @@ function AppInner() {
       return <DataMarketProductDetailPage product={selectedProduct} onBack={() => navigate('catalog')} />
     }
     switch (currentPage) {
-      case 'home':       return <DataMarketHomePage onNavigate={navigate} onOpenProduct={openProduct} />
+      case 'home':         return <DataMarketHomePage onNavigate={navigate} onOpenProduct={openProduct} />
       case 'data':
-      case 'catalog':    return <DataMarketCatalogPage onOpenProduct={openProduct} initialSearch={pageProps.search || ''} />
+      case 'catalog':      return <DataMarketCatalogPage onOpenProduct={openProduct} initialSearch={pageProps.search || ''} />
+      case 'ai-explorer':  return <AIExplorerPage initialQuestion={pageProps.question || ''} />
       case 'library':
-      case 'my-library': return <DataMarketLibraryPage onNavigate={navigate} onOpenProduct={openProduct} />
-      case 'register':   return <DataMarketRegisterPage onNavigate={navigate} />
-      case 'admin':      return <DataMarketAdminPage />
-      default:           return <DataMarketHomePage onNavigate={navigate} onOpenProduct={openProduct} />
+      case 'my-library':   return <DataMarketLibraryPage onNavigate={navigate} onOpenProduct={openProduct} />
+      case 'register':     return <DataMarketRegisterPage onNavigate={navigate} />
+      case 'admin':        return <DataMarketAdminPage />
+      default:             return <DataMarketHomePage onNavigate={navigate} onOpenProduct={openProduct} />
     }
   }
 
