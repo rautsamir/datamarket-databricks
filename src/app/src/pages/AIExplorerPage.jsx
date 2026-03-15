@@ -11,7 +11,7 @@ const sampleQuestions = [
   { icon: Table2, text: 'Which vendors have the highest risk scores?' },
   { icon: BarChart3, text: 'What is the total internal billing by service type?' },
   { icon: Database, text: 'Show budget variance by department' },
-  { icon: Database, text: 'Show me headcount and compensation by department' }
+  { icon: Database, text: 'Headcount by department' }
 ]
 
 const demoConversation = [
