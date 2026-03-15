@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react'
-import { MessageCircle, X, Send, Sparkles, CheckCircle, Clock, AlertCircle, Bell, ChevronRight, Database } from 'lucide-react'
+import { MessageCircle, X, Send, Sparkles, CheckCircle, Clock, AlertCircle, Bell, ChevronRight, Database, RotateCcw } from 'lucide-react'
 import { usePersona } from '../context/PersonaContext'
 
 const DataMarket_BLUE = '#003865'
@@ -137,9 +137,40 @@ function buildResponse(input, persona, myRequests, hasAccess, apiAvailable, onNu
     }
   }
 
+  // ── Admin: approvals queue ────────────────────────────────────────────────
+  if (/approval|waiting on me|pending approval|queue|review|need.*approve/.test(q)) {
+    if (persona.id !== 'admin') {
+      return {
+        text: `Only Data Stewards can view the approval queue. You can check the status of your own requests instead.`,
+        chips: ['Check my request status']
+      }
+    }
+    const pending = myRequests.length > 0
+      ? myRequests.filter(r => r.status === 'Pending')
+      : []
+    if (pending.length === 0) {
+      return {
+        text: `No pending approvals right now — you're all caught up! All submitted requests have been resolved.`,
+        actions: [{ label: 'Open Admin Panel', page: 'admin' }]
+      }
+    }
+    return {
+      text: `You have ${pending.length} request${pending.length > 1 ? 's' : ''} waiting for your review:`,
+      requests: pending.slice(0, 4),
+      followUp: `Head to the Admin panel to approve or deny with a single click.`,
+      actions: [{ label: 'Open Admin Panel', page: 'admin' }]
+    }
+  }
+
   // ── Greetings ─────────────────────────────────────────────────────────────
   if (/^(hi|hello|hey|help|what can you|what do you)/.test(q)) {
     const pending = myRequests.filter(r => r.status === 'Pending')
+    if (persona.id === 'admin') {
+      return {
+        text: `Hi ${persona.name}! As Data Steward I can help you:`,
+        chips: ['Approvals waiting on me', 'Show all pending requests', 'Who has access to what?', 'How does approval work?']
+      }
+    }
     return {
       text: `Hi ${persona.name}! I'm your DataMarket assistant. I can help you with:`,
       chips: ['Check my request status', 'What data can I access?', 'Find budget data', 'How do I request access?', pending.length > 0 ? 'Nudge my approver' : 'Who owns payroll data?']
@@ -282,36 +313,63 @@ export function DataMarketAssistant({ onNavigate }) {
   const [unread, setUnread] = useState(0)
   const bottomRef = useRef(null)
   const inputRef = useRef(null)
-  const { persona, myRequests, hasAccess, apiAvailable } = usePersona()
+  const { persona, myRequests, pendingRequests, hasAccess, apiAvailable } = usePersona()
 
-  // Greeting on first open
-  useEffect(() => {
-    if (open && messages.length === 0) {
-      const pending = myRequests.filter(r => r.status === 'Pending')
-      const greeting = pending.length > 0
+  const buildGreeting = (p, myReqs, pendingReqs) => {
+    if (p.id === 'admin') {
+      return pendingReqs.length > 0
         ? {
             role: 'assistant',
-            content: `Hi ${persona.name}! You have ${pending.length} pending access request${pending.length > 1 ? 's' : ''}. Want me to check the status or send a reminder to the approver?`,
-            chips: ['Check my request status', 'Nudge my approver', 'What data can I access?']
+            content: `Hi ${p.name}! There are ${pendingReqs.length} access request${pendingReqs.length > 1 ? 's' : ''} waiting for your review.`,
+            chips: ['Approvals waiting on me', 'Who has access to what?', 'Show all pending requests']
           }
         : {
             role: 'assistant',
-            content: `Hi ${persona.name}! I'm your DataMarket assistant. Ask me about your data access, request status, or help finding the right dataset.`,
-            chips: ['What data can I access?', 'Find budget data', 'How do I request access?', 'Who owns payroll data?']
+            content: `Hi ${p.name}! No pending approvals right now. Everything's up to date.`,
+            chips: ['Who has access to what?', 'Show all pending requests', 'How does approval work?']
           }
-      setMessages([greeting])
-      setUnread(0)
     }
+    const pending = myReqs.filter(r => r.status === 'Pending')
+    return pending.length > 0
+      ? {
+          role: 'assistant',
+          content: `Hi ${p.name}! You have ${pending.length} pending access request${pending.length > 1 ? 's' : ''}. Want me to check the status or send a reminder?`,
+          chips: ['Check my request status', 'Nudge my approver', 'What data can I access?']
+        }
+      : {
+          role: 'assistant',
+          content: `Hi ${p.name}! I can help with data access, request status, or finding the right dataset.`,
+          chips: ['Check my request status', 'What data can I access?', 'Find budget data', 'How do I request access?']
+        }
+  }
+
+  const resetChat = () => {
+    setNudgedRefs(new Set())
+    setMessages([buildGreeting(persona, myRequests, pendingRequests)])
+    setTimeout(() => inputRef.current?.focus(), 100)
+  }
+
+  // Fire greeting whenever open becomes true OR persona changes while open
+  useEffect(() => {
     if (open) {
       setUnread(0)
+      if (messages.length === 0) {
+        setMessages([buildGreeting(persona, myRequests, pendingRequests)])
+      }
       setTimeout(() => inputRef.current?.focus(), 100)
     }
   }, [open])
 
-  // Persona change — reset chat
+  // Persona switch — always reset and re-greet
   useEffect(() => {
-    setMessages([])
-    if (!open) setUnread(1)
+    setNudgedRefs(new Set())
+    const greeting = buildGreeting(persona, myRequests, pendingRequests)
+    if (open) {
+      setMessages([greeting])
+    } else {
+      setMessages([])
+      setUnread(1)
+    }
   }, [persona.id])
 
   useEffect(() => {
@@ -387,9 +445,18 @@ export function DataMarketAssistant({ onNavigate }) {
                 <p className="text-white/70 text-[10px]">Powered by Databricks</p>
               </div>
             </div>
-            <button onClick={() => setOpen(false)} className="text-white/70 hover:text-white transition-colors p-1 rounded">
-              <X className="h-4 w-4" />
-            </button>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={resetChat}
+                className="text-white/60 hover:text-white transition-colors p-1.5 rounded"
+                title="Reset conversation"
+              >
+                <RotateCcw className="h-3.5 w-3.5" />
+              </button>
+              <button onClick={() => setOpen(false)} className="text-white/70 hover:text-white transition-colors p-1 rounded">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
           </div>
 
           {/* Messages */}
