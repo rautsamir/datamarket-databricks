@@ -123,7 +123,7 @@ export function DataMarketHomePage({ onNavigate, onOpenProduct }) {
           </form>
 
           <div className="flex flex-wrap gap-2 mt-3 justify-center">
-            {['Budget by department', 'Vendor fraud flags', 'Show me headcount and compensation by department', 'Property tax revenue'].map(s => (
+            {['Budget by department', 'Vendor fraud flags', 'Headcount by department', 'Property tax revenue'].map(s => (
               <button
                 key={s}
                 onClick={() => { setSearchQuery(s); setAiMode(true) }}
