@@ -38,7 +38,7 @@ LIMIT 5`,
 
 const cannedResponses = [
   {
-    keywords: ['budget', 'department', 'spend', 'allocation', 'expenditure', 'variance'],
+    keywords: ['budget', 'spend', 'allocation', 'expenditure', 'variance', 'budget by', 'spending'],
     requiredProduct: null, // Richard already has DP-001
     content: 'Here\'s the budget vs. actual expenditure breakdown by department for FY2024-25:',
     sql: `SELECT department_name,
