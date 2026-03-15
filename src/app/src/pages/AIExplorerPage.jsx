@@ -143,25 +143,12 @@ LIMIT 20`,
 
 export function AIExplorerPage({ initialQuestion = '', onNavigate }) {
   const { hasAccess } = usePersona()
-  const [messages, setMessages] = useState(() => {
-    if (initialQuestion) {
-      const response = getAIResponse(initialQuestion, hasAccess)
-      return [
-        ...demoConversation,
-        { role: 'user', content: initialQuestion },
-        { role: 'assistant', ...response }
-      ]
-    }
-    return demoConversation
-  })
+  const [messages, setMessages] = useState(demoConversation)
   const [input, setInput] = useState('')
   const [isThinking, setIsThinking] = useState(false)
   const bottomRef = useRef(null)
   const inputRef = useRef(null)
-
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages, isThinking])
+  const initialSent = useRef(false)
 
   const sendQuestion = (question) => {
     if (!question.trim() || isThinking) return
@@ -174,6 +161,18 @@ export function AIExplorerPage({ initialQuestion = '', onNavigate }) {
       setIsThinking(false)
     }, 1200)
   }
+
+  // Fire initialQuestion after mount so hasAccess context is live
+  useEffect(() => {
+    if (initialQuestion && !initialSent.current) {
+      initialSent.current = true
+      setTimeout(() => sendQuestion(initialQuestion), 100)
+    }
+  }, [initialQuestion])
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages, isThinking])
 
   const handleSend = () => sendQuestion(input)
   const handleSampleClick = (text) => { setInput(text); sendQuestion(text) }
