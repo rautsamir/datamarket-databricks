@@ -124,8 +124,18 @@ LIMIT 20`,
   }
 }
 
-export function AIExplorerPage() {
-  const [messages, setMessages] = useState(demoConversation)
+export function AIExplorerPage({ initialQuestion = '' }) {
+  const [messages, setMessages] = useState(() => {
+    if (initialQuestion) {
+      const response = getAIResponse(initialQuestion)
+      return [
+        ...demoConversation,
+        { role: 'user', content: initialQuestion },
+        { role: 'assistant', ...response }
+      ]
+    }
+    return demoConversation
+  })
   const [input, setInput] = useState('')
   const [isThinking, setIsThinking] = useState(false)
 
