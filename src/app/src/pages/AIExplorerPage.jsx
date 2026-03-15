@@ -21,19 +21,108 @@ const demoConversation = [
   {
     role: 'assistant',
     content: 'Here are the top 5 departments by budget allocation for FY2024-25:',
-    sql: `SELECT d.department_name, d.budget_allocation
-FROM gold_departments d
-ORDER BY d.budget_allocation DESC
+    sql: `SELECT department_name, budget_allocation
+FROM gold.departments
+ORDER BY budget_allocation DESC
 LIMIT 5`,
     results: [
       { department: 'Health Services', budget: '$5.20B' },
-      { department: 'Sheriff', budget: '$3.80B' },
-      { department: 'Public Social Services', budget: '$2.90B' },
+      { department: 'Public Safety', budget: '$3.80B' },
+      { department: 'Social Services', budget: '$2.90B' },
       { department: 'Mental Health', budget: '$2.20B' },
-      { department: 'Children and Family Services', budget: '$1.90B' }
+      { department: 'Children & Family Services', budget: '$1.90B' }
     ]
   }
 ]
+
+const cannedResponses = [
+  {
+    keywords: ['budget', 'department', 'spend', 'allocation', 'expenditure', 'variance'],
+    content: 'Here\'s the budget vs. actual expenditure breakdown by department for FY2024-25:',
+    sql: `SELECT department_name,
+       budget_allocated,
+       actual_spend,
+       ROUND((actual_spend / budget_allocated) * 100, 1) AS pct_used,
+       budget_allocated - actual_spend AS remaining
+FROM gold.budget_summary
+ORDER BY pct_used DESC`,
+    results: [
+      { department: 'IT Services', allocated: '$420M', actual: '$398M', pct_used: '94.8%', remaining: '$22M' },
+      { department: 'Public Works', allocated: '$680M', actual: '$641M', pct_used: '94.3%', remaining: '$39M' },
+      { department: 'Health Services', allocated: '$5.20B', actual: '$4.87B', pct_used: '93.7%', remaining: '$330M' },
+      { department: 'Finance & Accounting', allocated: '$210M', actual: '$178M', pct_used: '84.8%', remaining: '$32M' },
+      { department: 'Social Services', allocated: '$2.90B', actual: '$2.41B', pct_used: '83.1%', remaining: '$490M' }
+    ]
+  },
+  {
+    keywords: ['vendor', 'payment', 'fraud', 'flag', 'risk', 'anomaly'],
+    content: 'Here are the flagged vendor payments with anomaly indicators:',
+    sql: `SELECT vendor_name, payment_amount, flag_reason, risk_score
+FROM gold.vendor_payments
+WHERE fraud_flag = true
+ORDER BY risk_score DESC
+LIMIT 5`,
+    results: [
+      { vendor: 'Apex Consulting LLC', amount: '$284,500', flag: 'PO Box address mismatch', risk: '92' },
+      { vendor: 'TechBridge Inc.', amount: '$156,000', flag: 'Duplicate invoice number', risk: '87' },
+      { vendor: 'Summit Advisory', amount: '$98,750', flag: 'Weekend payment processed', risk: '74' },
+      { vendor: 'NovaCorp Services', amount: '$67,200', flag: 'Vendor not in approved list', risk: '68' },
+      { vendor: 'Clearview Partners', amount: '$43,800', flag: 'Split payment pattern', risk: '61' }
+    ]
+  },
+  {
+    keywords: ['payroll', 'salary', 'headcount', 'employee', 'compensation', 'staff'],
+    content: 'Here\'s the payroll summary by department including headcount and average compensation:',
+    sql: `SELECT department_name,
+       COUNT(employee_id) AS headcount,
+       SUM(annual_salary) AS total_payroll,
+       AVG(annual_salary) AS avg_salary
+FROM gold.employee_compensation
+GROUP BY department_name
+ORDER BY total_payroll DESC`,
+    results: [
+      { department: 'Public Safety', headcount: '12,400', total_payroll: '$1.24B', avg_salary: '$100K' },
+      { department: 'Health Services', headcount: '18,200', total_payroll: '$1.18B', avg_salary: '$65K' },
+      { department: 'IT Services', headcount: '2,100', total_payroll: '$294M', avg_salary: '$140K' },
+      { department: 'Finance & Accounting', headcount: '1,800', total_payroll: '$198M', avg_salary: '$110K' },
+      { department: 'Social Services', headcount: '8,600', total_payroll: '$516M', avg_salary: '$60K' }
+    ]
+  },
+  {
+    keywords: ['property', 'tax', 'revenue', 'assessment', 'collection'],
+    content: 'Here\'s the property tax collection summary by district for FY2024:',
+    sql: `SELECT district_name,
+       assessed_value,
+       tax_levied,
+       tax_collected,
+       ROUND((tax_collected / tax_levied) * 100, 1) AS collection_rate
+FROM gold.property_tax_summary
+ORDER BY tax_collected DESC`,
+    results: [
+      { district: 'Central District', assessed: '$42.1B', levied: '$421M', collected: '$408M', rate: '96.9%' },
+      { district: 'West Region', assessed: '$38.7B', levied: '$387M', collected: '$371M', rate: '95.9%' },
+      { district: 'North County', assessed: '$29.4B', levied: '$294M', collected: '$279M', rate: '94.9%' },
+      { district: 'South Region', assessed: '$24.8B', levied: '$248M', collected: '$231M', rate: '93.1%' },
+      { district: 'East District', assessed: '$18.2B', levied: '$182M', collected: '$167M', rate: '91.8%' }
+    ]
+  }
+]
+
+function getAIResponse(question) {
+  const q = question.toLowerCase()
+  for (const r of cannedResponses) {
+    if (r.keywords.some(k => q.includes(k))) return r
+  }
+  return {
+    content: 'I found several data products related to your query. In a live deployment, Databricks Genie executes this as SQL against your Gold layer tables in real time.',
+    sql: `-- Genie translates your question into SQL automatically
+-- Example: "${question}"
+SELECT * FROM gold.relevant_table
+WHERE conditions_match_your_query
+LIMIT 20`,
+    results: null
+  }
+}
 
 export function AIExplorerPage() {
   const [messages, setMessages] = useState(demoConversation)
@@ -43,17 +132,14 @@ export function AIExplorerPage() {
   const handleSend = () => {
     if (!input.trim()) return
     const userMsg = { role: 'user', content: input }
+    const question = input
     setMessages(prev => [...prev, userMsg])
     setInput('')
     setIsThinking(true)
 
     setTimeout(() => {
-      setMessages(prev => [...prev, {
-        role: 'assistant',
-        content: 'This is a demo of the Genie-powered AI Explorer. In production, this connects to a real Databricks Genie Space and executes SQL against your Gold layer tables. Configure your Genie Space ID in the environment variables.',
-        sql: '-- Query would be generated by Databricks Genie based on your natural language input',
-        results: null
-      }])
+      const response = getAIResponse(question)
+      setMessages(prev => [...prev, { role: 'assistant', ...response }])
       setIsThinking(false)
     }, 1500)
   }
