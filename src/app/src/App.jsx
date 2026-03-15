@@ -35,7 +35,7 @@ function AppInner() {
       case 'home':         return <DataMarketHomePage onNavigate={navigate} onOpenProduct={openProduct} />
       case 'data':
       case 'catalog':      return <DataMarketCatalogPage onOpenProduct={openProduct} initialSearch={pageProps.search || ''} />
-      case 'ai-explorer':  return <AIExplorerPage initialQuestion={pageProps.question || ''} />
+      case 'ai-explorer':  return <AIExplorerPage initialQuestion={pageProps.question || ''} onNavigate={navigate} />
       case 'library':
       case 'my-library':   return <DataMarketLibraryPage onNavigate={navigate} onOpenProduct={openProduct} />
       case 'register':     return <DataMarketRegisterPage onNavigate={navigate} />

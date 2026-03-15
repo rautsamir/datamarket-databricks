@@ -1,8 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react'
-import { Bot, Send, Sparkles, Database, BarChart3, Table2, Lightbulb, RotateCcw } from 'lucide-react'
+import { Bot, Send, Sparkles, Database, BarChart3, Table2, Lightbulb, RotateCcw, Lock, ExternalLink } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { usePersona } from '@/context/PersonaContext'
 
 const sampleQuestions = [
   { icon: BarChart3, text: 'What are the top 5 departments by budget allocation?' },
@@ -38,6 +39,7 @@ LIMIT 5`,
 const cannedResponses = [
   {
     keywords: ['budget', 'department', 'spend', 'allocation', 'expenditure', 'variance'],
+    requiredProduct: null, // Richard already has DP-001
     content: 'Here\'s the budget vs. actual expenditure breakdown by department for FY2024-25:',
     sql: `SELECT department_name,
        budget_allocated,
@@ -56,6 +58,7 @@ ORDER BY pct_used DESC`,
   },
   {
     keywords: ['vendor', 'payment', 'fraud', 'flag', 'risk', 'anomaly'],
+    requiredProduct: null,
     content: 'Here are the flagged vendor payments with anomaly indicators:',
     sql: `SELECT vendor_name, payment_amount, flag_reason, risk_score
 FROM gold.vendor_payments
@@ -71,7 +74,9 @@ LIMIT 5`,
     ]
   },
   {
-    keywords: ['payroll', 'salary', 'headcount', 'employee', 'compensation', 'staff'],
+    keywords: ['payroll', 'salary', 'headcount', 'employee', 'compensation', 'staff', 'hr', 'workforce'],
+    requiredProduct: 2, // DP-002 — Employee Metrics Dashboard — Richard does NOT have this
+    productName: 'Employee Metrics Dashboard',
     content: 'Here\'s the payroll summary by department including headcount and average compensation:',
     sql: `SELECT department_name,
        COUNT(employee_id) AS headcount,
@@ -90,6 +95,7 @@ ORDER BY total_payroll DESC`,
   },
   {
     keywords: ['property', 'tax', 'revenue', 'assessment', 'collection'],
+    requiredProduct: null, // Richard has DP-007 (Payroll Dashboard) but property tax DP-003 is not in his list
     content: 'Here\'s the property tax collection summary by district for FY2024:',
     sql: `SELECT district_name,
        assessed_value,
@@ -108,10 +114,21 @@ ORDER BY tax_collected DESC`,
   }
 ]
 
-function getAIResponse(question) {
+function getAIResponse(question, hasAccess) {
   const q = question.toLowerCase()
   for (const r of cannedResponses) {
-    if (r.keywords.some(k => q.includes(k))) return r
+    if (r.keywords.some(k => q.includes(k))) {
+      if (r.requiredProduct && hasAccess && !hasAccess(r.requiredProduct)) {
+        return {
+          content: null,
+          locked: true,
+          productId: r.requiredProduct,
+          productName: r.productName,
+          sql: r.sql
+        }
+      }
+      return r
+    }
   }
   return {
     content: 'I found several data products related to your query. In a live deployment, Databricks Genie executes this as SQL against your Gold layer tables in real time.',
@@ -124,10 +141,11 @@ LIMIT 20`,
   }
 }
 
-export function AIExplorerPage({ initialQuestion = '' }) {
+export function AIExplorerPage({ initialQuestion = '', onNavigate }) {
+  const { hasAccess } = usePersona()
   const [messages, setMessages] = useState(() => {
     if (initialQuestion) {
-      const response = getAIResponse(initialQuestion)
+      const response = getAIResponse(initialQuestion, hasAccess)
       return [
         ...demoConversation,
         { role: 'user', content: initialQuestion },
@@ -151,19 +169,14 @@ export function AIExplorerPage({ initialQuestion = '' }) {
     setInput('')
     setIsThinking(true)
     setTimeout(() => {
-      const response = getAIResponse(question)
+      const response = getAIResponse(question, hasAccess)
       setMessages(prev => [...prev, { role: 'assistant', ...response }])
       setIsThinking(false)
     }, 1200)
   }
 
   const handleSend = () => sendQuestion(input)
-
-  const handleSampleClick = (text) => {
-    setInput(text)
-    sendQuestion(text)
-  }
-
+  const handleSampleClick = (text) => { setInput(text); sendQuestion(text) }
   const handleReset = () => {
     setMessages(demoConversation)
     setInput('')
@@ -202,38 +215,71 @@ export function AIExplorerPage({ initialQuestion = '' }) {
                         <span className="text-xs font-medium text-blue-600">Genie AI</span>
                       </div>
                     )}
-                    <p className={`text-sm ${msg.role === 'user' ? 'text-white' : 'text-gray-800'}`}>
-                      {msg.content}
-                    </p>
-                    {msg.sql && (
-                      <div className="mt-3 bg-gray-900 rounded-lg p-3 overflow-x-auto">
-                        <div className="flex items-center gap-2 mb-1">
-                          <Badge className="bg-blue-600 text-white text-[10px]">SQL</Badge>
+                    {msg.locked ? (
+                      <div className="space-y-3">
+                        <div className="flex items-center gap-2 text-amber-700">
+                          <Lock className="h-4 w-4 shrink-0" />
+                          <p className="text-sm font-medium">Access required</p>
                         </div>
-                        <pre className="text-xs text-green-400 font-mono whitespace-pre-wrap">{msg.sql}</pre>
+                        <p className="text-sm text-gray-700">
+                          This query pulls from <span className="font-semibold">{msg.productName}</span>, which you don't currently have access to.
+                        </p>
+                        {msg.sql && (
+                          <div className="bg-gray-900 rounded-lg p-3 overflow-x-auto opacity-50 select-none">
+                            <div className="flex items-center gap-2 mb-1">
+                              <Badge className="bg-blue-600 text-white text-[10px]">SQL</Badge>
+                              <span className="text-[10px] text-gray-400">preview only</span>
+                            </div>
+                            <pre className="text-xs text-green-400 font-mono whitespace-pre-wrap blur-[2px]">{msg.sql}</pre>
+                          </div>
+                        )}
+                        <div className="flex gap-2 pt-1">
+                          <button
+                            onClick={() => onNavigate && onNavigate('catalog')}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white"
+                            style={{ backgroundColor: '#1B3A6B' }}
+                          >
+                            <ExternalLink className="h-3 w-3" />
+                            Request Access in Catalog
+                          </button>
+                        </div>
                       </div>
-                    )}
-                    {msg.results && (
-                      <div className="mt-3 overflow-x-auto">
-                        <table className="w-full text-xs">
-                          <thead>
-                            <tr className="border-b border-gray-300">
-                              {Object.keys(msg.results[0]).map(k => (
-                                <th key={k} className="text-left py-2 px-3 font-medium text-gray-500 capitalize">{k}</th>
-                              ))}
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {msg.results.map((row, ri) => (
-                              <tr key={ri} className="border-b border-gray-100">
-                                {Object.values(row).map((v, vi) => (
-                                  <td key={vi} className="py-2 px-3 text-gray-700">{v}</td>
+                    ) : (
+                      <>
+                        <p className={`text-sm ${msg.role === 'user' ? 'text-white' : 'text-gray-800'}`}>
+                          {msg.content}
+                        </p>
+                        {msg.sql && (
+                          <div className="mt-3 bg-gray-900 rounded-lg p-3 overflow-x-auto">
+                            <div className="flex items-center gap-2 mb-1">
+                              <Badge className="bg-blue-600 text-white text-[10px]">SQL</Badge>
+                            </div>
+                            <pre className="text-xs text-green-400 font-mono whitespace-pre-wrap">{msg.sql}</pre>
+                          </div>
+                        )}
+                        {msg.results && (
+                          <div className="mt-3 overflow-x-auto">
+                            <table className="w-full text-xs">
+                              <thead>
+                                <tr className="border-b border-gray-300">
+                                  {Object.keys(msg.results[0]).map(k => (
+                                    <th key={k} className="text-left py-2 px-3 font-medium text-gray-500 capitalize">{k}</th>
+                                  ))}
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {msg.results.map((row, ri) => (
+                                  <tr key={ri} className="border-b border-gray-100">
+                                    {Object.values(row).map((v, vi) => (
+                                      <td key={vi} className="py-2 px-3 text-gray-700">{v}</td>
+                                    ))}
+                                  </tr>
                                 ))}
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </>
                     )}
                   </div>
                 </div>
