@@ -63,10 +63,11 @@ export function DataMarketLayout({ currentPage, onNavigate, children }) {
                   <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="#1B3A6B" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
                 </svg>
               </div>
-              <span className="text-white font-semibold text-base hidden sm:block tracking-wide">
-                DataMarket Data and Analytics Portal
-              </span>
-              <span className="text-white font-semibold text-sm sm:hidden">DataMarket Portal</span>
+              <div className="hidden sm:flex flex-col leading-tight">
+                <span className="text-white font-semibold text-base tracking-wide">DataMarket</span>
+                <span className="text-white/60 text-[10px] tracking-wide">Data Discovery &amp; Access</span>
+              </div>
+              <span className="text-white font-semibold text-sm sm:hidden">DataMarket</span>
             </button>
 
             {/* Desktop Nav */}
@@ -225,7 +226,7 @@ export function DataMarketLayout({ currentPage, onNavigate, children }) {
                 <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
               </svg>
             </div>
-            <span className="text-sm text-gray-500">DataMarket Data and Analytics Portal</span>
+            <span className="text-sm text-gray-500">DataMarket · Data Discovery &amp; Access</span>
           </div>
           <nav className="flex items-center gap-6">
             {['About', 'FAQ', 'Contact'].map(item => (
