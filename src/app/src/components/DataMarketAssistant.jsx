@@ -34,8 +34,30 @@ const statusColor = (status) => {
 function buildResponse(input, persona, myRequests, pendingRequests, hasAccess, apiAvailable, onNudge) {
   const q = input.toLowerCase()
 
+  // ── Admin: approvals queue (must come before status check) ───────────────
+  if (/approval|waiting on me|pending approval|queue|review|need.*approve/.test(q)) {
+    if (persona.id !== 'admin') {
+      return {
+        text: `Only Data Stewards can view the approval queue. You can check the status of your own requests instead.`,
+        chips: ['Check my request status']
+      }
+    }
+    if (pendingRequests.length === 0) {
+      return {
+        text: `No pending approvals right now — you're all caught up! All submitted requests have been resolved.`,
+        actions: [{ label: 'Open Admin Panel', page: 'admin' }]
+      }
+    }
+    return {
+      text: `You have ${pendingRequests.length} request${pendingRequests.length > 1 ? 's' : ''} waiting for your review:`,
+      requests: pendingRequests.slice(0, 4),
+      followUp: `Head to the Admin panel to approve or deny with a single click.`,
+      actions: [{ label: 'Open Admin Panel', page: 'admin' }]
+    }
+  }
+
   // ── Status of my requests ─────────────────────────────────────────────────
-  if (/status|request|pending|waiting|approved|denied|my request/.test(q)) {
+  if (/status|check.*request|my request|pending|approved|denied/.test(q)) {
     if (myRequests.length === 0) {
       return {
         text: `You have no open access requests, ${persona.name}. Head to the Data Catalog to find datasets and request access.`,
@@ -134,28 +156,6 @@ function buildResponse(input, persona, myRequests, pendingRequests, hasAccess, a
         'Once approved, the dataset appears in your Library'
       ],
       actions: [{ label: 'Go to Catalog', page: 'catalog' }]
-    }
-  }
-
-  // ── Admin: approvals queue ────────────────────────────────────────────────
-  if (/approval|waiting on me|pending approval|queue|review|need.*approve/.test(q)) {
-    if (persona.id !== 'admin') {
-      return {
-        text: `Only Data Stewards can view the approval queue. You can check the status of your own requests instead.`,
-        chips: ['Check my request status']
-      }
-    }
-    if (pendingRequests.length === 0) {
-      return {
-        text: `No pending approvals right now — you're all caught up! All submitted requests have been resolved.`,
-        actions: [{ label: 'Open Admin Panel', page: 'admin' }]
-      }
-    }
-    return {
-      text: `You have ${pendingRequests.length} request${pendingRequests.length > 1 ? 's' : ''} waiting for your review:`,
-      requests: pendingRequests.slice(0, 4),
-      followUp: `Head to the Admin panel to approve or deny with a single click.`,
-      actions: [{ label: 'Open Admin Panel', page: 'admin' }]
     }
   }
 
