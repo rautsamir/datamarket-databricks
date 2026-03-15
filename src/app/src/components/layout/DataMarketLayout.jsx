@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { Search, Menu, X, ChevronDown, ShieldCheck, Bell } from 'lucide-react'
 import { usePersona, personas } from '../../context/PersonaContext'
+import { DataMarketAssistant } from '../DataMarketAssistant'
 
 const DataMarket_BLUE = '#003865'
 
@@ -237,6 +238,8 @@ export function DataMarketLayout({ currentPage, onNavigate, children }) {
       {(userMenuOpen || personaMenuOpen || mobileOpen) && (
         <div className="fixed inset-0 z-40" onClick={() => { setUserMenuOpen(false); setPersonaMenuOpen(false); setMobileOpen(false) }} />
       )}
+
+      <DataMarketAssistant onNavigate={onNavigate} />
     </div>
   )
 }

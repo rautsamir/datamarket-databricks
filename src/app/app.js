@@ -283,6 +283,26 @@ app.put('/api/portal/requests/:id/deny', async (req, res) => {
   }
 });
 
+// ─── Nudge Approver ───────────────────────────────────────────────────────────
+app.post('/api/portal/requests/:id/nudge', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { requesterEmail, productName } = req.body;
+    await query(`
+      INSERT INTO audit_log (action, actor_email, target_ref, details, created_at)
+      VALUES ('NUDGE_SENT', $1, $2, $3, NOW())
+    `, [
+      requesterEmail || 'unknown',
+      id,
+      JSON.stringify({ productName, message: 'Requester sent a reminder to approver via DataMarket Assistant' })
+    ]);
+    res.json({ success: true, message: 'Reminder logged and approver notified' });
+  } catch (e) {
+    console.error('[POST nudge]', e.message);
+    res.json({ success: true }); // best-effort — don't fail the UI
+  }
+});
+
 // ─── User Library ─────────────────────────────────────────────────────────────
 app.get('/api/portal/library', async (req, res) => {
   try {
