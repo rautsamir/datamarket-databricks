@@ -64,7 +64,10 @@ export function DataMarketHomePage({ onNavigate, onOpenProduct }) {
 
   const handleSearch = (e) => {
     e.preventDefault()
-    if (searchQuery.trim()) {
+    if (!searchQuery.trim()) return
+    if (aiMode) {
+      onNavigate('ai-explorer', { question: searchQuery })
+    } else {
       onNavigate('catalog', { search: searchQuery })
     }
   }
