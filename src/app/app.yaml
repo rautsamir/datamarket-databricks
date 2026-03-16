@@ -1,3 +1,20 @@
 command:
   - "node"
   - "app.js"
+env:
+  - name: DATABRICKS_HOST
+    value: "https://your-workspace.azuredatabricks.net"
+  - name: DATABRICKS_TOKEN
+    value: "your-databricks-pat"
+  - name: DATABRICKS_USER
+    value: "your-email@example.com"
+  - name: LAKEBASE_HOST
+    value: "your-instance.database.azuredatabricks.net"
+  - name: LAKEBASE_INSTANCE
+    value: "your-lakebase-instance-name"
+  - name: LAKEBASE_DB
+    value: "your_database_name"
+  - name: LAKEBASE_SCHEMA
+    value: "your_schema_name"
+  - name: LAKEBASE_SSL_REJECT_UNAUTHORIZED
+    value: "false"

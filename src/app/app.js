@@ -36,7 +36,7 @@ async function generateDbToken() {
     const body = JSON.stringify({ request_id: `app-${Date.now()}`, instance_names: [LAKEBASE_INSTANCE] });
     const options = {
       hostname: host,
-      path: '/api/2.0/database/generate-database-credential',
+      path: '/api/2.0/database/credentials',
       method: 'POST',
       headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) }
     };
