@@ -191,7 +191,7 @@ app.post('/api/portal/products', async (req, res) => {
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,FALSE,'Pending')
        RETURNING *`,
       [productRef, name, description, type || 'Dashboard', source || 'Other',
-       JSON.stringify(tagsArr), refreshFrequency || 'Daily',
+       tagsArr, refreshFrequency || 'Daily',
        ownerEmail || submittedBy || 'unknown@example.org',
        classification || 'Internal', ucFullName || '', domain || source || 'Other']
     );
