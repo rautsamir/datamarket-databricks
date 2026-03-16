@@ -199,9 +199,9 @@ app.post('/api/portal/products', async (req, res) => {
     // Best-effort audit log (non-fatal if table doesn't exist)
     try {
       await query(
-        `INSERT INTO audit_log (action, actor_email, target_ref, details)
+        `INSERT INTO audit_log (event_type, actor_email, target_name, metadata)
          VALUES ('PRODUCT_SUBMITTED', $1, $2, $3)`,
-        [submittedBy || ownerEmail || 'unknown', productRef, `Product "${name}" submitted for review`]
+        [submittedBy || ownerEmail || 'unknown', productRef, JSON.stringify({ name, productRef })]
       );
     } catch (_) {}
 
@@ -239,9 +239,9 @@ app.put('/api/portal/products/:ref/publish', async (req, res) => {
 
     try {
       await query(
-        `INSERT INTO audit_log (action, actor_email, target_ref, details)
+        `INSERT INTO audit_log (event_type, actor_email, target_name, metadata)
          VALUES ('PRODUCT_PUBLISHED', $1, $2, $3)`,
-        [reviewerEmail || 'admin', ref, `Product "${product.display_name}" published to catalog`]
+        [reviewerEmail || 'admin', ref, JSON.stringify({ ref, name: product.display_name })]
       );
     } catch (_) {}
     res.json(product);
@@ -265,9 +265,9 @@ app.put('/api/portal/products/:ref/reject', async (req, res) => {
 
     try {
       await query(
-        `INSERT INTO audit_log (action, actor_email, target_ref, details)
+        `INSERT INTO audit_log (event_type, actor_email, target_name, metadata)
          VALUES ('PRODUCT_REJECTED', $1, $2, $3)`,
-        [reviewerEmail || 'admin', ref, reason || `Product "${product.display_name}" rejected`]
+        [reviewerEmail || 'admin', ref, JSON.stringify({ ref, reason })]
       );
     } catch (_) {}
     res.json(product);
@@ -331,8 +331,14 @@ app.post('/api/portal/requests', async (req, res) => {
     const { rows: [product] } = await query('SELECT product_id FROM data_products WHERE product_ref = $1', [productRef]);
     if (!product) return res.status(404).json({ error: `Product ${productRef} not found` });
 
-    const { rows: [user] } = await query('SELECT user_id, department FROM users WHERE email = $1', [requesterEmail]);
-    if (!user) return res.status(404).json({ error: `User ${requesterEmail} not found` });
+    // Upsert user — creates a row if this email hasn't been seen before
+    const { rows: [user] } = await query(`
+      INSERT INTO users (email, display_name, role, department)
+      VALUES ($1, $2, 'analyst', 'General')
+      ON CONFLICT (email) DO UPDATE SET email = EXCLUDED.email
+      RETURNING user_id, department`,
+      [requesterEmail, requesterEmail.split('@')[0].replace('.', ' ').replace(/\b\w/g, c => c.toUpperCase())]
+    );
 
     const { rows: [{ count }] } = await query('SELECT COUNT(*) FROM access_requests', []);
     const ref = `REQ-${String(parseInt(count) + 1).padStart(3, '0')}`;
@@ -421,8 +427,8 @@ app.post('/api/portal/requests/:id/nudge', async (req, res) => {
     const { id } = req.params;
     const { requesterEmail, productName } = req.body;
     await query(`
-      INSERT INTO audit_log (action, actor_email, target_ref, details, created_at)
-      VALUES ('NUDGE_SENT', $1, $2, $3, NOW())
+      INSERT INTO audit_log (event_type, actor_email, target_name, metadata)
+      VALUES ('NUDGE_SENT', $1, $2, $3)
     `, [
       requesterEmail || 'unknown',
       id,
