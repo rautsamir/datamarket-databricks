@@ -1,6 +1,13 @@
 import React, { useState } from 'react'
-import { Search, ArrowRight, Clock, Sparkles, BarChart3, FileText, Database, TrendingUp, Lock } from 'lucide-react'
+import { Search, ArrowRight, Clock, Sparkles, BarChart3, FileText, Database, Lock } from 'lucide-react'
 import { usePersona } from '../context/PersonaContext'
+
+// Heuristic: treat input as a natural-language question if it looks conversational
+function isNaturalLanguage(q) {
+  if (!q || q.trim().split(/\s+/).length < 3) return false
+  return /^(show|find|what|which|how|give|get|list|compare|who|why|tell|analyze|summarize|break|top|total|average|trend|where)\b/i.test(q.trim()) ||
+    /\b(by department|by team|over time|last year|this year|vs |versus|trend|breakdown|summary|analysis|compared to)\b/i.test(q)
+}
 
 const DataMarket_BLUE = '#003865'
 
@@ -63,80 +70,80 @@ const typeIcons = { Dashboard: BarChart3, Report: FileText, Dataset: Database }
 
 export function DataMarketHomePage({ onNavigate, onOpenProduct }) {
   const [searchQuery, setSearchQuery] = useState('')
-  const [aiMode, setAiMode] = useState(false)
   const { persona, hasAccess } = usePersona()
+
+  const isAI = isNaturalLanguage(searchQuery)
 
   const handleSearch = (e) => {
     e.preventDefault()
     if (!searchQuery.trim()) return
-    if (aiMode) {
+    if (isAI) {
       onNavigate('ai-explorer', { question: searchQuery })
     } else {
       onNavigate('catalog', { search: searchQuery })
     }
   }
 
+  const launchChip = (text) => {
+    onNavigate('ai-explorer', { question: text })
+  }
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-10 space-y-12">
       {/* Hero Search */}
       <div className="text-center space-y-4">
-        <div className="inline-flex items-center gap-2 bg-blue-50 text-blue-700 px-3 py-1 rounded-full text-sm font-medium mb-2">
-          <Sparkles className="h-3.5 w-3.5" />
-          AI-Powered Data Discovery
-        </div>
         <h1 className="text-3xl sm:text-4xl font-bold text-gray-900">
           Hi {persona.name},
         </h1>
-        <p className="text-xl text-gray-500">What would you like to know?</p>
+        <p className="text-xl text-gray-500">Search for data or ask a question in plain English.</p>
 
         <div className="max-w-2xl mx-auto mt-6">
-          <div className="flex gap-2 mb-3">
-            <button
-              onClick={() => setAiMode(false)}
-              className={`text-sm px-3 py-1.5 rounded-full transition-colors ${!aiMode ? 'text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
-              style={!aiMode ? { backgroundColor: DataMarket_BLUE } : {}}
-            >
-              Search
-            </button>
-            <button
-              onClick={() => setAiMode(true)}
-              className={`text-sm px-3 py-1.5 rounded-full transition-colors flex items-center gap-1.5 ${aiMode ? 'text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
-              style={aiMode ? { backgroundColor: DataMarket_BLUE } : {}}
-            >
-              <Sparkles className="h-3 w-3" /> Ask AI
-            </button>
-          </div>
-
           <form onSubmit={handleSearch} className="relative">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+            {isAI
+              ? <Sparkles className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-blue-500" />
+              : <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+            }
             <input
               type="text"
-              placeholder={aiMode ? 'Ask a question about enterprise data...' : 'Search data products, dashboards, reports...'}
-              className="w-full pl-12 pr-14 py-4 text-base border-2 border-gray-200 rounded-xl focus:outline-none focus:border-blue-500 shadow-sm"
+              placeholder="Search products or ask: show me headcount by department..."
+              className="w-full pl-12 pr-36 py-4 text-base border-2 rounded-xl focus:outline-none shadow-sm transition-colors"
+              style={{ borderColor: isAI ? '#3B82F6' : (searchQuery ? DataMarket_BLUE : '#E5E7EB') }}
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
-              style={{ borderColor: searchQuery ? DataMarket_BLUE : undefined }}
             />
+            {/* Live mode badge */}
+            <span className={`absolute right-14 top-1/2 -translate-y-1/2 text-[10px] font-semibold px-2 py-1 rounded-full transition-all ${
+              isAI ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-400'
+            }`}>
+              {isAI ? '✦ Ask AI' : 'Search'}
+            </span>
             <button
               type="submit"
               className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-lg text-white"
-              style={{ backgroundColor: DataMarket_BLUE }}
+              style={{ backgroundColor: isAI ? '#3B82F6' : DataMarket_BLUE }}
             >
               <ArrowRight className="h-4 w-4" />
             </button>
           </form>
 
+          {/* Suggestion chips — always AI queries */}
           <div className="flex flex-wrap gap-2 mt-3 justify-center">
-            {['Budget by department', 'Vendor fraud flags', 'Headcount by department', 'Property tax revenue'].map(s => (
+            {[
+              { label: '✦ Budget by department', q: 'Show me budget by department' },
+              { label: '✦ Headcount by department', q: 'Headcount by department' },
+              { label: '✦ Vendor fraud flags', q: 'Show me vendor fraud flags' },
+              { label: '✦ Property tax revenue', q: 'Show me property tax revenue' },
+            ].map(({ label, q }) => (
               <button
-                key={s}
-                onClick={() => { setSearchQuery(s); setAiMode(true) }}
-                className="text-xs text-gray-500 hover:text-gray-800 bg-gray-100 hover:bg-gray-200 px-3 py-1 rounded-full transition-colors"
+                key={q}
+                onClick={() => launchChip(q)}
+                className="text-xs text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 px-3 py-1 rounded-full transition-colors border border-blue-100"
               >
-                {s}
+                {label}
               </button>
             ))}
           </div>
+          <p className="text-xs text-gray-400 mt-2">Type a short keyword to search the catalog · Ask a full question to explore with AI</p>
         </div>
       </div>
 
