@@ -42,6 +42,25 @@ export function DataMarketRegisterPage({ onNavigate }) {
     retentionYears: '7',
   })
 
+  const loadDemoData = () => setForm({
+    name: 'Q2 Finance Summary Dashboard',
+    description: 'Consolidated view of Q2 budget actuals, departmental spend variance, and headcount costs. Sourced from ERP and HRIS for cross-functional finance reporting.',
+    type: 'Dashboard',
+    source: 'ERP',
+    tags: ['Budget', 'Financial', 'ERP'],
+    refreshFrequency: 'Weekly',
+    usageDescription: 'Used by Finance and department heads for quarterly budget reviews and variance analysis.',
+    useCases: 'Q2 Board reporting, departmental cost reviews, headcount reconciliation.',
+    sla: '99.5% uptime, refreshed every Monday 6am.',
+    dataOwner: persona.email,
+    steward: 'datasteward@example.org',
+    contributors: ['finance-team@example.org'],
+    classification: 'Confidential',
+    accessLevel: 'Read Only',
+    hasPII: false,
+    retentionYears: '7',
+  })
+
   const updateForm = (key, value) => setForm(prev => ({ ...prev, [key]: value }))
   const toggleTag = tag => setForm(prev => ({
     ...prev,
@@ -75,7 +94,15 @@ export function DataMarketRegisterPage({ onNavigate }) {
       case 1:
         return (
           <div className="space-y-5">
-            <p className="text-xs text-gray-500">Required fields marked with *</p>
+            <div className="flex items-center justify-between">
+              <p className="text-xs text-gray-500">Required fields marked with *</p>
+              <button
+                onClick={loadDemoData}
+                className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border border-dashed border-blue-300 text-blue-600 hover:bg-blue-50 transition-colors"
+              >
+                ✦ Load demo data
+              </button>
+            </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Name *</label>
               <input
