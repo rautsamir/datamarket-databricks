@@ -170,6 +170,11 @@ app.post('/api/portal/products', async (req, res) => {
             ownerEmail, classification, ucFullName, domain, hasPII, submittedBy } = req.body;
     if (!name || !description) return res.status(400).json({ error: 'name and description are required' });
 
+    // Ensure columns exist before inserting
+    await query(`ALTER TABLE data_products ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'Published'`);
+    await query(`ALTER TABLE data_products ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW()`);
+    await query(`ALTER TABLE data_products ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW()`);
+
     // Generate a sequential ref after current max
     const { rows: [maxRow] } = await query(
       `SELECT MAX(CAST(SUBSTRING(product_ref FROM 4) AS INTEGER)) AS max_id FROM data_products`
@@ -191,11 +196,14 @@ app.post('/api/portal/products', async (req, res) => {
        classification || 'Internal', ucFullName || '', domain || source || 'Other']
     );
 
-    await query(
-      `INSERT INTO audit_log (action, actor_email, target_ref, details)
-       VALUES ('PRODUCT_SUBMITTED', $1, $2, $3)`,
-      [submittedBy || ownerEmail || 'unknown', productRef, `Product "${name}" submitted for review`]
-    );
+    // Best-effort audit log (non-fatal if table doesn't exist)
+    try {
+      await query(
+        `INSERT INTO audit_log (action, actor_email, target_ref, details)
+         VALUES ('PRODUCT_SUBMITTED', $1, $2, $3)`,
+        [submittedBy || ownerEmail || 'unknown', productRef, `Product "${name}" submitted for review`]
+      );
+    } catch (_) {}
 
     res.status(201).json(product);
   } catch (e) {
@@ -229,11 +237,13 @@ app.put('/api/portal/products/:ref/publish', async (req, res) => {
     );
     if (!product) return res.status(404).json({ error: 'Product not found' });
 
-    await query(
-      `INSERT INTO audit_log (action, actor_email, target_ref, details)
-       VALUES ('PRODUCT_PUBLISHED', $1, $2, $3)`,
-      [reviewerEmail || 'admin', ref, `Product "${product.display_name}" published to catalog`]
-    );
+    try {
+      await query(
+        `INSERT INTO audit_log (action, actor_email, target_ref, details)
+         VALUES ('PRODUCT_PUBLISHED', $1, $2, $3)`,
+        [reviewerEmail || 'admin', ref, `Product "${product.display_name}" published to catalog`]
+      );
+    } catch (_) {}
     res.json(product);
   } catch (e) {
     console.error('[PUT /api/portal/products/:ref/publish]', e.message);
@@ -253,11 +263,13 @@ app.put('/api/portal/products/:ref/reject', async (req, res) => {
     );
     if (!product) return res.status(404).json({ error: 'Product not found' });
 
-    await query(
-      `INSERT INTO audit_log (action, actor_email, target_ref, details)
-       VALUES ('PRODUCT_REJECTED', $1, $2, $3)`,
-      [reviewerEmail || 'admin', ref, reason || `Product "${product.display_name}" rejected`]
-    );
+    try {
+      await query(
+        `INSERT INTO audit_log (action, actor_email, target_ref, details)
+         VALUES ('PRODUCT_REJECTED', $1, $2, $3)`,
+        [reviewerEmail || 'admin', ref, reason || `Product "${product.display_name}" rejected`]
+      );
+    } catch (_) {}
     res.json(product);
   } catch (e) {
     console.error('[PUT /api/portal/products/:ref/reject]', e.message);
