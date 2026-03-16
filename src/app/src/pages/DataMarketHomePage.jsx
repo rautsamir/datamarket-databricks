@@ -1,12 +1,13 @@
 import React, { useState } from 'react'
-import { Search, ArrowRight, Clock, Sparkles, BarChart3, FileText, Database, TrendingUp } from 'lucide-react'
+import { Search, ArrowRight, Clock, Sparkles, BarChart3, FileText, Database, TrendingUp, Lock } from 'lucide-react'
 import { usePersona } from '../context/PersonaContext'
 
 const DataMarket_BLUE = '#003865'
 
 const featuredProducts = [
   {
-    id: 1,
+    id: 7,
+    ref: 'DP-007',
     name: 'Payroll Dashboard',
     tags: ['Payroll', 'HR'],
     type: 'Dashboard',
@@ -16,31 +17,34 @@ const featuredProducts = [
     owner: 'James Park'
   },
   {
-    id: 2,
-    name: 'Enterprise Budget Analytics Dashboard',
-    tags: ['Budget', 'Financial', 'ERP'],
+    id: 1,
+    ref: 'DP-001',
+    name: 'Budget Expenditure Report',
+    tags: ['Budget', 'ERP'],
     type: 'Dashboard',
-    description: 'Comprehensive budget allocation, expenditure tracking, and variance analysis for FY2024-25 across all departments.',
+    description: 'Departmental budget allocations and year-to-date expenditures with variance analysis across all departments.',
     source: 'ERP',
     refreshFrequency: 'Daily',
-    owner: 'john.doe'
+    owner: 'James Park'
   },
   {
-    id: 3,
-    name: 'Property Tax Report 2024',
-    tags: ['Property Tax', 'Revenue'],
-    type: 'Report',
-    description: 'Annual property tax assessment, collection rates, delinquency analysis, and revenue projections for Your Organization.',
-    source: 'Property Tax',
+    id: 2,
+    ref: 'DP-002',
+    name: 'Employee Metrics Dashboard',
+    tags: ['HRIS', 'HR'],
+    type: 'Dashboard',
+    description: 'Headcount, turnover rates, overtime trends, and compensation metrics segmented by department and bargaining unit.',
+    source: 'HRIS',
     refreshFrequency: 'Weekly',
-    owner: 'Robert Lee'
+    owner: 'Sarah Kim',
+    restricted: true
   }
 ]
 
 const recentlyAccessed = [
-  { name: 'Budget Expenditure Report', type: 'Dashboard', accessed: '2 hours ago', tags: ['Budget'] },
-  { name: 'Employee Metrics Dashboard', type: 'Dashboard', accessed: 'Yesterday', tags: ['HRIS'] },
-  { name: 'Census 2023 Dataset', type: 'Dataset', accessed: '3 days ago', tags: ['Demographics'] }
+  { name: 'Budget Expenditure Report', ref: 'DP-001', type: 'Dashboard', accessed: '2 hours ago', tags: ['Budget'] },
+  { name: 'Payroll Dashboard', ref: 'DP-007', type: 'Dashboard', accessed: 'Yesterday', tags: ['Payroll', 'HR'] },
+  { name: 'Property Tax Report 2024', ref: 'DP-003', type: 'Report', accessed: '3 days ago', tags: ['Property Tax'] }
 ]
 
 const tagColors = {
@@ -60,7 +64,7 @@ const typeIcons = { Dashboard: BarChart3, Report: FileText, Dataset: Database }
 export function DataMarketHomePage({ onNavigate, onOpenProduct }) {
   const [searchQuery, setSearchQuery] = useState('')
   const [aiMode, setAiMode] = useState(false)
-  const { persona } = usePersona()
+  const { persona, hasAccess } = usePersona()
 
   const handleSearch = (e) => {
     e.preventDefault()
@@ -152,22 +156,27 @@ export function DataMarketHomePage({ onNavigate, onOpenProduct }) {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {featuredProducts.map(product => {
             const Icon = typeIcons[product.type] || BarChart3
+            const isLocked = product.restricted && !hasAccess(product.ref)
             return (
               <button
                 key={product.id}
                 onClick={() => onOpenProduct(product)}
-                className="text-left bg-white rounded-xl border border-gray-200 p-5 hover:border-blue-300 hover:shadow-md transition-all group"
+                className={`text-left bg-white rounded-xl border p-5 hover:shadow-md transition-all group ${isLocked ? 'border-amber-200 hover:border-amber-300' : 'border-gray-200 hover:border-blue-300'}`}
               >
                 <div className="flex items-start gap-3 mb-3">
-                  <div className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: '#E8F0F7' }}>
-                    <Icon className="h-5 w-5" style={{ color: DataMarket_BLUE }} />
+                  <div className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: isLocked ? '#FEF3C7' : '#E8F0F7' }}>
+                    <Icon className="h-5 w-5" style={{ color: isLocked ? '#D97706' : DataMarket_BLUE }} />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <h3 className="font-semibold text-gray-900 text-sm leading-tight group-hover:text-blue-700 transition-colors">{product.name}</h3>
+                    <div className="flex items-center gap-1.5">
+                      <h3 className="font-semibold text-gray-900 text-sm leading-tight group-hover:text-blue-700 transition-colors">{product.name}</h3>
+                      {isLocked && <Lock className="h-3 w-3 text-amber-500 shrink-0" />}
+                    </div>
                     <div className="flex flex-wrap gap-1 mt-1.5">
                       {product.tags.map(tag => (
                         <span key={tag} className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${tagColors[tag] || 'bg-gray-100 text-gray-700'}`}>{tag}</span>
                       ))}
+                      {isLocked && <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-amber-100 text-amber-700">Request Access</span>}
                     </div>
                   </div>
                 </div>
