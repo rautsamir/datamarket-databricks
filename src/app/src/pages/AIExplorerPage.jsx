@@ -141,7 +141,7 @@ LIMIT 20`,
   }
 }
 
-export function AIExplorerPage({ initialQuestion = '', onNavigate }) {
+export function AIExplorerPage({ initialQuestion = '', onNavigate, onOpenProduct }) {
   const { hasAccess } = usePersona()
   const [messages, setMessages] = useState(demoConversation)
   const [input, setInput] = useState('')
@@ -234,12 +234,41 @@ export function AIExplorerPage({ initialQuestion = '', onNavigate }) {
                         )}
                         <div className="flex gap-2 pt-1">
                           <button
-                            onClick={() => onNavigate && onNavigate('catalog')}
+                            onClick={async () => {
+                              if (onOpenProduct && msg.productId) {
+                                try {
+                                  const res = await fetch(`/api/portal/products?includeAll=true`)
+                                  const products = await res.json()
+                                  const product = products.find(p =>
+                                    p.product_ref === `DP-${String(msg.productId).padStart(3,'0')}` ||
+                                    p.display_name === msg.productName
+                                  )
+                                  if (product) {
+                                    onOpenProduct({
+                                      id: product.product_id,
+                                      product_ref: product.product_ref,
+                                      ref: product.product_ref,
+                                      name: product.display_name,
+                                      description: product.description,
+                                      type: product.type,
+                                      source: product.source_system,
+                                      tags: Array.isArray(product.tags) ? product.tags : [],
+                                      refreshFrequency: product.refresh_frequency,
+                                      owner: product.owner_email,
+                                      classification: product.classification,
+                                    })
+                                    return
+                                  }
+                                } catch (_) {}
+                              }
+                              // Fallback: go to catalog filtered to the product name
+                              onNavigate && onNavigate('catalog', { search: msg.productName || '' })
+                            }}
                             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white"
                             style={{ backgroundColor: '#1B3A6B' }}
                           >
                             <ExternalLink className="h-3 w-3" />
-                            Request Access in Catalog
+                            Request Access
                           </button>
                         </div>
                       </div>
