@@ -41,8 +41,20 @@ export function DataMarketLibraryPage({ onNavigate, onOpenProduct }) {
   ).map(item => ({ ...item, status: 'Approved' }))
 
   const fromRequests = myRequests.map(r => {
-    const base = myItems.find(i => i.id === r.productId) || { id: r.productId, name: r.productName, tags: [], type: 'Dashboard', source: '-', refreshFrequency: '-', owner: '-', lastUpdated: '-' }
-    return { ...base, status: r.status }
+    // Backend returns snake_case: product_ref, product_name
+    const ref = r.product_ref || r.productRef || ''
+    const numId = ref ? parseInt(ref.replace('DP-', ''), 10) : null
+    const base = myItems.find(i => i.id === numId) || {
+      id: numId,
+      name: r.product_name || r.productName || ref,
+      tags: [],
+      type: r.product_type || 'Dashboard',
+      source: r.domain || '-',
+      refreshFrequency: '-',
+      owner: '-',
+      lastUpdated: r.requested_at ? new Date(r.requested_at).toLocaleDateString() : '-'
+    }
+    return { ...base, status: r.status, requestId: r.id }
   })
 
   // Deduplicate: prefer request status over persona default
@@ -86,7 +98,7 @@ export function DataMarketLibraryPage({ onNavigate, onOpenProduct }) {
           >
             {tab}
             <span className={`ml-2 text-xs px-1.5 py-0.5 rounded-full ${activeTab === tab ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'}`}>
-              {tab === 'Data Product' ? mergedItems.filter(i => i.status === 'Approved').length : mergedItems.filter(i => i.status === 'Pending').length}
+              {tab === 'Data Product' ? mergedItems.filter(i => i.status === 'Approved').length : fromRequests.length}
             </span>
           </button>
         ))}
@@ -122,7 +134,7 @@ export function DataMarketLibraryPage({ onNavigate, onOpenProduct }) {
             </thead>
             <tbody>
               {filtered
-                .filter(item => activeTab === 'Data Product' ? item.status === 'Approved' : ['Pending', 'Denied'].includes(item.status))
+                .filter(item => activeTab === 'Data Product' ? item.status === 'Approved' : true)
                 .map((item, i) => {
                   const Icon = { Dashboard: BarChart3, Report: FileText, Dataset: Database }[item.type] || Database
                   return (
@@ -163,7 +175,7 @@ export function DataMarketLibraryPage({ onNavigate, onOpenProduct }) {
             </tbody>
           </table>
         </div>
-        {filtered.filter(item => activeTab === 'Data Product' ? item.status === 'Approved' : ['Pending', 'Denied'].includes(item.status)).length === 0 && (
+        {filtered.filter(item => activeTab === 'Data Product' ? item.status === 'Approved' : true).length === 0 && (
           <div className="py-16 text-center text-gray-400">
             <BookmarkCheck className="h-10 w-10 mx-auto mb-2 opacity-30" />
             <p className="text-sm">No items found.</p>
