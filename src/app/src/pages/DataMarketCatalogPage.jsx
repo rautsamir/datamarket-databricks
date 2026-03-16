@@ -1,25 +1,48 @@
-import React, { useState } from 'react'
-import { Search, SlidersHorizontal, BarChart3, FileText, Database, ChevronLeft, ChevronRight } from 'lucide-react'
+import React, { useState, useEffect } from 'react'
+import { Search, SlidersHorizontal, BarChart3, FileText, Database, ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react'
+import { usePersona } from '../context/PersonaContext'
 
 const DataMarket_BLUE = '#003865'
 
 const categories = ['All', 'Property Tax', 'Audit', 'Accounting', 'ERP', 'Demographics', 'GIS', 'Health Services', 'Public Safety', 'HRIS', 'Payroll', 'Budget']
 const types = ['All', 'Dashboard', 'Dataset', 'Report']
 
-const allProducts = [
-  { id: 1, name: 'Budget Expenditure Report', category: 'Budget', type: 'Dashboard', source: 'ERP', description: 'Departmental budget allocations and year-to-date expenditures with variance analysis across all departments.', refreshFrequency: 'Daily', owner: 'james.park', lastUpdated: '02/11/2025', tags: ['Budget', 'ERP'] },
-  { id: 2, name: 'Employee Metrics Dashboard', category: 'HRIS', type: 'Dashboard', source: 'HRIS', description: 'Headcount, turnover rates, overtime trends, and compensation metrics segmented by department and bargaining unit.', refreshFrequency: 'Weekly', owner: 'sarah.kim', lastUpdated: '02/11/2025', tags: ['HRIS', 'HR'] },
-  { id: 3, name: 'Property Tax Report 2024', category: 'Property Tax', type: 'Report', source: 'Property Tax', description: 'Annual property tax assessments, collection rates, delinquency analysis, and revenue projections for FY2024.', refreshFrequency: 'Weekly', owner: 'robert.lee', lastUpdated: '02/11/2025', tags: ['Property Tax', 'Revenue'] },
-  { id: 4, name: 'Census 2023 Dataset', category: 'Demographics', type: 'Dataset', source: 'Demographics', description: 'Your Organization population demographics by census tract including age, income, household size, and language.', refreshFrequency: 'Annual', owner: 'diana.torres', lastUpdated: '02/11/2025', tags: ['Demographics'] },
-  { id: 5, name: 'Service Ticket Tracking Report', category: 'Accounting', type: 'Report', source: 'IT', description: 'Internal IT service requests, resolution times, SLA compliance, and department utilization metrics.', refreshFrequency: 'Daily', owner: 'michael.chang', lastUpdated: '02/11/2025', tags: ['IT'] },
-  { id: 6, name: 'Essential Service Usage Report', category: 'Health Services', type: 'Report', source: 'Health Services', description: 'Utilization rates for essential County services including health clinics, mental health centers, and social services.', refreshFrequency: 'Monthly', owner: 'angela.wright', lastUpdated: '02/11/2025', tags: ['Health Services'] },
-  { id: 7, name: 'Payroll Dashboard', category: 'Payroll', type: 'Dashboard', source: 'HRIS', description: 'Organization-wide payroll expenditures, overtime costs, benefits allocation, and headcount by department.', refreshFrequency: 'Daily', owner: 'james.park', lastUpdated: '02/11/2025', tags: ['Payroll', 'HRIS'] },
-  { id: 8, name: 'Property Tax Dashboard', category: 'Property Tax', type: 'Dashboard', source: 'Property Tax', description: 'Real-time property tax collection status, delinquency rates, and revenue tracking against annual targets.', refreshFrequency: 'Daily', owner: 'robert.lee', lastUpdated: '02/11/2025', tags: ['Property Tax'] },
-  { id: 9, name: 'Population by Age 2020 Dataset', category: 'Demographics', type: 'Dataset', source: 'Demographics', description: 'Age-stratified population data from the 2020 Census, segmented by supervisorial district and community.', refreshFrequency: 'Annual', owner: 'diana.torres', lastUpdated: '02/11/2025', tags: ['Demographics'] },
-  { id: 10, name: 'Enterprise Budget Analytics Dashboard', category: 'Budget', type: 'Dashboard', source: 'ERP', description: 'Comprehensive budget allocation, expenditure tracking, and variance analysis for FY2024-25.', refreshFrequency: 'Daily', owner: 'john.doe', lastUpdated: '02/11/2025', tags: ['Budget', 'Financial', 'ERP'] },
-  { id: 11, name: 'Audit Finding Tracker', category: 'Audit', type: 'Report', source: 'Audit', description: 'Open and resolved audit findings by department, risk level, and remediation timeline.', refreshFrequency: 'Weekly', owner: 'david.nguyen', lastUpdated: '02/11/2025', tags: ['Audit'] },
-  { id: 12, name: 'GIS Infrastructure Map', category: 'GIS', type: 'Dataset', source: 'GIS', description: 'Geospatial data for County infrastructure including roads, utilities, facilities, and service boundaries.', refreshFrequency: 'Monthly', owner: 'john.doe', lastUpdated: '02/11/2025', tags: ['GIS'] },
+// Static fallback — shown if Lakebase is unavailable
+const staticProducts = [
+  { id: 1, product_ref: 'DP-001', name: 'Budget Expenditure Report', category: 'Budget', type: 'Dashboard', source: 'ERP', description: 'Departmental budget allocations and year-to-date expenditures with variance analysis across all departments.', refreshFrequency: 'Daily', owner: 'james.park', lastUpdated: '02/11/2025', tags: ['Budget', 'ERP'] },
+  { id: 2, product_ref: 'DP-002', name: 'Employee Metrics Dashboard', category: 'HRIS', type: 'Dashboard', source: 'HRIS', description: 'Headcount, turnover rates, overtime trends, and compensation metrics segmented by department and bargaining unit.', refreshFrequency: 'Weekly', owner: 'sarah.kim', lastUpdated: '02/11/2025', tags: ['HRIS', 'HR'] },
+  { id: 3, product_ref: 'DP-003', name: 'Property Tax Report 2024', category: 'Property Tax', type: 'Report', source: 'Property Tax', description: 'Annual property tax assessments, collection rates, delinquency analysis, and revenue projections for FY2024.', refreshFrequency: 'Weekly', owner: 'robert.lee', lastUpdated: '02/11/2025', tags: ['Property Tax', 'Revenue'] },
+  { id: 4, product_ref: 'DP-004', name: 'Census 2023 Dataset', category: 'Demographics', type: 'Dataset', source: 'Demographics', description: 'Your Organization population demographics by census tract including age, income, household size, and language.', refreshFrequency: 'Annual', owner: 'diana.torres', lastUpdated: '02/11/2025', tags: ['Demographics'] },
+  { id: 5, product_ref: 'DP-005', name: 'Service Ticket Tracking Report', category: 'Accounting', type: 'Report', source: 'IT', description: 'Internal IT service requests, resolution times, SLA compliance, and department utilization metrics.', refreshFrequency: 'Daily', owner: 'michael.chang', lastUpdated: '02/11/2025', tags: ['IT'] },
+  { id: 6, product_ref: 'DP-006', name: 'Essential Service Usage Report', category: 'Health Services', type: 'Report', source: 'Health Services', description: 'Utilization rates for essential services including health clinics, mental health centers, and social services.', refreshFrequency: 'Monthly', owner: 'angela.wright', lastUpdated: '02/11/2025', tags: ['Health Services'] },
+  { id: 7, product_ref: 'DP-007', name: 'Payroll Dashboard', category: 'Payroll', type: 'Dashboard', source: 'HRIS', description: 'Organization-wide payroll expenditures, overtime costs, benefits allocation, and headcount by department.', refreshFrequency: 'Daily', owner: 'james.park', lastUpdated: '02/11/2025', tags: ['Payroll', 'HRIS'] },
+  { id: 8, product_ref: 'DP-008', name: 'Property Tax Dashboard', category: 'Property Tax', type: 'Dashboard', source: 'Property Tax', description: 'Real-time property tax collection status, delinquency rates, and revenue tracking against annual targets.', refreshFrequency: 'Daily', owner: 'robert.lee', lastUpdated: '02/11/2025', tags: ['Property Tax'] },
+  { id: 9, product_ref: 'DP-009', name: 'Population by Age 2020 Dataset', category: 'Demographics', type: 'Dataset', source: 'Demographics', description: 'Age-stratified population data from the 2020 Census, segmented by supervisorial district and community.', refreshFrequency: 'Annual', owner: 'diana.torres', lastUpdated: '02/11/2025', tags: ['Demographics'] },
+  { id: 10, product_ref: 'DP-010', name: 'Enterprise Budget Analytics Dashboard', category: 'Budget', type: 'Dashboard', source: 'ERP', description: 'Comprehensive budget allocation, expenditure tracking, and variance analysis for FY2024-25.', refreshFrequency: 'Daily', owner: 'john.doe', lastUpdated: '02/11/2025', tags: ['Budget', 'Financial', 'ERP'] },
+  { id: 11, product_ref: 'DP-011', name: 'Audit Finding Tracker', category: 'Audit', type: 'Report', source: 'Audit', description: 'Open and resolved audit findings by department, risk level, and remediation timeline.', refreshFrequency: 'Weekly', owner: 'david.nguyen', lastUpdated: '02/11/2025', tags: ['Audit'] },
+  { id: 12, product_ref: 'DP-012', name: 'GIS Infrastructure Map', category: 'GIS', type: 'Dataset', source: 'GIS', description: 'Geospatial data for infrastructure including roads, utilities, facilities, and service boundaries.', refreshFrequency: 'Monthly', owner: 'john.doe', lastUpdated: '02/11/2025', tags: ['GIS'] },
 ]
+
+// Normalize a Lakebase row to the shape the UI expects
+function normalizeProduct(p) {
+  const tags = Array.isArray(p.tags) ? p.tags
+    : typeof p.tags === 'string' ? (p.tags.startsWith('[') ? JSON.parse(p.tags) : p.tags.split(',').map(t => t.trim()))
+    : []
+  return {
+    id: p.product_id || p.id,
+    product_ref: p.product_ref,
+    name: p.display_name || p.name,
+    category: p.domain || p.category || 'Other',
+    type: p.type || 'Dashboard',
+    source: p.source_system || p.source || '-',
+    description: p.description,
+    refreshFrequency: p.refresh_frequency || p.refreshFrequency || 'Daily',
+    owner: p.owner_email || p.owner || '-',
+    lastUpdated: p.updated_at ? new Date(p.updated_at).toLocaleDateString() : p.lastUpdated || '-',
+    tags,
+    status: p.status || 'Published'
+  }
+}
 
 const tagColors = {
   Budget: 'bg-blue-100 text-blue-800', Financial: 'bg-green-100 text-green-800',
@@ -35,11 +58,27 @@ const typeIcons = { Dashboard: BarChart3, Report: FileText, Dataset: Database }
 const PAGE_SIZE = 6
 
 export function DataMarketCatalogPage({ onOpenProduct, initialSearch = '' }) {
+  const { currentPersona } = usePersona()
   const [search, setSearch] = useState(initialSearch)
   const [selectedCategory, setSelectedCategory] = useState('All')
   const [selectedType, setSelectedType] = useState('All')
   const [sortBy, setSortBy] = useState('Most Recent')
   const [page, setPage] = useState(1)
+  const [allProducts, setAllProducts] = useState(staticProducts)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const isAdmin = currentPersona === 'admin'
+    fetch(`/api/portal/products${isAdmin ? '?includeAll=true' : ''}`)
+      .then(r => r.json())
+      .then(rows => {
+        if (Array.isArray(rows) && rows.length > 0) {
+          setAllProducts(rows.map(normalizeProduct))
+        }
+      })
+      .catch(() => { /* keep static fallback */ })
+      .finally(() => setLoading(false))
+  }, [currentPersona])
 
   const filtered = allProducts.filter(p => {
     const words = search.toLowerCase().split(/\s+/).filter(Boolean)
@@ -64,7 +103,10 @@ export function DataMarketCatalogPage({ onOpenProduct, initialSearch = '' }) {
       <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Data Catalog</h1>
-          <p className="text-sm text-gray-500 mt-1">{filtered.length} data products available</p>
+          <p className="text-sm text-gray-500 mt-1 flex items-center gap-2">
+            {loading && <RefreshCw className="h-3 w-3 animate-spin" />}
+            {filtered.length} data products available
+          </p>
         </div>
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2 text-sm text-gray-600">
