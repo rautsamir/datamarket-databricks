@@ -1,5 +1,5 @@
-import React, { useState } from 'react'
-import { ShieldCheck, CheckCircle2, XCircle, Clock, Terminal, ChevronDown, ChevronUp, User, Calendar, Database } from 'lucide-react'
+import React, { useState, useEffect } from 'react'
+import { ShieldCheck, CheckCircle2, XCircle, Clock, Terminal, ChevronDown, ChevronUp, User, Calendar, Database, Package, Eye } from 'lucide-react'
 import { usePersona } from '../context/PersonaContext'
 
 const DataMarket_BLUE = '#003865'
@@ -66,10 +66,48 @@ function norm(r) {
 export function DataMarketAdminPage() {
   const { requests, approveRequest, denyRequest, currentPersona } = usePersona()
   const [filter, setFilter] = useState('Pending')
+  const [activeView, setActiveView] = useState('access') // 'access' | 'products'
   const [denyModal, setDenyModal] = useState(null)
   const [denyReason, setDenyReason] = useState('')
   const [justActed, setJustActed] = useState({})
+  const [pendingProducts, setPendingProducts] = useState([])
+  const [productActed, setProductActed] = useState({})
   const normalizedReqs = requests.map(norm)
+
+  useEffect(() => {
+    fetch('/api/portal/products?includeAll=true')
+      .then(r => r.json())
+      .then(rows => {
+        if (Array.isArray(rows)) {
+          setPendingProducts(rows.filter(p => p.status === 'Pending' || p.is_active === false))
+        }
+      })
+      .catch(() => {})
+  }, [])
+
+  const handlePublish = async (productRef, productName) => {
+    try {
+      await fetch(`/api/portal/products/${productRef}/publish`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reviewerEmail: 'datasteward@example.org' })
+      })
+      setProductActed(prev => ({ ...prev, [productRef]: 'published' }))
+      setPendingProducts(prev => prev.filter(p => p.product_ref !== productRef))
+    } catch (e) { console.error(e) }
+  }
+
+  const handleRejectProduct = async (productRef) => {
+    try {
+      await fetch(`/api/portal/products/${productRef}/reject`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reviewerEmail: 'datasteward@example.org', reason: 'Does not meet governance standards' })
+      })
+      setProductActed(prev => ({ ...prev, [productRef]: 'rejected' }))
+      setPendingProducts(prev => prev.filter(p => p.product_ref !== productRef))
+    } catch (e) { console.error(e) }
+  }
 
   if (currentPersona !== 'admin') {
     return (
@@ -115,11 +153,115 @@ export function DataMarketAdminPage() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
             <ShieldCheck className="h-6 w-6" style={{ color: DataMarket_BLUE }} />
-            Approval Queue
+            {activeView === 'access' ? 'Approval Queue' : 'Product Registration Queue'}
           </h1>
-          <p className="text-sm text-gray-500 mt-1">Review and action data access requests — approvals automatically issue Unity Catalog grants</p>
+          <p className="text-sm text-gray-500 mt-1">
+            {activeView === 'access'
+              ? 'Review and action data access requests — approvals automatically issue Unity Catalog grants'
+              : 'Review and publish new data products submitted by producers'}
+          </p>
+        </div>
+        {/* View toggle */}
+        <div className="flex gap-2 shrink-0">
+          <button
+            onClick={() => setActiveView('access')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium border transition-colors ${activeView === 'access' ? 'text-white border-transparent' : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'}`}
+            style={activeView === 'access' ? { backgroundColor: DataMarket_BLUE } : {}}
+          >
+            <ShieldCheck className="h-4 w-4" /> Access Requests
+            {requests.filter(r => r.status === 'Pending').length > 0 && (
+              <span className="bg-amber-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+                {requests.filter(r => r.status === 'Pending').length}
+              </span>
+            )}
+          </button>
+          <button
+            onClick={() => setActiveView('products')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium border transition-colors ${activeView === 'products' ? 'text-white border-transparent' : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'}`}
+            style={activeView === 'products' ? { backgroundColor: DataMarket_BLUE } : {}}
+          >
+            <Package className="h-4 w-4" /> New Products
+            {pendingProducts.length > 0 && (
+              <span className="bg-blue-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+                {pendingProducts.length}
+              </span>
+            )}
+          </button>
         </div>
       </div>
+
+      {/* ── Product Registration Queue ─────────────────────────────────────────── */}
+      {activeView === 'products' && (
+        <div className="space-y-4">
+          {pendingProducts.length === 0 && Object.keys(productActed).length === 0 && (
+            <div className="text-center py-12 text-gray-400 bg-white rounded-xl border border-gray-200">
+              <Package className="h-10 w-10 mx-auto mb-2 opacity-30" />
+              <p className="text-sm">No products pending review.</p>
+              <p className="text-xs mt-1">Products submitted via Register Product will appear here.</p>
+            </div>
+          )}
+          {Object.entries(productActed).map(([ref, action]) => (
+            <div key={ref} className={`rounded-xl border-2 p-5 ${action === 'published' ? 'border-emerald-300 bg-emerald-50/30' : 'border-red-300 bg-red-50/30'}`}>
+              <div className="flex items-center gap-2">
+                {action === 'published' ? <CheckCircle2 className="h-5 w-5 text-emerald-600" /> : <XCircle className="h-5 w-5 text-red-500" />}
+                <span className="text-sm font-medium text-gray-700">{ref} — {action === 'published' ? 'Published to catalog ✓' : 'Rejected'}</span>
+              </div>
+            </div>
+          ))}
+          {pendingProducts.map(p => {
+            const tags = Array.isArray(p.tags) ? p.tags
+              : typeof p.tags === 'string' ? (p.tags.startsWith('[') ? JSON.parse(p.tags) : p.tags.split(',')) : []
+            return (
+              <div key={p.product_ref} className="bg-white rounded-xl border-2 border-blue-200 p-5">
+                <div className="flex items-start justify-between gap-4 flex-wrap">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-2 flex-wrap">
+                      <span className="text-xs font-mono text-gray-400">{p.product_ref}</span>
+                      <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-blue-100 text-blue-800">Pending Review</span>
+                      <span className="text-xs text-gray-400">{p.domain || p.source_system}</span>
+                    </div>
+                    <div className="flex items-center gap-2 mb-3">
+                      <Database className="h-4 w-4 text-gray-400 shrink-0" />
+                      <h3 className="font-semibold text-gray-900">{p.display_name}</h3>
+                      <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded">{p.type}</span>
+                    </div>
+                    <div className="flex items-center gap-4 text-xs text-gray-500 mb-3">
+                      <span className="flex items-center gap-1.5"><User className="h-3.5 w-3.5" /> {p.owner_email}</span>
+                      <span>{p.classification} · {p.refresh_frequency}</span>
+                    </div>
+                    <div className="bg-gray-50 rounded-lg p-3 text-sm text-gray-600 border border-gray-100">
+                      <p className="text-xs font-medium text-gray-400 mb-1">Description</p>
+                      {p.description}
+                    </div>
+                    {tags.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mt-2">
+                        {tags.map(t => <span key={t} className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">{t}</span>)}
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex flex-col gap-2 shrink-0">
+                    <button
+                      onClick={() => handlePublish(p.product_ref, p.display_name)}
+                      className="flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium text-white bg-emerald-600 hover:bg-emerald-700 transition-colors"
+                    >
+                      <CheckCircle2 className="h-4 w-4" /> Publish
+                    </button>
+                    <button
+                      onClick={() => handleRejectProduct(p.product_ref)}
+                      className="flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium text-red-600 border-2 border-red-200 hover:bg-red-50 transition-colors"
+                    >
+                      <XCircle className="h-4 w-4" /> Reject
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* ── Access Request Queue ───────────────────────────────────────────────── */}
+      {activeView === 'access' && (<>
 
       {/* Stats */}
       <div className="grid grid-cols-3 gap-4 mb-6">
@@ -257,6 +399,7 @@ export function DataMarketAdminPage() {
           )
         })}
       </div>
+      </>) }
 
       {/* Deny modal */}
       {denyModal && (

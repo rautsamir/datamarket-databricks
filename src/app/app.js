@@ -94,6 +94,21 @@ async function query(sql, params = []) {
   return pool.query(sql, params);
 }
 
+// ─── Schema migration — run at startup ───────────────────────────────────────
+async function runMigrations() {
+  try {
+    // Add status + updated_at to data_products if missing (for product registration flow)
+    await query(`ALTER TABLE data_products ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'Published'`);
+    await query(`ALTER TABLE data_products ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW()`);
+    await query(`ALTER TABLE data_products ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW()`);
+    // Mark all existing rows as Published so they stay visible
+    await query(`UPDATE data_products SET status = 'Published' WHERE status IS NULL`);
+    console.log('[Lakebase] Migrations applied');
+  } catch (e) {
+    console.warn('[Lakebase] Migration warning (non-fatal):', e.message);
+  }
+}
+
 // ─── Middleware ───────────────────────────────────────────────────────────────
 app.use(helmet({
   contentSecurityPolicy: {
@@ -128,10 +143,13 @@ app.get('/api/health', async (req, res) => {
 // ─── Data Products ────────────────────────────────────────────────────────────
 app.get('/api/portal/products', async (req, res) => {
   try {
-    const { domain, type, q } = req.query;
+    const { domain, type, q, includeAll } = req.query;
     let sql = `SELECT product_id, product_ref, uc_full_name, display_name, description, type, domain,
-                      tags, source_system, refresh_frequency, owner_email, classification, is_active
-               FROM data_products WHERE is_active = TRUE`;
+                      tags, source_system, refresh_frequency, owner_email, classification, is_active,
+                      COALESCE(status,'Published') AS status, created_at
+               FROM data_products WHERE (is_active = TRUE OR COALESCE(status,'Published') = 'Pending')`;
+    // Non-admin users only see active/published
+    if (!includeAll) sql = sql.replace("(is_active = TRUE OR COALESCE(status,'Published') = 'Pending')", "is_active = TRUE AND COALESCE(status,'Published') = 'Published'");
     const params = [];
     if (domain) { params.push(domain); sql += ` AND domain = $${params.length}`; }
     if (type)   { params.push(type);   sql += ` AND type = $${params.length}`; }
@@ -141,6 +159,108 @@ app.get('/api/portal/products', async (req, res) => {
     res.json(rows);
   } catch (e) {
     console.error('[/api/portal/products]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ─── Register Product (producer submits for review) ──────────────────────────
+app.post('/api/portal/products', async (req, res) => {
+  try {
+    const { name, description, type, source, tags, refreshFrequency,
+            ownerEmail, classification, ucFullName, domain, hasPII, submittedBy } = req.body;
+    if (!name || !description) return res.status(400).json({ error: 'name and description are required' });
+
+    // Generate a sequential ref after current max
+    const { rows: [maxRow] } = await query(
+      `SELECT MAX(CAST(SUBSTRING(product_ref FROM 4) AS INTEGER)) AS max_id FROM data_products`
+    );
+    const nextId = (maxRow.max_id || 12) + 1;
+    const productRef = `DP-${String(nextId).padStart(3, '0')}`;
+
+    const tagsArr = Array.isArray(tags) ? tags : (tags ? tags.split(',').map(t => t.trim()) : []);
+
+    const { rows: [product] } = await query(
+      `INSERT INTO data_products
+         (product_ref, display_name, description, type, source_system, tags,
+          refresh_frequency, owner_email, classification, uc_full_name, domain, is_active, status)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,FALSE,'Pending')
+       RETURNING *`,
+      [productRef, name, description, type || 'Dashboard', source || 'Other',
+       JSON.stringify(tagsArr), refreshFrequency || 'Daily',
+       ownerEmail || submittedBy || 'unknown@example.org',
+       classification || 'Internal', ucFullName || '', domain || source || 'Other']
+    );
+
+    await query(
+      `INSERT INTO audit_log (action, actor_email, target_ref, details)
+       VALUES ('PRODUCT_SUBMITTED', $1, $2, $3)`,
+      [submittedBy || ownerEmail || 'unknown', productRef, `Product "${name}" submitted for review`]
+    );
+
+    res.status(201).json(product);
+  } catch (e) {
+    console.error('[POST /api/portal/products]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ─── Get pending products (for admin review) ──────────────────────────────────
+app.get('/api/portal/products/pending', async (req, res) => {
+  try {
+    const { rows } = await query(
+      `SELECT * FROM data_products WHERE is_active = FALSE AND status = 'Pending' ORDER BY created_at DESC`
+    );
+    res.json(rows);
+  } catch (e) {
+    console.error('[/api/portal/products/pending]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ─── Publish product (admin approves, makes it live in catalog) ───────────────
+app.put('/api/portal/products/:ref/publish', async (req, res) => {
+  try {
+    const { ref } = req.params;
+    const { reviewerEmail } = req.body;
+    const { rows: [product] } = await query(
+      `UPDATE data_products SET is_active = TRUE, status = 'Published', updated_at = NOW()
+       WHERE product_ref = $1 RETURNING *`,
+      [ref]
+    );
+    if (!product) return res.status(404).json({ error: 'Product not found' });
+
+    await query(
+      `INSERT INTO audit_log (action, actor_email, target_ref, details)
+       VALUES ('PRODUCT_PUBLISHED', $1, $2, $3)`,
+      [reviewerEmail || 'admin', ref, `Product "${product.display_name}" published to catalog`]
+    );
+    res.json(product);
+  } catch (e) {
+    console.error('[PUT /api/portal/products/:ref/publish]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ─── Reject product registration ──────────────────────────────────────────────
+app.put('/api/portal/products/:ref/reject', async (req, res) => {
+  try {
+    const { ref } = req.params;
+    const { reviewerEmail, reason } = req.body;
+    const { rows: [product] } = await query(
+      `UPDATE data_products SET status = 'Rejected', updated_at = NOW()
+       WHERE product_ref = $1 RETURNING *`,
+      [ref]
+    );
+    if (!product) return res.status(404).json({ error: 'Product not found' });
+
+    await query(
+      `INSERT INTO audit_log (action, actor_email, target_ref, details)
+       VALUES ('PRODUCT_REJECTED', $1, $2, $3)`,
+      [reviewerEmail || 'admin', ref, reason || `Product "${product.display_name}" rejected`]
+    );
+    res.json(product);
+  } catch (e) {
+    console.error('[PUT /api/portal/products/:ref/reject]', e.message);
     res.status(500).json({ error: e.message });
   }
 });
@@ -369,7 +489,9 @@ const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 DataMarket running on 0.0.0.0:${PORT}`);
   console.log(`🗄️  Lakebase: ${LAKEBASE_HOST}/${LAKEBASE_DB}/${LAKEBASE_SCHEMA}`);
   console.log(`📊 Health: http://localhost:${PORT}/api/health`);
-  getPool().then(() => console.log('✅ Lakebase pool initialized')).catch(e => console.warn('⚠️  Lakebase init deferred:', e.message));
+  getPool()
+    .then(() => { console.log('✅ Lakebase pool initialized'); return runMigrations(); })
+    .catch(e => console.warn('⚠️  Lakebase init deferred:', e.message));
 });
 
 process.on('SIGTERM', () => {
