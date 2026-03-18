@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { Search, Menu, X, ChevronDown, ShieldCheck, Bell } from 'lucide-react'
+import { Search, Menu, X, ChevronDown, ShieldCheck, Bell, CheckCircle, XCircle, Clock, AlertTriangle } from 'lucide-react'
 import { usePersona, personas } from '../../context/PersonaContext'
 import { DataMarketAssistant } from '../DataMarketAssistant'
 
@@ -11,11 +11,27 @@ const personaBadgeColors = {
   admin: 'bg-purple-600'
 }
 
+const notifIcon = (status) => {
+  if (status === 'Approved') return <CheckCircle className="h-4 w-4 text-emerald-500 shrink-0" />
+  if (status === 'Denied' || status === 'Revoked') return <XCircle className="h-4 w-4 text-red-500 shrink-0" />
+  if (status === 'Expiring') return <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0" />
+  return <Clock className="h-4 w-4 text-gray-400 shrink-0" />
+}
+
+const notifText = (n) => {
+  if (n.status === 'Approved') return `Access to ${n.product_name} approved`
+  if (n.status === 'Denied') return `Access to ${n.product_name} denied`
+  if (n.status === 'Revoked') return `Access to ${n.product_name} revoked`
+  if (n.status === 'Expiring') return `${n.product_name} access expires soon`
+  return n.product_name
+}
+
 export function DataMarketLayout({ currentPage, onNavigate, children }) {
   const [mobileOpen, setMobileOpen] = useState(false)
   const [userMenuOpen, setUserMenuOpen] = useState(false)
   const [personaMenuOpen, setPersonaMenuOpen] = useState(false)
-  const { persona, currentPersona, setCurrentPersona, pendingRequests } = usePersona()
+  const [notifOpen, setNotifOpen] = useState(false)
+  const { persona, currentPersona, setCurrentPersona, pendingRequests, notifications, unreadNotificationCount } = usePersona()
 
   const navItems = [
     { id: 'home', label: 'Home' },
@@ -102,13 +118,72 @@ export function DataMarketLayout({ currentPage, onNavigate, children }) {
 
             {/* Right side */}
             <div className="flex items-center gap-2">
-              {/* Notifications (admin only) */}
-              {currentPersona === 'admin' && pendingRequests.length > 0 && (
-                <button onClick={() => onNavigate('admin')} className="relative p-2 text-white/80 hover:text-white">
+              {/* Notifications bell */}
+              <div className="relative">
+                <button
+                  onClick={() => { setNotifOpen(v => !v); setUserMenuOpen(false) }}
+                  className="relative p-2 text-white/80 hover:text-white transition-colors"
+                >
                   <Bell className="h-5 w-5" />
-                  <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-red-500 rounded-full border border-[#003865]" />
+                  {(currentPersona === 'admin' ? pendingRequests.length : unreadNotificationCount) > 0 && (
+                    <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-red-500 rounded-full border border-[#003865]" />
+                  )}
                 </button>
-              )}
+
+                {notifOpen && (
+                  <div className="absolute right-0 mt-1 w-80 bg-white rounded-xl shadow-xl border border-gray-200 py-2 z-50">
+                    <p className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider border-b border-gray-100">
+                      {currentPersona === 'admin' ? 'Pending Approvals' : 'Notifications'}
+                    </p>
+                    {currentPersona === 'admin' ? (
+                      pendingRequests.length === 0 ? (
+                        <p className="px-4 py-6 text-sm text-gray-400 text-center">No pending approvals</p>
+                      ) : (
+                        <>
+                          {pendingRequests.slice(0, 5).map(r => (
+                            <button key={r.request_ref || r.id}
+                              onClick={() => { onNavigate('admin'); setNotifOpen(false) }}
+                              className="w-full flex items-start gap-3 px-4 py-3 hover:bg-gray-50 text-left">
+                              <Clock className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
+                              <div className="min-w-0">
+                                <p className="text-sm text-gray-800 truncate">{r.product_name} — {r.requester_name || r.requester_email}</p>
+                                <p className="text-xs text-gray-400">Awaiting approval</p>
+                              </div>
+                            </button>
+                          ))}
+                          <div className="border-t border-gray-100 pt-1">
+                            <button onClick={() => { onNavigate('admin'); setNotifOpen(false) }}
+                              className="w-full text-center text-xs text-blue-600 hover:text-blue-800 py-2">
+                              View all in Approvals →
+                            </button>
+                          </div>
+                        </>
+                      )
+                    ) : (
+                      notifications.length === 0 ? (
+                        <p className="px-4 py-6 text-sm text-gray-400 text-center">No recent notifications</p>
+                      ) : (
+                        notifications.slice(0, 6).map((n, i) => (
+                          <div key={i} className="flex items-start gap-3 px-4 py-3 hover:bg-gray-50">
+                            {notifIcon(n.status)}
+                            <div className="min-w-0">
+                              <p className="text-sm text-gray-800">{notifText(n)}</p>
+                              {n.status === 'Approved' && n.expires_at && (
+                                <p className="text-xs text-gray-400">
+                                  Expires {new Date(n.expires_at).toLocaleDateString()}
+                                </p>
+                              )}
+                              {(n.status === 'Denied' || n.status === 'Revoked') && n.denial_reason && (
+                                <p className="text-xs text-gray-400 truncate">{n.denial_reason}</p>
+                              )}
+                            </div>
+                          </div>
+                        ))
+                      )
+                    )}
+                  </div>
+                )}
+              </div>
 
               {/* Search */}
               <div className="relative hidden sm:block">
@@ -236,8 +311,8 @@ export function DataMarketLayout({ currentPage, onNavigate, children }) {
         </div>
       </footer>
 
-      {(userMenuOpen || personaMenuOpen || mobileOpen) && (
-        <div className="fixed inset-0 z-40" onClick={() => { setUserMenuOpen(false); setPersonaMenuOpen(false); setMobileOpen(false) }} />
+      {(userMenuOpen || personaMenuOpen || mobileOpen || notifOpen) && (
+        <div className="fixed inset-0 z-40" onClick={() => { setUserMenuOpen(false); setPersonaMenuOpen(false); setMobileOpen(false); setNotifOpen(false) }} />
       )}
 
       <DataMarketAssistant onNavigate={onNavigate} />

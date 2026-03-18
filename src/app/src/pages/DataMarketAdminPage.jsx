@@ -59,16 +59,19 @@ function norm(r) {
     accessLevel:   r.access_level   || r.accessLevel || 'Read Only',
     denyReason:    r.denial_reason  || r.denyReason,
     ucGrantSql:    r.uc_grant_sql   || r.ucGrantSql,
-    ucFullName:    r.uc_full_name
+    ucFullName:    r.uc_full_name,
+    expiresAt:     r.expires_at     || r.expiresAt,
   }
 }
 
 export function DataMarketAdminPage() {
-  const { requests, approveRequest, denyRequest, currentPersona } = usePersona()
+  const { requests, approveRequest, denyRequest, revokeRequest, currentPersona } = usePersona()
   const [filter, setFilter] = useState('Pending')
   const [activeView, setActiveView] = useState('access') // 'access' | 'products'
   const [denyModal, setDenyModal] = useState(null)
   const [denyReason, setDenyReason] = useState('')
+  const [revokeModal, setRevokeModal] = useState(null)
+  const [revokeReason, setRevokeReason] = useState('')
   const [justActed, setJustActed] = useState({})
   const [pendingProducts, setPendingProducts] = useState([])
   const [productActed, setProductActed] = useState({})
@@ -136,6 +139,13 @@ export function DataMarketAdminPage() {
     setJustActed(prev => ({ ...prev, [denyModal]: 'denied' }))
     setDenyModal(null)
     setDenyReason('')
+  }
+
+  const handleRevoke = () => {
+    revokeRequest(revokeModal, revokeReason)
+    setJustActed(prev => ({ ...prev, [revokeModal]: 'revoked' }))
+    setRevokeModal(null)
+    setRevokeReason('')
   }
 
   const timeAgo = (iso) => {
@@ -360,9 +370,15 @@ export function DataMarketAdminPage() {
                     {req.reason}
                   </div>
 
+                  {req.expiresAt && req.status === 'Approved' && (
+                    <div className="flex items-center gap-1.5 text-xs text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-lg px-3 py-1.5 mt-2 w-fit">
+                      <Clock className="h-3.5 w-3.5" />
+                      Access expires {new Date(req.expiresAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                    </div>
+                  )}
                   {req.denyReason && (
                     <div className="bg-red-50 rounded-lg p-3 text-sm text-red-700 border border-red-100 mt-2">
-                      <p className="text-xs font-medium text-red-400 mb-1">Denial Reason</p>
+                      <p className="text-xs font-medium text-red-400 mb-1">{req.status === 'Revoked' ? 'Revocation Reason' : 'Denial Reason'}</p>
                       {req.denyReason}
                     </div>
                   )}
@@ -389,9 +405,22 @@ export function DataMarketAdminPage() {
                 )}
 
                 {req.status !== 'Pending' && (
-                  <div className={`shrink-0 flex items-center gap-1.5 text-sm font-medium px-3 py-1.5 rounded-full ${req.status === 'Approved' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
-                    {req.status === 'Approved' ? <CheckCircle2 className="h-4 w-4" /> : <XCircle className="h-4 w-4" />}
-                    {req.status}
+                  <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                    <div className={`flex items-center gap-1.5 text-sm font-medium px-3 py-1.5 rounded-full ${
+                      req.status === 'Approved' ? 'bg-emerald-100 text-emerald-700'
+                      : req.status === 'Revoked' ? 'bg-orange-100 text-orange-700'
+                      : 'bg-red-100 text-red-700'}`}>
+                      {req.status === 'Approved' ? <CheckCircle2 className="h-4 w-4" /> : <XCircle className="h-4 w-4" />}
+                      {req.status}
+                    </div>
+                    {req.status === 'Approved' && (
+                      <button
+                        onClick={() => { setRevokeModal(req.id); setRevokeReason('') }}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-orange-700 border border-orange-200 hover:bg-orange-50 transition-colors"
+                      >
+                        <XCircle className="h-3.5 w-3.5" /> Revoke
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
@@ -422,6 +451,33 @@ export function DataMarketAdminPage() {
               </button>
               <button onClick={handleDeny} className="flex-1 py-2.5 rounded-lg text-sm font-medium text-white bg-red-600 hover:bg-red-700">
                 Deny Request
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Revoke modal */}
+      {revokeModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl p-6">
+            <h3 className="text-lg font-bold text-gray-900 mb-1">Revoke Access</h3>
+            <p className="text-sm text-gray-500 mb-4">
+              This will immediately remove the user's access and issue a UC REVOKE statement. The user will be notified.
+            </p>
+            <textarea
+              rows={3}
+              placeholder="e.g. Project completed. Access no longer required."
+              value={revokeReason}
+              onChange={e => setRevokeReason(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-400 resize-none mb-4"
+            />
+            <div className="flex gap-3">
+              <button onClick={() => { setRevokeModal(null); setRevokeReason('') }} className="flex-1 py-2.5 border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50">
+                Cancel
+              </button>
+              <button onClick={handleRevoke} className="flex-1 py-2.5 rounded-lg text-sm font-medium text-white bg-orange-600 hover:bg-orange-700">
+                Revoke Access
               </button>
             </div>
           </div>

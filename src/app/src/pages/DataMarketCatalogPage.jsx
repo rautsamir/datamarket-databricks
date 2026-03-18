@@ -39,9 +39,23 @@ function normalizeProduct(p) {
     refreshFrequency: p.refresh_frequency || p.refreshFrequency || 'Daily',
     owner: p.owner_email || p.owner || '-',
     lastUpdated: p.updated_at ? new Date(p.updated_at).toLocaleDateString() : p.lastUpdated || '-',
+    lastRefreshed: p.last_refreshed ? new Date(p.last_refreshed) : null,
     tags,
     status: p.status || 'Published'
   }
+}
+
+// Returns a freshness label + color class based on how recently data was refreshed
+function freshnessLabel(lastRefreshed, freq) {
+  if (!lastRefreshed) return null
+  const ageMs = Date.now() - lastRefreshed.getTime()
+  const ageDays = ageMs / 86400000
+  const thresholds = { Daily: 1.5, Weekly: 8, Monthly: 32, Annual: 370 }
+  const threshold = thresholds[freq] || 3
+  if (ageDays <= threshold * 0.5) return { label: 'Fresh', color: 'text-emerald-600 bg-emerald-50' }
+  if (ageDays <= threshold) return { label: 'Recent', color: 'text-blue-600 bg-blue-50' }
+  if (ageDays <= threshold * 2) return { label: 'Stale', color: 'text-amber-600 bg-amber-50' }
+  return { label: 'Outdated', color: 'text-red-600 bg-red-50' }
 }
 
 const tagColors = {
@@ -225,10 +239,18 @@ export function DataMarketCatalogPage({ onOpenProduct, initialSearch = '' }) {
                         </div>
                       </div>
                       <p className="text-xs text-gray-500 mt-1 line-clamp-2">{product.description}</p>
-                      <div className="flex items-center gap-4 mt-2 text-xs text-gray-400">
+                      <div className="flex items-center gap-3 mt-2 text-xs text-gray-400 flex-wrap">
                         <span>↻ {product.refreshFrequency}</span>
                         <span>Owner: {product.owner}</span>
                         <span>Updated: {product.lastUpdated}</span>
+                        {(() => {
+                          const f = freshnessLabel(product.lastRefreshed, product.refreshFrequency)
+                          return f ? (
+                            <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${f.color}`}>
+                              ● {f.label}
+                            </span>
+                          ) : null
+                        })()}
                       </div>
                     </div>
                   </div>

@@ -28,6 +28,7 @@ const statusConfig = {
   Approved: 'bg-emerald-100 text-emerald-800',
   Pending: 'bg-amber-100 text-amber-800',
   Denied: 'bg-red-100 text-red-800',
+  Revoked: 'bg-orange-100 text-orange-800',
 }
 
 export function DataMarketLibraryPage({ onNavigate, onOpenProduct }) {
@@ -54,7 +55,7 @@ export function DataMarketLibraryPage({ onNavigate, onOpenProduct }) {
       owner: '-',
       lastUpdated: r.requested_at ? new Date(r.requested_at).toLocaleDateString() : '-'
     }
-    return { ...base, status: r.status, requestId: r.id }
+    return { ...base, status: r.status, requestId: r.id, expiresAt: r.expires_at || r.expiresAt }
   })
 
   // Deduplicate: prefer request status over persona default
@@ -165,9 +166,16 @@ export function DataMarketLibraryPage({ onNavigate, onOpenProduct }) {
                         <BookmarkCheck className="h-4 w-4 mx-auto" style={{ color: DataMarket_BLUE }} />
                       </td>
                       <td className="py-3 px-4 text-center">
-                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${statusConfig[item.status]}`}>
-                          {item.status}
-                        </span>
+                        <div className="flex flex-col items-center gap-1">
+                          <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${statusConfig[item.status] || 'bg-gray-100 text-gray-700'}`}>
+                            {item.status}
+                          </span>
+                          {item.expiresAt && item.status === 'Approved' && (
+                            <span className="text-[9px] text-gray-400">
+                              Exp {new Date(item.expiresAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' })}
+                            </span>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   )
