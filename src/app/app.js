@@ -364,28 +364,32 @@ app.put('/api/portal/requests/:id/approve', async (req, res) => {
     const { id } = req.params;
     const { adminEmail = 'datasteward@example.org' } = req.body;
 
+    // id can be a UUID or a request_ref like "REQ-001" — avoid type mismatch
+    const isUUID = /^[0-9a-f-]{36}$/i.test(id);
     const { rows: [req_] } = await query(`
       SELECT ar.*, dp.uc_full_name, dp.display_name AS product_name, u.email AS requester_email
       FROM access_requests ar
       JOIN data_products dp ON dp.product_id = ar.product_id
       JOIN users u ON u.user_id = ar.requester_id
-      WHERE ar.request_id = $1 OR ar.request_ref = $1`, [id]);
+      WHERE ${isUUID ? 'ar.request_id = $1::uuid' : 'ar.request_ref = $1'}`, [id]);
     if (!req_) return res.status(404).json({ error: 'Request not found' });
 
     const ucGrantSql = req_.uc_full_name
       ? `GRANT SELECT ON ${req_.uc_full_name} TO \`${req_.requester_email}\`;`
-      : `-- No UC table linked yet for ${req_.product_name}`;
+      : `-- No UC table linked for ${req_.product_name} (set uc_full_name on the product to enable automatic grants)`;
 
     const { rows: [adminUser] } = await query('SELECT user_id FROM users WHERE email = $1', [adminEmail]);
 
     await query(`UPDATE access_requests SET status = 'Approved', resolved_at = NOW(),
       resolved_by = $1, uc_grant_issued = TRUE, uc_grant_sql = $2, updated_at = NOW()
-      WHERE request_id = $3 OR request_ref = $3`,
-      [adminUser?.user_id || null, ucGrantSql, id]);
+      WHERE request_ref = $3`,
+      [adminUser?.user_id || null, ucGrantSql, req_.request_ref]);
 
-    await query(`INSERT INTO audit_log (event_type, actor_email, target_type, target_id, target_name, metadata)
-      VALUES ('REQUEST_APPROVED', $1, 'access_request', $2, $3, $4)`,
-      [adminEmail, req_.request_id, req_.request_ref, JSON.stringify({ ucGrantSql })]);
+    try {
+      await query(`INSERT INTO audit_log (event_type, actor_email, target_type, target_id, target_name, metadata)
+        VALUES ('REQUEST_APPROVED', $1, 'access_request', $2, $3, $4)`,
+        [adminEmail, req_.request_id, req_.request_ref, JSON.stringify({ ucGrantSql })]);
+    } catch (_) {}
 
     res.json({ status: 'Approved', uc_grant_sql: ucGrantSql });
   } catch (e) {
@@ -399,20 +403,23 @@ app.put('/api/portal/requests/:id/deny', async (req, res) => {
     const { id } = req.params;
     const { adminEmail = 'datasteward@example.org', reason = '' } = req.body;
 
+    const isUUID = /^[0-9a-f-]{36}$/i.test(id);
     const { rows: [req_] } = await query(
-      'SELECT request_id, request_ref FROM access_requests WHERE request_id = $1 OR request_ref = $1', [id]);
+      `SELECT request_id, request_ref FROM access_requests WHERE ${isUUID ? 'request_id = $1::uuid' : 'request_ref = $1'}`, [id]);
     if (!req_) return res.status(404).json({ error: 'Request not found' });
 
     const { rows: [adminUser] } = await query('SELECT user_id FROM users WHERE email = $1', [adminEmail]);
 
     await query(`UPDATE access_requests SET status = 'Denied', resolved_at = NOW(),
       resolved_by = $1, denial_reason = $2, updated_at = NOW()
-      WHERE request_id = $3 OR request_ref = $3`,
-      [adminUser?.user_id || null, reason, id]);
+      WHERE request_ref = $3`,
+      [adminUser?.user_id || null, reason, req_.request_ref]);
 
-    await query(`INSERT INTO audit_log (event_type, actor_email, target_type, target_id, target_name, metadata)
-      VALUES ('REQUEST_DENIED', $1, 'access_request', $2, $3, $4)`,
-      [adminEmail, req_.request_id, req_.request_ref, JSON.stringify({ reason })]);
+    try {
+      await query(`INSERT INTO audit_log (event_type, actor_email, target_type, target_id, target_name, metadata)
+        VALUES ('REQUEST_DENIED', $1, 'access_request', $2, $3, $4)`,
+        [adminEmail, req_.request_id, req_.request_ref, JSON.stringify({ reason })]);
+    } catch (_) {}
 
     res.json({ status: 'Denied' });
   } catch (e) {
