@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react'
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react'
 
 export const personas = {
   richard: {
@@ -46,6 +46,7 @@ export function PersonaProvider({ children }) {
   const [requests, setRequests] = useState([])
   const [products, setProducts] = useState([])
   const [library, setLibrary] = useState([])
+  const [notifications, setNotifications] = useState([])
   const [loading, setLoading] = useState(false)
   const [apiAvailable, setApiAvailable] = useState(false)
 
@@ -88,15 +89,29 @@ export function PersonaProvider({ children }) {
     } catch (e) { console.warn('library load failed', e) }
   }, [apiAvailable, persona.email])
 
+  const loadNotifications = useCallback(async () => {
+    if (!apiAvailable || persona.id === 'admin') return
+    try {
+      const r = await fetch(`/api/portal/notifications?email=${encodeURIComponent(persona.email)}`)
+      if (r.ok) setNotifications(await r.json())
+    } catch (e) { console.warn('notifications load failed', e) }
+  }, [apiAvailable, persona.email, persona.id])
+
   useEffect(() => {
     if (apiAvailable) {
       loadProducts()
       loadRequests()
       loadLibrary()
+      loadNotifications()
     }
-  }, [apiAvailable, loadProducts, loadRequests, loadLibrary])
+  }, [apiAvailable, loadProducts, loadRequests, loadLibrary, loadNotifications])
 
-  useEffect(() => { if (apiAvailable) loadLibrary() }, [currentPersona, apiAvailable, loadLibrary])
+  useEffect(() => {
+    if (apiAvailable) {
+      loadLibrary()
+      loadNotifications()
+    }
+  }, [currentPersona, apiAvailable, loadLibrary, loadNotifications])
 
   // ── Mutations ─────────────────────────────────────────────────────────────
   const submitRequest = async (product, form) => {
@@ -176,20 +191,45 @@ export function PersonaProvider({ children }) {
     ))
   }
 
-  // ── Access check ──────────────────────────────────────────────────────────
+  const revokeRequest = async (reqRef, reason = '') => {
+    if (apiAvailable) {
+      try {
+        await fetch(`/api/portal/requests/${reqRef}/revoke`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ adminEmail: persona.email, reason })
+        })
+        await loadRequests()
+        await loadNotifications()
+        return
+      } catch (e) { console.warn('revokeRequest API failed', e) }
+    }
+    setRequests(prev => prev.map(r =>
+      (r.request_ref === reqRef || r.id === reqRef)
+        ? { ...r, status: 'Revoked', resolved_at: new Date().toISOString(), denial_reason: reason }
+        : r
+    ))
+  }
+
+  // ── Access check — respects expiry ────────────────────────────────────────
   const hasAccess = (productRef) => {
     if (persona.approvedProductRefs === 'all') return true
     const refStr = typeof productRef === 'number'
       ? `DP-${String(productRef).padStart(3, '0')}`
       : productRef
     if (persona.approvedProductRefs.includes(refStr)) return true
-    // Check approved requests
-    return requests.some(r =>
-      (r.product_ref === refStr || r.productRef === refStr) &&
-      (r.requester_email === persona.email || r.requestedBy === currentPersona) &&
-      r.status === 'Approved'
-    )
+    // Check approved requests (must not be expired or revoked)
+    return requests.some(r => {
+      if ((r.product_ref !== refStr && r.productRef !== refStr)) return false
+      if ((r.requester_email !== persona.email && r.requestedBy !== currentPersona)) return false
+      if (r.status !== 'Approved') return false
+      if (r.expires_at && new Date(r.expires_at) < new Date()) return false
+      return true
+    })
   }
+
+  // ── Unread notification count ─────────────────────────────────────────────
+  const unreadNotificationCount = useMemo(() => notifications.length, [notifications])
 
   const myRequests = requests.filter(r =>
     r.requester_email === persona.email || r.requestedBy === currentPersona)
@@ -205,14 +245,18 @@ export function PersonaProvider({ children }) {
       pendingRequests,
       products,
       library,
+      notifications,
+      unreadNotificationCount,
       loading,
       apiAvailable,
       submitRequest,
       approveRequest,
       denyRequest,
+      revokeRequest,
       hasAccess,
       refreshRequests: loadRequests,
-      refreshLibrary: loadLibrary
+      refreshLibrary: loadLibrary,
+      refreshNotifications: loadNotifications
     }}>
       {children}
     </PersonaContext.Provider>

@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { ArrowLeft, BarChart3, FileText, Database, X, Calendar, User, RefreshCw, Tag, Lock, ExternalLink, CheckCircle2, Clock } from 'lucide-react'
+import { ArrowLeft, BarChart3, FileText, Database, X, Calendar, User, RefreshCw, Tag, Lock, ExternalLink, CheckCircle2, Clock, Eye, EyeOff } from 'lucide-react'
 import { usePersona } from '../context/PersonaContext'
 
 const DataMarket_BLUE = '#003865'
@@ -15,6 +15,145 @@ const tagColors = {
 }
 
 const typeIcons = { Dashboard: BarChart3, Report: FileText, Dataset: Database }
+
+// Generic sample data schemas indexed by domain/category
+const sampleDataByDomain = {
+  Budget: {
+    columns: ['Department', 'FY Budget', 'YTD Spent', 'Variance', 'Status'],
+    rows: [
+      ['Public Works', '$4.2M', '$3.1M', '+$1.1M', 'On Track'],
+      ['Health Services', '$8.7M', '$7.9M', '+$0.8M', 'On Track'],
+      ['IT & Digital', '$2.3M', '$2.6M', '-$0.3M', 'Over Budget'],
+      ['Parks & Rec', '$1.8M', '$1.2M', '+$0.6M', 'Under Spend'],
+    ]
+  },
+  HRIS: {
+    columns: ['Department', 'Headcount', 'Avg Salary', 'Overtime Hrs', 'Turnover Rate'],
+    rows: [
+      ['Finance', '142', '$78,400', '312', '4.2%'],
+      ['Engineering', '88', '$94,200', '188', '6.1%'],
+      ['HR & Admin', '56', '$72,100', '94', '3.8%'],
+      ['Operations', '210', '$65,800', '544', '8.3%'],
+    ]
+  },
+  Payroll: {
+    columns: ['Pay Period', 'Gross Pay', 'Benefits', 'Net Pay', 'Employees Paid'],
+    rows: [
+      ['Jan 2025', '$12.4M', '$2.1M', '$10.3M', '1,842'],
+      ['Feb 2025', '$12.6M', '$2.1M', '$10.5M', '1,851'],
+      ['Mar 2025', '$12.8M', '$2.2M', '$10.6M', '1,858'],
+      ['Apr 2025', '$13.1M', '$2.2M', '$10.9M', '1,872'],
+    ]
+  },
+  'Property Tax': {
+    columns: ['District', 'Assessed Value', 'Tax Levied', 'Collected', 'Delinquency %'],
+    rows: [
+      ['District 1', '$18.2B', '$182M', '$174M', '4.4%'],
+      ['District 2', '$11.7B', '$117M', '$109M', '6.8%'],
+      ['District 3', '$9.4B', '$94M', '$91M', '3.2%'],
+      ['District 4', '$14.8B', '$148M', '$142M', '4.1%'],
+    ]
+  },
+  Demographics: {
+    columns: ['Age Group', 'Population', 'Median Income', 'Households', '% Total'],
+    rows: [
+      ['Under 18', '241,832', 'N/A', '—', '18.4%'],
+      ['18–34', '298,441', '$52,400', '118,200', '22.7%'],
+      ['35–54', '342,108', '$74,800', '156,400', '26.1%'],
+      ['55+', '422,619', '$61,200', '198,300', '32.2%'],
+    ]
+  },
+}
+
+function getSampleData(product) {
+  const domain = product.category || product.domain || ''
+  for (const key of Object.keys(sampleDataByDomain)) {
+    if (domain.toLowerCase().includes(key.toLowerCase())) return sampleDataByDomain[key]
+  }
+  return {
+    columns: ['ID', 'Name', 'Category', 'Value', 'Updated'],
+    rows: [
+      ['001', 'Sample Record A', product.category || 'General', '$12,400', '01/15/2025'],
+      ['002', 'Sample Record B', product.category || 'General', '$8,700', '01/20/2025'],
+      ['003', 'Sample Record C', product.category || 'General', '$23,100', '02/01/2025'],
+      ['004', 'Sample Record D', product.category || 'General', '$5,890', '02/11/2025'],
+    ]
+  }
+}
+
+function SampleDataPreview({ product, accessGranted, onRequestAccess }) {
+  const [expanded, setExpanded] = useState(false)
+  const { columns, rows } = getSampleData(product)
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-200 p-6 mt-6">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2">
+          <Database className="h-4 w-4 text-gray-400" />
+          <h3 className="font-semibold text-gray-900 text-sm">Sample Data Preview</h3>
+          {!accessGranted && (
+            <span className="flex items-center gap-1 text-[10px] text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">
+              <Lock className="h-2.5 w-2.5" /> Restricted
+            </span>
+          )}
+        </div>
+        <button
+          onClick={() => setExpanded(v => !v)}
+          className="text-xs text-gray-400 hover:text-gray-700 flex items-center gap-1"
+        >
+          {expanded ? <><EyeOff className="h-3.5 w-3.5" /> Hide</> : <><Eye className="h-3.5 w-3.5" /> Preview</>}
+        </button>
+      </div>
+
+      {expanded && (
+        <div className="relative overflow-auto rounded-lg border border-gray-100">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="bg-gray-50 border-b border-gray-100">
+                {columns.map(col => (
+                  <th key={col} className="text-left px-3 py-2 text-gray-500 font-medium whitespace-nowrap">{col}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row, ri) => (
+                <tr key={ri} className={`border-b border-gray-50 last:border-0 ${!accessGranted ? 'select-none' : ''}`}>
+                  {row.map((cell, ci) => (
+                    <td key={ci} className={`px-3 py-2 text-gray-700 ${!accessGranted ? 'blur-[5px]' : ''}`}>
+                      {cell}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          {!accessGranted && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/60 backdrop-blur-[1px] rounded-lg">
+              <Lock className="h-6 w-6 text-gray-400 mb-2" />
+              <p className="text-sm font-medium text-gray-700 mb-3">Request access to view full data</p>
+              <button
+                onClick={onRequestAccess}
+                className="px-4 py-2 rounded-lg text-xs font-medium text-white flex items-center gap-1.5"
+                style={{ backgroundColor: DataMarket_BLUE }}
+              >
+                <Lock className="h-3 w-3" /> Request Access
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {!expanded && (
+        <p className="text-xs text-gray-400">
+          {accessGranted
+            ? `${rows.length} sample rows available — click Preview to explore`
+            : 'Preview is blurred. Request access to unlock full dataset.'}
+        </p>
+      )}
+    </div>
+  )
+}
 
 function AccessRequestModal({ product, onClose }) {
   const { submitRequest, persona, myRequests } = usePersona()
@@ -242,6 +381,12 @@ export function DataMarketProductDetailPage({ product, onBack }) {
           </div>
         </div>
       </div>
+
+      <SampleDataPreview
+        product={product}
+        accessGranted={accessGranted}
+        onRequestAccess={() => setShowModal(true)}
+      />
 
       {showModal && <AccessRequestModal product={product} onClose={() => setShowModal(false)} />}
     </div>

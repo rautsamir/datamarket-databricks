@@ -103,6 +103,17 @@ async function runMigrations() {
     await query(`ALTER TABLE data_products ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW()`);
     // Mark all existing rows as Published so they stay visible
     await query(`UPDATE data_products SET status = 'Published' WHERE status IS NULL`);
+    await query(`ALTER TABLE access_requests ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ`);
+    await query(`ALTER TABLE data_products ADD COLUMN IF NOT EXISTS last_refreshed TIMESTAMPTZ`);
+    // Seed last_refreshed with plausible values based on refresh_frequency
+    await query(`UPDATE data_products SET last_refreshed =
+      CASE refresh_frequency
+        WHEN 'Daily'   THEN NOW() - (RANDOM() * INTERVAL '1 day')
+        WHEN 'Weekly'  THEN NOW() - (RANDOM() * INTERVAL '7 days')
+        WHEN 'Monthly' THEN NOW() - (RANDOM() * INTERVAL '30 days')
+        ELSE                NOW() - (RANDOM() * INTERVAL '365 days')
+      END
+      WHERE last_refreshed IS NULL AND refresh_frequency IS NOT NULL`);
     console.log('[Lakebase] Migrations applied');
   } catch (e) {
     console.warn('[Lakebase] Migration warning (non-fatal):', e.message);
@@ -146,7 +157,7 @@ app.get('/api/portal/products', async (req, res) => {
     const { domain, type, q, includeAll } = req.query;
     let sql = `SELECT product_id, product_ref, uc_full_name, display_name, description, type, domain,
                       tags, source_system, refresh_frequency, owner_email, classification, is_active,
-                      COALESCE(status,'Published') AS status, created_at
+                      COALESCE(status,'Published') AS status, created_at, updated_at, last_refreshed
                FROM data_products WHERE (is_active = TRUE OR COALESCE(status,'Published') = 'Pending')`;
     // Non-admin users only see active/published
     if (!includeAll) sql = sql.replace("(is_active = TRUE OR COALESCE(status,'Published') = 'Pending')", "is_active = TRUE AND COALESCE(status,'Published') = 'Published'");
@@ -282,7 +293,7 @@ app.get('/api/portal/requests', async (req, res) => {
   try {
     const { email, status } = req.query;
     let sql = `SELECT ar.request_id, ar.request_ref, ar.status, ar.business_reason, ar.access_level,
-                      ar.requested_at, ar.resolved_at, ar.denial_reason, ar.uc_grant_sql,
+                      ar.requested_at, ar.resolved_at, ar.expires_at, ar.denial_reason, ar.uc_grant_sql,
                       dp.product_ref, dp.display_name AS product_name, dp.domain, dp.type AS product_type,
                       u.email AS requester_email, u.display_name AS requester_name, u.department AS requester_team
                FROM access_requests ar
@@ -343,6 +354,7 @@ app.post('/api/portal/requests', async (req, res) => {
     const { rows: [{ count }] } = await query('SELECT COUNT(*) FROM access_requests', []);
     const ref = `REQ-${String(parseInt(count) + 1).padStart(3, '0')}`;
 
+    // Default 90-day expiry from approval date (set on approve, not submit)
     const { rows: [newReq] } = await query(`
       INSERT INTO access_requests (request_ref, product_id, requester_id, requester_team, business_reason, access_level, status)
       VALUES ($1, $2, $3, $4, $5, $6, 'Pending')
@@ -381,7 +393,8 @@ app.put('/api/portal/requests/:id/approve', async (req, res) => {
     const { rows: [adminUser] } = await query('SELECT user_id FROM users WHERE email = $1', [adminEmail]);
 
     await query(`UPDATE access_requests SET status = 'Approved', resolved_at = NOW(),
-      resolved_by = $1, uc_grant_issued = TRUE, uc_grant_sql = $2, updated_at = NOW()
+      resolved_by = $1, uc_grant_issued = TRUE, uc_grant_sql = $2, updated_at = NOW(),
+      expires_at = NOW() + INTERVAL '90 days'
       WHERE request_ref = $3`,
       [adminUser?.user_id || null, ucGrantSql, req_.request_ref]);
 
@@ -429,6 +442,75 @@ app.put('/api/portal/requests/:id/deny', async (req, res) => {
 });
 
 // ─── Nudge Approver ───────────────────────────────────────────────────────────
+// ─── Revoke access ────────────────────────────────────────────────────────────
+app.put('/api/portal/requests/:id/revoke', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { adminEmail = 'datasteward@example.org', reason = 'Access revoked by administrator' } = req.body;
+    const isUUID = /^[0-9a-f-]{36}$/i.test(id);
+    const { rows: [req_] } = await query(
+      `SELECT request_id, request_ref, uc_grant_sql FROM access_requests
+       WHERE ${isUUID ? 'request_id = $1::uuid' : 'request_ref = $1'}`, [id]);
+    if (!req_) return res.status(404).json({ error: 'Request not found' });
+
+    // Generate REVOKE SQL mirroring the original GRANT
+    const revokeSql = req_.uc_grant_sql
+      ? req_.uc_grant_sql.replace(/^GRANT/, 'REVOKE').replace(/ TO /, ' FROM ')
+      : `-- No UC table linked; manual revocation required`;
+
+    await query(`UPDATE access_requests SET status = 'Revoked', resolved_at = NOW(),
+      denial_reason = $1, uc_grant_sql = $2, updated_at = NOW()
+      WHERE request_ref = $3`,
+      [reason, revokeSql, req_.request_ref]);
+
+    try {
+      await query(`INSERT INTO audit_log (event_type, actor_email, target_name, metadata)
+        VALUES ('ACCESS_REVOKED', $1, $2, $3)`,
+        [adminEmail, req_.request_ref, JSON.stringify({ reason, revokeSql })]);
+    } catch (_) {}
+
+    res.json({ status: 'Revoked', revoke_sql: revokeSql });
+  } catch (e) {
+    console.error('[PUT revoke]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ─── Get notifications for a user ─────────────────────────────────────────────
+app.get('/api/portal/notifications', async (req, res) => {
+  try {
+    const { email } = req.query;
+    if (!email) return res.json([]);
+    const { rows } = await query(`
+      SELECT ar.request_ref, ar.status, ar.resolved_at, ar.expires_at, ar.denial_reason,
+             dp.display_name AS product_name, dp.product_ref
+      FROM access_requests ar
+      JOIN data_products dp ON dp.product_id = ar.product_id
+      JOIN users u ON u.user_id = ar.requester_id
+      WHERE u.email = $1
+        AND ar.status IN ('Approved','Denied','Revoked')
+        AND ar.resolved_at > NOW() - INTERVAL '7 days'
+      ORDER BY ar.resolved_at DESC
+      LIMIT 10`, [email]);
+    // Also include requests expiring within 14 days
+    const { rows: expiring } = await query(`
+      SELECT ar.request_ref, 'Expiring' AS status, ar.expires_at, ar.resolved_at,
+             dp.display_name AS product_name, dp.product_ref
+      FROM access_requests ar
+      JOIN data_products dp ON dp.product_id = ar.product_id
+      JOIN users u ON u.user_id = ar.requester_id
+      WHERE u.email = $1
+        AND ar.status = 'Approved'
+        AND ar.expires_at < NOW() + INTERVAL '14 days'
+      ORDER BY ar.expires_at ASC
+      LIMIT 5`, [email]);
+    res.json([...expiring, ...rows]);
+  } catch (e) {
+    console.error('[/api/portal/notifications]', e.message);
+    res.json([]);
+  }
+});
+
 app.post('/api/portal/requests/:id/nudge', async (req, res) => {
   try {
     const { id } = req.params;
