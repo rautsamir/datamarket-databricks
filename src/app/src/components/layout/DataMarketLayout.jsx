@@ -74,14 +74,14 @@ export function DataMarketLayout({ currentPage, onNavigate, children }) {
           <div className="flex items-center justify-between h-16">
             {/* Logo */}
             <button onClick={() => onNavigate('home')} className="flex items-center gap-3 hover:opacity-90 transition-opacity">
-              <div className="w-8 h-8 rounded flex items-center justify-center bg-white">
+              <div className="w-8 h-8 rounded flex items-center justify-center bg-white shrink-0">
                 <svg viewBox="0 0 24 24" className="w-5 h-5" fill="none" xmlns="http://www.w3.org/2000/svg">
                   <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="#1B3A6B" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
                 </svg>
               </div>
-              <div className="hidden sm:flex flex-col leading-tight">
-                <span className="text-white font-semibold text-base tracking-wide">DataMarket</span>
-                <span className="text-white/60 text-[10px] tracking-wide">Data Discovery &amp; Access</span>
+              <div className="hidden sm:flex flex-col gap-0 self-center">
+                <span className="text-white font-semibold text-base tracking-wide leading-[1.1]">DataMarket</span>
+                <span className="text-white/60 text-[10px] tracking-wide leading-[1.1]">Data Discovery &amp; Access</span>
               </div>
               <span className="text-white font-semibold text-sm sm:hidden">DataMarket</span>
             </button>

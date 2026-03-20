@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { ArrowLeft, BarChart3, FileText, Database, X, Calendar, User, RefreshCw, Tag, Lock, ExternalLink, CheckCircle2, Clock, Eye, EyeOff } from 'lucide-react'
+import { ArrowLeft, BarChart3, FileText, Database, X, Calendar, User, RefreshCw, Tag, Lock, ExternalLink, CheckCircle2, Clock, Eye, EyeOff, ShieldAlert, ShieldCheck, Shield } from 'lucide-react'
 import { usePersona } from '../context/PersonaContext'
 
 const DataMarket_BLUE = '#003865'
@@ -15,6 +15,206 @@ const tagColors = {
 }
 
 const typeIcons = { Dashboard: BarChart3, Report: FileText, Dataset: Database }
+
+// ── Column-level sensitivity schemas per domain ───────────────────────────────
+// Sensitivity levels: PUBLIC | INTERNAL | CONFIDENTIAL | PII
+// 'masked' = visible label but value hidden for non-approved users (ABAC column mask)
+const schemaByDomain = {
+  Budget: [
+    { name: 'department',        type: 'STRING',    sensitivity: 'PUBLIC',       masked: false, description: 'Department name' },
+    { name: 'fiscal_year',       type: 'INTEGER',   sensitivity: 'PUBLIC',       masked: false, description: 'Fiscal year' },
+    { name: 'budget_allocated',  type: 'DECIMAL',   sensitivity: 'INTERNAL',     masked: false, description: 'Total budget allocation' },
+    { name: 'ytd_spent',         type: 'DECIMAL',   sensitivity: 'INTERNAL',     masked: false, description: 'Year-to-date expenditure' },
+    { name: 'variance',          type: 'DECIMAL',   sensitivity: 'INTERNAL',     masked: false, description: 'Budget vs. actual variance' },
+    { name: 'cost_center_code',  type: 'STRING',    sensitivity: 'CONFIDENTIAL', masked: true,  description: 'Internal cost center identifier' },
+    { name: 'approver_id',       type: 'STRING',    sensitivity: 'CONFIDENTIAL', masked: true,  description: 'Budget approver employee ID' },
+  ],
+  HRIS: [
+    { name: 'department',        type: 'STRING',    sensitivity: 'PUBLIC',       masked: false, description: 'Department name' },
+    { name: 'job_title',         type: 'STRING',    sensitivity: 'INTERNAL',     masked: false, description: 'Employee job title' },
+    { name: 'headcount',         type: 'INTEGER',   sensitivity: 'INTERNAL',     masked: false, description: 'Total headcount' },
+    { name: 'turnover_rate',     type: 'DECIMAL',   sensitivity: 'INTERNAL',     masked: false, description: 'Annual turnover rate (%)' },
+    { name: 'avg_salary',        type: 'DECIMAL',   sensitivity: 'CONFIDENTIAL', masked: true,  description: 'Average salary by role' },
+    { name: 'employee_id',       type: 'STRING',    sensitivity: 'PII',          masked: true,  description: 'Unique employee identifier' },
+    { name: 'ssn_last4',         type: 'STRING',    sensitivity: 'PII',          masked: true,  description: 'Last 4 digits of SSN' },
+    { name: 'date_of_birth',     type: 'DATE',      sensitivity: 'PII',          masked: true,  description: 'Employee date of birth' },
+  ],
+  Payroll: [
+    { name: 'pay_period',        type: 'DATE',      sensitivity: 'INTERNAL',     masked: false, description: 'Pay period end date' },
+    { name: 'department',        type: 'STRING',    sensitivity: 'PUBLIC',       masked: false, description: 'Department name' },
+    { name: 'gross_pay',         type: 'DECIMAL',   sensitivity: 'CONFIDENTIAL', masked: true,  description: 'Gross payroll amount' },
+    { name: 'net_pay',           type: 'DECIMAL',   sensitivity: 'CONFIDENTIAL', masked: true,  description: 'Net payroll after deductions' },
+    { name: 'overtime_hours',    type: 'DECIMAL',   sensitivity: 'INTERNAL',     masked: false, description: 'Total overtime hours' },
+    { name: 'employee_id',       type: 'STRING',    sensitivity: 'PII',          masked: true,  description: 'Employee identifier' },
+    { name: 'bank_account_last4',type: 'STRING',    sensitivity: 'PII',          masked: true,  description: 'Last 4 digits of bank account' },
+  ],
+  'Property Tax': [
+    { name: 'parcel_id',         type: 'STRING',    sensitivity: 'PUBLIC',       masked: false, description: 'Property parcel identifier' },
+    { name: 'district',          type: 'STRING',    sensitivity: 'PUBLIC',       masked: false, description: 'Tax district' },
+    { name: 'assessed_value',    type: 'DECIMAL',   sensitivity: 'PUBLIC',       masked: false, description: 'Assessed property value' },
+    { name: 'tax_levied',        type: 'DECIMAL',   sensitivity: 'PUBLIC',       masked: false, description: 'Tax amount levied' },
+    { name: 'collection_status', type: 'STRING',    sensitivity: 'INTERNAL',     masked: false, description: 'Payment collection status' },
+    { name: 'owner_name',        type: 'STRING',    sensitivity: 'PII',          masked: true,  description: 'Property owner full name' },
+    { name: 'owner_address',     type: 'STRING',    sensitivity: 'PII',          masked: true,  description: 'Property owner mailing address' },
+  ],
+  Demographics: [
+    { name: 'census_tract',      type: 'STRING',    sensitivity: 'PUBLIC',       masked: false, description: 'Census tract identifier' },
+    { name: 'age_group',         type: 'STRING',    sensitivity: 'PUBLIC',       masked: false, description: 'Age bracket' },
+    { name: 'population',        type: 'INTEGER',   sensitivity: 'PUBLIC',       masked: false, description: 'Population count' },
+    { name: 'median_income',     type: 'DECIMAL',   sensitivity: 'INTERNAL',     masked: false, description: 'Median household income' },
+    { name: 'household_size',    type: 'DECIMAL',   sensitivity: 'INTERNAL',     masked: false, description: 'Average household size' },
+  ],
+}
+
+const defaultSchema = [
+  { name: 'id',          type: 'STRING',  sensitivity: 'INTERNAL', masked: false, description: 'Record identifier' },
+  { name: 'name',        type: 'STRING',  sensitivity: 'PUBLIC',   masked: false, description: 'Record name' },
+  { name: 'category',    type: 'STRING',  sensitivity: 'PUBLIC',   masked: false, description: 'Category classification' },
+  { name: 'value',       type: 'DECIMAL', sensitivity: 'INTERNAL', masked: false, description: 'Numeric value' },
+  { name: 'updated_at',  type: 'DATE',    sensitivity: 'PUBLIC',   masked: false, description: 'Last update timestamp' },
+]
+
+function getSchema(product) {
+  const domain = product.category || product.domain || ''
+  for (const key of Object.keys(schemaByDomain)) {
+    if (domain.toLowerCase().includes(key.toLowerCase())) return schemaByDomain[key]
+  }
+  return defaultSchema
+}
+
+const sensitivityConfig = {
+  PUBLIC:       { label: 'Public',       color: 'bg-emerald-100 text-emerald-700 border-emerald-200', icon: ShieldCheck },
+  INTERNAL:     { label: 'Internal',     color: 'bg-blue-100 text-blue-700 border-blue-200',           icon: Shield },
+  CONFIDENTIAL: { label: 'Confidential', color: 'bg-amber-100 text-amber-700 border-amber-200',        icon: ShieldAlert },
+  PII:          { label: 'PII',          color: 'bg-red-100 text-red-700 border-red-200',              icon: ShieldAlert },
+}
+
+function DataSchemaPanel({ product, accessGranted, onRequestAccess }) {
+  const [expanded, setExpanded] = useState(true)
+  const schema = getSchema(product)
+  const piiCount = schema.filter(c => c.sensitivity === 'PII').length
+  const confCount = schema.filter(c => c.sensitivity === 'CONFIDENTIAL').length
+  const maskedCount = schema.filter(c => c.masked).length
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-200 p-6 mt-6">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className="flex items-center gap-2">
+            <Shield className="h-4 w-4 text-gray-400" />
+            <h3 className="font-semibold text-gray-900 text-sm">Data Schema & Sensitivity</h3>
+          </div>
+          <div className="flex items-center gap-1.5">
+            {piiCount > 0 && (
+              <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-red-100 text-red-700 border border-red-200">
+                {piiCount} PII col{piiCount !== 1 ? 's' : ''}
+              </span>
+            )}
+            {confCount > 0 && (
+              <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-amber-100 text-amber-700 border border-amber-200">
+                {confCount} Confidential
+              </span>
+            )}
+            {!accessGranted && maskedCount > 0 && (
+              <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-gray-100 text-gray-600 border border-gray-200">
+                {maskedCount} masked
+              </span>
+            )}
+            {accessGranted && maskedCount > 0 && (
+              <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-emerald-100 text-emerald-700 border border-emerald-200 flex items-center gap-1">
+                <CheckCircle2 className="h-2.5 w-2.5" /> Access unlocks {maskedCount} col{maskedCount !== 1 ? 's' : ''}
+              </span>
+            )}
+          </div>
+        </div>
+        <button onClick={() => setExpanded(v => !v)} className="text-xs text-gray-400 hover:text-gray-700 flex items-center gap-1">
+          {expanded ? <><EyeOff className="h-3.5 w-3.5" /> Hide</> : <><Eye className="h-3.5 w-3.5" /> Show schema</>}
+        </button>
+      </div>
+
+      {expanded && (
+        <>
+          <div className="overflow-auto rounded-lg border border-gray-100">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="bg-gray-50 border-b border-gray-100">
+                  <th className="text-left px-3 py-2 text-gray-500 font-medium">Column</th>
+                  <th className="text-left px-3 py-2 text-gray-500 font-medium">Type</th>
+                  <th className="text-left px-3 py-2 text-gray-500 font-medium">Description</th>
+                  <th className="text-left px-3 py-2 text-gray-500 font-medium">Sensitivity</th>
+                  <th className="text-left px-3 py-2 text-gray-500 font-medium">Access</th>
+                </tr>
+              </thead>
+              <tbody>
+                {schema.map((col, i) => {
+                  const cfg = sensitivityConfig[col.sensitivity] || sensitivityConfig.INTERNAL
+                  const SIcon = cfg.icon
+                  const isLocked = col.masked && !accessGranted
+                  return (
+                    <tr key={i} className="border-b border-gray-50 last:border-0">
+                      <td className="px-3 py-2.5 font-mono text-gray-800 font-medium">{col.name}</td>
+                      <td className="px-3 py-2.5 text-gray-400 font-mono">{col.type}</td>
+                      <td className="px-3 py-2.5 text-gray-500">{col.description}</td>
+                      <td className="px-3 py-2.5">
+                        <span className={`inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border font-medium ${cfg.color}`}>
+                          <SIcon className="h-2.5 w-2.5" />
+                          {cfg.label}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2.5">
+                        {isLocked ? (
+                          <span className="inline-flex items-center gap-1 text-[10px] text-red-600 bg-red-50 border border-red-100 px-1.5 py-0.5 rounded font-medium">
+                            <Lock className="h-2.5 w-2.5" /> Masked
+                          </span>
+                        ) : col.masked ? (
+                          <span className="inline-flex items-center gap-1 text-[10px] text-emerald-600 bg-emerald-50 border border-emerald-100 px-1.5 py-0.5 rounded font-medium">
+                            <CheckCircle2 className="h-2.5 w-2.5" /> Unmasked
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-[10px] text-gray-500 px-1.5 py-0.5 rounded font-medium">
+                            <CheckCircle2 className="h-2.5 w-2.5 text-gray-400" /> Visible
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {!accessGranted && maskedCount > 0 && (
+            <div className="mt-3 flex items-center justify-between gap-3 bg-amber-50 border border-amber-100 rounded-lg px-4 py-3">
+              <div className="flex items-center gap-2">
+                <ShieldAlert className="h-4 w-4 text-amber-600 shrink-0" />
+                <p className="text-xs text-amber-800">
+                  <strong>{maskedCount} column{maskedCount !== 1 ? 's are' : ' is'} masked</strong> by Unity Catalog column policy until access is granted.
+                  {piiCount > 0 && ` ${piiCount} PII column${piiCount !== 1 ? 's are' : ' is'} enforced via ABAC.`}
+                </p>
+              </div>
+              <button
+                onClick={onRequestAccess}
+                className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium text-white flex items-center gap-1.5 whitespace-nowrap"
+                style={{ backgroundColor: DataMarket_BLUE }}
+              >
+                <Lock className="h-3 w-3" /> Request Access
+              </button>
+            </div>
+          )}
+
+          {accessGranted && maskedCount > 0 && (
+            <div className="mt-3 flex items-center gap-2 bg-emerald-50 border border-emerald-100 rounded-lg px-4 py-3">
+              <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
+              <p className="text-xs text-emerald-800">
+                Your approved access has <strong>unmasked {maskedCount} column{maskedCount !== 1 ? 's' : ''}</strong> via Unity Catalog ABAC policy. Access is enforced at the query engine — applies across SQL, Genie, Excel, and all connected tools.
+              </p>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
 
 // Generic sample data schemas indexed by domain/category
 const sampleDataByDomain = {
@@ -381,6 +581,12 @@ export function DataMarketProductDetailPage({ product, onBack }) {
           </div>
         </div>
       </div>
+
+      <DataSchemaPanel
+        product={product}
+        accessGranted={accessGranted}
+        onRequestAccess={() => setShowModal(true)}
+      />
 
       <SampleDataPreview
         product={product}
