@@ -212,7 +212,7 @@ databricks apps deploy YOUR_APP_NAME \
 
 ## Why Databricks Native vs. Third-Party Portals
 
-| | Third-Party (e.g. Aspire, Collibra) | DataMarket (Databricks Native) |
+| | Third-Party | DataMarket (Databricks Native) |
 |---|---|---|
 | Data ownership | Data piped into vendor layer | Stays in Unity Catalog |
 | Access control | Vendor UI + separate policy | UC GRANT/REVOKE, enforced at engine |
