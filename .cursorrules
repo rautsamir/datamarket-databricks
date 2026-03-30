@@ -1,0 +1,44 @@
+# DataMarket — Cursor Rules
+
+## Do NOT modify or recreate these files/patterns:
+
+### databricks.yml
+- Must contain ONLY one target: `dev` with `host: ${DATABRICKS_HOST}`
+- Do NOT add additional targets (sled, fevm, west, etc.) with real workspace URLs
+- Do NOT use `lac-dna-portal` or any customer-specific app names
+- App name must be `datamarket`
+
+### app.yaml
+- Do NOT add a `DATABRICKS_TOKEN` env var — it is auto-injected by Databricks Apps
+- Do NOT add `LAKEBASE_SSL_REJECT_UNAUTHORIZED` — SSL verification defaults to true in app.js
+- Do NOT add `DATABRICKS_HOST` env var — it is auto-injected by Databricks Apps
+
+### Security
+- Never commit real workspace URLs, tokens, or personal email addresses
+- Use environment variable placeholders (e.g., `${DATABRICKS_HOST}`) instead of hardcoded hosts
+- All Lakebase connections must default to SSL verification enabled
+
+### Deleted files — do NOT recreate
+- `docs/cursor-usage.md` (template boilerplate)
+- `docs/databricks-patterns.md` (template boilerplate)
+- `src/app/src/pages/AccessRequestsPage.jsx`
+- `src/app/src/pages/BudgetFinancePage.jsx`
+- `src/app/src/pages/ChatPage.jsx`
+- `src/app/src/pages/CustomerSegmentationPage.jsx`
+- `src/app/src/pages/DataProductsPage.jsx`
+- `src/app/src/pages/DemandForecastingPage.jsx`
+- `src/app/src/pages/DocumentsPage.jsx`
+- `src/app/src/pages/InternalBillingPage.jsx`
+- `src/app/src/pages/VendorAnalyticsPage.jsx`
+
+These pages were removed because they were orphaned (not routed in App.jsx) and contained
+hardcoded LA County department names that are not appropriate for a published accelerator.
+
+### app.js
+- `/api/kpis` endpoint was removed — do not re-add it
+- `DATABRICKS_USER` must throw an error if not set, not fall back to a placeholder email
+
+### Content guidelines
+- Keep seed data and sample content industry-generic (not LA County specific)
+- Department names should be generic (e.g., "Finance", "Operations", "IT") not government-specific (e.g., "Sheriff", "Probation")
+- `schema/seed.sql` is the authoritative schema definition — keep it in sync with app.js migrations
