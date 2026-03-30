@@ -60,6 +60,8 @@ Databricks App (Serverless Node.js / Express)
 ## Project Structure
 
 ```
+schema/
+└── seed.sql                     # Lakebase DDL + sample data
 src/app/
 ├── app.js              # Express server — Lakebase API routes
 ├── app.yaml            # Databricks Apps config
@@ -76,13 +78,12 @@ src/app/
 │   │   ├── DataMarketLibraryPage.jsx
 │   │   ├── DataMarketRegisterPage.jsx
 │   │   ├── DataMarketAdminPage.jsx
-│   │   ├── AIExplorerPage.jsx
-│   │   ├── BudgetFinancePage.jsx
-│   │   ├── InternalBillingPage.jsx
-│   │   └── DocumentsPage.jsx
+│   │   └── AIExplorerPage.jsx
 │   └── components/
 │       └── layout/
 │           └── DataMarketLayout.jsx  # Top-nav shell with persona switcher
+src/datamarket/
+└── main.py              # Optional: generates sample UC tables for the catalog
 docs/
 └── consumption_model.md         # Platform consumption projection model
 ```
@@ -123,8 +124,8 @@ Once registered as a UC catalog, tables are queryable directly from Databricks S
 ### 1. Clone and install
 
 ```bash
-git clone https://github.com/YOUR_ORG/datamarket-databricks.git
-cd datamarket-databricks/src/app
+git clone https://github.com/databricks-field-eng/datamarket.git
+cd datamarket/src/app
 npm install
 ```
 
@@ -186,7 +187,7 @@ npm run dev          # Vite dev server on :5173
 node app.js          # Express API on :3000
 ```
 
-### 5. Deploy to Databricks Apps
+### 6. Deploy to Databricks Apps
 
 ```bash
 # Upload source to workspace and deploy
