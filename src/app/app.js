@@ -73,7 +73,7 @@ async function getPool() {
     host: LAKEBASE_HOST,
     port: 5432,
     database: LAKEBASE_DB,
-    user: process.env.DATABRICKS_USER || 'your-email@your-domain.com',
+    user: process.env.DATABRICKS_USER || (() => { throw new Error('DATABRICKS_USER env var is required'); })(),
     password: pgPassword,
     ssl: process.env.LAKEBASE_SSL_REJECT_UNAUTHORIZED === 'false'
       ? { rejectUnauthorized: false }
@@ -572,14 +572,6 @@ app.get('/api/portal/audit', async (req, res) => {
     res.status(500).json({ error: e.message });
   }
 });
-
-// ─── Legacy KPI stubs (kept for backward compat) ─────────────────────────────
-app.get('/api/kpis', (_, res) => res.json({
-  total_revenue: { value: '$2.4M', trend: { direction: 'up', value: '+12%' } },
-  total_customers: { value: '15,234', trend: { direction: 'up', value: '+8%' } },
-  avg_order_value: { value: '$156', trend: { direction: 'up', value: '+5%' } },
-  conversion_rate: { value: '3.2%', trend: { direction: 'down', value: '-2%' } }
-}));
 
 // ─── SPA fallback ─────────────────────────────────────────────────────────────
 app.get('*', (req, res) => {
