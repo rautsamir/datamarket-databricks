@@ -198,6 +198,52 @@ databricks apps deploy YOUR_APP_NAME \
 
 ---
 
+## Deployment Modes
+
+DataMarket supports two modes, controlled by the `DEMO_MODE` environment variable:
+
+### Demo Mode (`DEMO_MODE=true`, default)
+
+For presentations, POCs, and sales demos. Uses a persona switcher (Richard / James / Data Steward) with synthetic data. UC GRANT/REVOKE statements are generated but not executed. RFA notifications are optional.
+
+### Production Mode (`DEMO_MODE=false`)
+
+For real customer deployments. SSO identity flows from Databricks Apps (Entra ID / Okta). UC GRANT/REVOKE is executed for real via the SQL Statement Execution API. RFA notifications route to configured email/Slack/Teams destinations.
+
+| Capability | Demo Mode | Production Mode |
+|---|---|---|
+| Identity | Persona switcher | SSO via Databricks Apps headers |
+| UC GRANT/REVOKE | Generated, not executed | Executed via SQL Statement Execution API |
+| RFA notifications | Optional (`RFA_ENABLED=true`) | Optional (`RFA_ENABLED=true`) |
+| Column schemas | Synthetic (hardcoded per domain) | Live from UC `information_schema` + tags, synthetic fallback |
+| Audit trail | Lakebase | Lakebase |
+
+### Environment Variables for Production Mode
+
+```bash
+DEMO_MODE=false
+SQL_WAREHOUSE_ID=your-sql-warehouse-id    # Required for UC GRANT/REVOKE + live schemas
+RFA_ENABLED=true                          # Optional: fire RFA notifications on submit
+```
+
+### Setting Up RFA Destinations
+
+Configure where access request notifications are routed (email, Slack, Teams, webhook):
+
+```bash
+# Set email destination on your catalog
+databricks rfa update-access-request-destinations "destinations" \
+  catalog:your_catalog \
+  --json '{"destinations": [{"destination_id": "data-stewards@your-org.com", "destination_type": "EMAIL"}]}'
+
+# Or Slack
+databricks rfa update-access-request-destinations "destinations" \
+  catalog:your_catalog \
+  --json '{"destinations": [{"destination_id": "your-slack-connection-id", "destination_type": "SLACK"}]}'
+```
+
+---
+
 ## Customizing for Your Customer
 
 | What to change | Where |
@@ -208,6 +254,9 @@ databricks apps deploy YOUR_APP_NAME \
 | UC catalog and table names | `.env` → `LAKEBASE_DB`, `LAKEBASE_SCHEMA` |
 | Dashboard URL | `.env` → `VITE_DASHBOARD_URL` |
 | Genie Space ID | `src/pages/AIExplorerPage.jsx` |
+| Deployment mode | `.env` → `DEMO_MODE` (`true` for demos, `false` for production) |
+| UC grant execution | `.env` → `SQL_WAREHOUSE_ID` |
+| RFA notifications | `.env` → `RFA_ENABLED` + configure destinations via CLI |
 
 ---
 

@@ -49,17 +49,42 @@ export function PersonaProvider({ children }) {
   const [notifications, setNotifications] = useState([])
   const [loading, setLoading] = useState(false)
   const [apiAvailable, setApiAvailable] = useState(false)
+  const [demoMode, setDemoMode] = useState(true)
+  const [ssoUser, setSsoUser] = useState(null)
+  const [rfaEnabled, setRfaEnabled] = useState(false)
+  const [ucGrantsEnabled, setUcGrantsEnabled] = useState(false)
 
-  const persona = personas[currentPersona]
+  const persona = ssoUser && !demoMode ? {
+    id: 'sso',
+    name: ssoUser.display_name?.split(' ')[0] || 'User',
+    fullName: ssoUser.display_name || ssoUser.email,
+    email: ssoUser.email,
+    role: ssoUser.role === 'steward' ? 'Data Steward' : ssoUser.role === 'manager' ? 'Manager' : 'Data Analyst',
+    department: ssoUser.department || 'General',
+    avatar: (ssoUser.display_name || ssoUser.email).split(' ').map(w => w[0]).join('').substring(0, 2).toUpperCase(),
+    color: ssoUser.role === 'steward' ? '#8B5CF6' : ssoUser.role === 'manager' ? '#10B981' : '#3B82F6',
+    approvedProductRefs: ssoUser.role === 'steward' ? 'all' : [],
+    description: `${ssoUser.role} — authenticated via SSO`
+  } : personas[currentPersona]
 
-  // ── Check if real API is available ────────────────────────────────────────
+  // ── Check API availability and identity mode ───────────────────────────────
   useEffect(() => {
     fetch('/api/health')
       .then(r => r.json())
       .then(data => {
         const lakebaseOk = data.lakebase === 'connected'
         setApiAvailable(lakebaseOk)
+        setDemoMode(data.demo_mode !== false)
+        setRfaEnabled(!!data.rfa_enabled)
+        setUcGrantsEnabled(!!data.uc_grants_enabled)
         if (!lakebaseOk) console.info('[PersonaContext] Lakebase not connected, using demo data')
+
+        if (data.demo_mode === false) {
+          fetch('/api/portal/identity')
+            .then(r => r.json())
+            .then(id => { if (id.mode === 'sso' && id.user) setSsoUser(id.user) })
+            .catch(() => {})
+        }
       })
       .catch(() => setApiAvailable(false))
   }, [])
@@ -238,7 +263,7 @@ export function PersonaProvider({ children }) {
   return (
     <PersonaContext.Provider value={{
       currentPersona,
-      setCurrentPersona,
+      setCurrentPersona: demoMode ? setCurrentPersona : () => {},
       persona,
       requests,
       myRequests,
@@ -249,6 +274,10 @@ export function PersonaProvider({ children }) {
       unreadNotificationCount,
       loading,
       apiAvailable,
+      demoMode,
+      rfaEnabled,
+      ucGrantsEnabled,
+      ssoUser,
       submitRequest,
       approveRequest,
       denyRequest,

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { ShieldCheck, CheckCircle2, XCircle, Clock, Terminal, ChevronDown, ChevronUp, User, Calendar, Database, Package, Eye } from 'lucide-react'
+import { ShieldCheck, CheckCircle2, XCircle, Clock, Terminal, ChevronDown, ChevronUp, User, Calendar, Database, Package, Eye, RotateCcw, AlertTriangle } from 'lucide-react'
 import { usePersona } from '../context/PersonaContext'
 
 const DataMarket_BLUE = '#003865'
@@ -18,7 +18,8 @@ SHOW GRANTS ON TABLE <your_catalog>.<your_schema>.<your_table>;`
 REVOKE SELECT ON TABLE <your_catalog>.<your_schema>.<your_table>
   FROM \`${request.requesterEmail}\`;`
 
-  const sql = action === 'Approved' ? grantSQL : revokeSQL
+  // Pending requests always preview the GRANT that will be executed on approval
+  const sql = action === 'Denied' || action === 'Revoked' ? revokeSQL : grantSQL
 
   return (
     <div className="mt-3">
@@ -74,6 +75,7 @@ export function DataMarketAdminPage() {
   const [revokeReason, setRevokeReason] = useState('')
   const [justActed, setJustActed] = useState({})
   const [pendingProducts, setPendingProducts] = useState([])
+  const [resetState, setResetState] = useState('idle') // 'idle' | 'confirm' | 'loading' | 'done'
   const [productActed, setProductActed] = useState({})
   const normalizedReqs = requests.map(norm)
 
@@ -171,8 +173,8 @@ export function DataMarketAdminPage() {
               : 'Review and publish new data products submitted by producers'}
           </p>
         </div>
-        {/* View toggle */}
-        <div className="flex gap-2 shrink-0">
+        {/* View toggle + Demo Reset */}
+        <div className="flex items-center gap-2 shrink-0">
           <button
             onClick={() => setActiveView('access')}
             className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium border transition-colors ${activeView === 'access' ? 'text-white border-transparent' : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'}`}
@@ -197,6 +199,51 @@ export function DataMarketAdminPage() {
               </span>
             )}
           </button>
+
+          {/* Demo Reset */}
+          <div className="relative ml-1">
+            {resetState === 'idle' && (
+              <button
+                onClick={() => setResetState('confirm')}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium border border-dashed border-gray-300 text-gray-400 hover:border-red-300 hover:text-red-500 transition-colors"
+                title="Reset demo data"
+              >
+                <RotateCcw className="h-3.5 w-3.5" /> Reset Demo
+              </button>
+            )}
+            {resetState === 'confirm' && (
+              <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                <AlertTriangle className="h-3.5 w-3.5 text-red-500 shrink-0" />
+                <span className="text-xs text-red-700 font-medium">Clear all demo data?</span>
+                <button
+                  onClick={async () => {
+                    setResetState('loading')
+                    try {
+                      await fetch('/api/portal/demo-reset', { method: 'POST' })
+                      setResetState('done')
+                      setTimeout(() => setResetState('idle'), 2500)
+                      window.location.reload()
+                    } catch { setResetState('idle') }
+                  }}
+                  className="px-2 py-0.5 bg-red-500 text-white rounded text-xs font-medium hover:bg-red-600"
+                >Yes</button>
+                <button
+                  onClick={() => setResetState('idle')}
+                  className="px-2 py-0.5 bg-white border border-gray-200 rounded text-xs text-gray-600 hover:bg-gray-50"
+                >Cancel</button>
+              </div>
+            )}
+            {resetState === 'loading' && (
+              <span className="flex items-center gap-1.5 px-3 py-2 text-xs text-gray-400">
+                <RotateCcw className="h-3.5 w-3.5 animate-spin" /> Clearing...
+              </span>
+            )}
+            {resetState === 'done' && (
+              <span className="flex items-center gap-1.5 px-3 py-2 text-xs text-emerald-600 font-medium">
+                <CheckCircle2 className="h-3.5 w-3.5" /> Reset done
+              </span>
+            )}
+          </div>
         </div>
       </div>
 
