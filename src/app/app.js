@@ -22,6 +22,10 @@ const LAKEBASE_DB       = process.env.LAKEBASE_DB       || 'your_database';
 const LAKEBASE_SCHEMA   = process.env.LAKEBASE_SCHEMA   || 'datamarket';
 const LAKEBASE_INSTANCE = process.env.LAKEBASE_INSTANCE || 'your-lakebase-instance';
 
+const DEMO_MODE         = (process.env.DEMO_MODE || 'true').toLowerCase() === 'true';
+const SQL_WAREHOUSE_ID  = process.env.SQL_WAREHOUSE_ID  || '';
+const RFA_ENABLED       = (process.env.RFA_ENABLED || 'false').toLowerCase() === 'true';
+
 let dbPool = null;
 let tokenExpiresAt = 0;
 
@@ -94,6 +98,131 @@ async function query(sql, params = []) {
   return pool.query(sql, params);
 }
 
+// ─── Databricks REST API helper ──────────────────────────────────────────────
+function databricksApi(method, apiPath, body = null) {
+  return new Promise((resolve, reject) => {
+    const host = (process.env.DATABRICKS_HOST || '').replace(/^https?:\/\//, '');
+    const token = process.env.DATABRICKS_TOKEN || '';
+    if (!host || !token) return reject(new Error('DATABRICKS_HOST or DATABRICKS_TOKEN not set'));
+
+    const payload = body ? JSON.stringify(body) : null;
+    const options = {
+      hostname: host, path: apiPath, method,
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json',
+                 ...(payload ? { 'Content-Length': Buffer.byteLength(payload) } : {}) }
+    };
+    const req = https.request(options, (res) => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => {
+        try { resolve({ status: res.statusCode, data: data ? JSON.parse(data) : {} }); }
+        catch (_) { resolve({ status: res.statusCode, data, raw: true }); }
+      });
+    });
+    req.on('error', reject);
+    if (payload) req.write(payload);
+    req.end();
+  });
+}
+
+// ─── RFA: Send access request notification to configured destinations ────────
+async function rfaNotify(ucFullName, requesterEmail, comment) {
+  if (!RFA_ENABLED || !ucFullName) return null;
+  try {
+    const parts = ucFullName.split('.');
+    if (parts.length < 3) return null;
+    const securableType = parts.length === 3 ? 'TABLE' : 'CATALOG';
+    const result = await databricksApi('POST', '/api/3.0/rfa/access-requests', {
+      requests: [{
+        comment: comment || `Access requested via DataMarket`,
+        securable_permissions: [{
+          permissions: ['SELECT'],
+          securable: { full_name: ucFullName, type: securableType }
+        }]
+      }]
+    });
+    console.log(`[RFA] Notification sent for ${ucFullName} → status ${result.status}`);
+    return result;
+  } catch (e) {
+    console.warn('[RFA] Notification failed (non-fatal):', e.message);
+    return null;
+  }
+}
+
+// ─── UC: Execute GRANT/REVOKE via SQL Statement Execution API ────────────────
+async function executeUcStatement(sql) {
+  if (DEMO_MODE || !SQL_WAREHOUSE_ID) return { executed: false, reason: DEMO_MODE ? 'demo_mode' : 'no_warehouse' };
+  try {
+    const result = await databricksApi('POST', '/api/2.0/sql/statements', {
+      warehouse_id: SQL_WAREHOUSE_ID,
+      statement: sql,
+      wait_timeout: '10s'
+    });
+    const status = result.data?.status?.state || 'UNKNOWN';
+    console.log(`[UC] Executed: ${sql.substring(0, 80)}... → ${status}`);
+    return { executed: true, status, result: result.data };
+  } catch (e) {
+    console.warn('[UC] Statement execution failed (non-fatal):', e.message);
+    return { executed: false, reason: e.message };
+  }
+}
+
+// ─── UC: Fetch column schema + tags for a table ─────────────────────────────
+async function fetchUcSchema(ucFullName) {
+  if (!SQL_WAREHOUSE_ID || !ucFullName) return null;
+  const parts = ucFullName.split('.');
+  if (parts.length !== 3) return null;
+  const [catalog, schema, table] = parts;
+  try {
+    const colResult = await databricksApi('POST', '/api/2.0/sql/statements', {
+      warehouse_id: SQL_WAREHOUSE_ID,
+      statement: `SELECT column_name, data_type, comment FROM system.information_schema.columns
+                  WHERE table_catalog = '${catalog}' AND table_schema = '${schema}' AND table_name = '${table}'
+                  ORDER BY ordinal_position`,
+      wait_timeout: '10s'
+    });
+    if (colResult.data?.status?.state !== 'SUCCEEDED') return null;
+    const columns = (colResult.data.result?.data_array || []).map(row => ({
+      name: row[0], type: (row[1] || 'STRING').toUpperCase(), description: row[2] || ''
+    }));
+
+    let tagMap = {};
+    try {
+      const tagResult = await databricksApi('POST', '/api/2.0/sql/statements', {
+        warehouse_id: SQL_WAREHOUSE_ID,
+        statement: `SELECT column_name, tag_name, tag_value FROM system.information_schema.column_tags
+                    WHERE table_catalog = '${catalog}' AND table_schema = '${schema}' AND table_name = '${table}'`,
+        wait_timeout: '10s'
+      });
+      if (tagResult.data?.status?.state === 'SUCCEEDED') {
+        for (const row of (tagResult.data.result?.data_array || [])) {
+          if (!tagMap[row[0]]) tagMap[row[0]] = {};
+          tagMap[row[0]][row[1]] = row[2];
+        }
+      }
+    } catch (_) {}
+
+    const piiPatterns = /^(ssn|social_security|dob|date_of_birth|birth_date|email|phone|address|bank_account|credit_card|salary|compensation|wage)/i;
+    const confPatterns = /^(cost_center|approver|budget_code|account_number|internal_id)/i;
+
+    return columns.map(col => {
+      const tags = tagMap[col.name] || {};
+      let sensitivity = (tags.sensitivity_level || tags.sensitivity || '').toUpperCase();
+      if (!sensitivity) {
+        if (piiPatterns.test(col.name)) sensitivity = 'PII';
+        else if (confPatterns.test(col.name)) sensitivity = 'CONFIDENTIAL';
+        else sensitivity = 'INTERNAL';
+      }
+      const masked = sensitivity === 'PII' || sensitivity === 'CONFIDENTIAL';
+      const elevatedPII = sensitivity === 'PII' && piiPatterns.test(col.name) && /ssn|dob|date_of_birth|birth|bank|credit_card/i.test(col.name);
+      return { ...col, sensitivity, masked, elevatedPII };
+    });
+  } catch (e) {
+    console.warn(`[UC] Schema fetch failed for ${ucFullName}:`, e.message);
+    return null;
+  }
+}
+
 // ─── Schema migration — run at startup ───────────────────────────────────────
 async function runMigrations() {
   try {
@@ -114,6 +243,9 @@ async function runMigrations() {
         ELSE                NOW() - (RANDOM() * INTERVAL '365 days')
       END
       WHERE last_refreshed IS NULL AND refresh_frequency IS NOT NULL`);
+    await query(`ALTER TABLE data_products ADD COLUMN IF NOT EXISTS source_type VARCHAR(20) DEFAULT 'Databricks'`);
+    await query(`ALTER TABLE data_products ADD COLUMN IF NOT EXISTS report_url TEXT DEFAULT NULL`);
+    await query(`UPDATE data_products SET source_type = 'Databricks' WHERE source_type IS NULL`);
     console.log('[Lakebase] Migrations applied');
   } catch (e) {
     console.warn('[Lakebase] Migration warning (non-fatal):', e.message);
@@ -148,7 +280,11 @@ app.get('/api/health', async (req, res) => {
   } catch (e) {
     dbStatus = `error: ${e.message}`;
   }
-  res.json({ status: 'healthy', timestamp: new Date().toISOString(), service: 'datamarket', lakebase: dbStatus });
+  res.json({
+    status: 'healthy', timestamp: new Date().toISOString(), service: 'datamarket',
+    lakebase: dbStatus, demo_mode: DEMO_MODE, rfa_enabled: RFA_ENABLED,
+    uc_grants_enabled: !DEMO_MODE && !!SQL_WAREHOUSE_ID
+  });
 });
 
 // ─── Data Products ────────────────────────────────────────────────────────────
@@ -157,7 +293,8 @@ app.get('/api/portal/products', async (req, res) => {
     const { domain, type, q, includeAll } = req.query;
     let sql = `SELECT product_id, product_ref, uc_full_name, display_name, description, type, domain,
                       tags, source_system, refresh_frequency, owner_email, classification, is_active,
-                      COALESCE(status,'Published') AS status, created_at, updated_at, last_refreshed
+                      COALESCE(status,'Published') AS status, created_at, updated_at, last_refreshed,
+                      product_url, COALESCE(source_type,'Databricks') AS source_type, report_url
                FROM data_products WHERE (is_active = TRUE OR COALESCE(status,'Published') = 'Pending')`;
     // Non-admin users only see active/published
     if (!includeAll) sql = sql.replace("(is_active = TRUE OR COALESCE(status,'Published') = 'Pending')", "is_active = TRUE AND COALESCE(status,'Published') = 'Published'");
@@ -178,13 +315,14 @@ app.get('/api/portal/products', async (req, res) => {
 app.post('/api/portal/products', async (req, res) => {
   try {
     const { name, description, type, source, tags, refreshFrequency,
-            ownerEmail, classification, ucFullName, domain, hasPII, submittedBy } = req.body;
+            ownerEmail, classification, ucFullName, domain, hasPII, submittedBy, productUrl } = req.body;
     if (!name || !description) return res.status(400).json({ error: 'name and description are required' });
 
     // Ensure columns exist before inserting
     await query(`ALTER TABLE data_products ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'Published'`);
     await query(`ALTER TABLE data_products ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW()`);
     await query(`ALTER TABLE data_products ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW()`);
+    await query(`ALTER TABLE data_products ADD COLUMN IF NOT EXISTS product_url TEXT DEFAULT NULL`);
 
     // Generate a sequential ref after current max
     const { rows: [maxRow] } = await query(
@@ -198,13 +336,14 @@ app.post('/api/portal/products', async (req, res) => {
     const { rows: [product] } = await query(
       `INSERT INTO data_products
          (product_ref, display_name, description, type, source_system, tags,
-          refresh_frequency, owner_email, classification, uc_full_name, domain, is_active, status)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,FALSE,'Pending')
+          refresh_frequency, owner_email, classification, uc_full_name, domain, is_active, status, product_url)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,FALSE,'Pending',$12)
        RETURNING *`,
       [productRef, name, description, type || 'Dashboard', source || 'Other',
        tagsArr, refreshFrequency || 'Daily',
        ownerEmail || submittedBy || 'unknown@example.org',
-       classification || 'Internal', ucFullName || '', domain || source || 'Other']
+       classification || 'Internal', ucFullName || '', domain || source || 'Other',
+       productUrl || null]
     );
 
     // Best-effort audit log (non-fatal if table doesn't exist)
@@ -364,7 +503,11 @@ app.post('/api/portal/requests', async (req, res) => {
       VALUES ('REQUEST_SUBMITTED', $1, 'access_request', $2, $3, $4)`,
       [requesterEmail, newReq.request_id, ref, JSON.stringify({ productRef, reason })]);
 
-    res.json({ ...newReq, request_ref: ref });
+    // Fire RFA notification (best-effort, non-blocking)
+    const { rows: [prod] } = await query('SELECT uc_full_name FROM data_products WHERE product_ref = $1', [productRef]);
+    const rfaResult = await rfaNotify(prod?.uc_full_name, requesterEmail, reason);
+
+    res.json({ ...newReq, request_ref: ref, rfa_notified: !!rfaResult });
   } catch (e) {
     console.error('[POST /api/portal/requests]', e.message);
     res.status(500).json({ error: e.message });
@@ -398,13 +541,16 @@ app.put('/api/portal/requests/:id/approve', async (req, res) => {
       WHERE request_ref = $3`,
       [adminUser?.user_id || null, ucGrantSql, req_.request_ref]);
 
+    // Execute the real GRANT in UC (skipped in demo mode)
+    const grantResult = await executeUcStatement(ucGrantSql);
+
     try {
       await query(`INSERT INTO audit_log (event_type, actor_email, target_type, target_id, target_name, metadata)
         VALUES ('REQUEST_APPROVED', $1, 'access_request', $2, $3, $4)`,
-        [adminEmail, req_.request_id, req_.request_ref, JSON.stringify({ ucGrantSql })]);
+        [adminEmail, req_.request_id, req_.request_ref, JSON.stringify({ ucGrantSql, uc_executed: grantResult.executed })]);
     } catch (_) {}
 
-    res.json({ status: 'Approved', uc_grant_sql: ucGrantSql });
+    res.json({ status: 'Approved', uc_grant_sql: ucGrantSql, uc_executed: grantResult.executed });
   } catch (e) {
     console.error('[PUT approve]', e.message);
     res.status(500).json({ error: e.message });
@@ -463,13 +609,16 @@ app.put('/api/portal/requests/:id/revoke', async (req, res) => {
       WHERE request_ref = $3`,
       [reason, revokeSql, req_.request_ref]);
 
+    // Execute the real REVOKE in UC (skipped in demo mode)
+    const revokeResult = await executeUcStatement(revokeSql);
+
     try {
       await query(`INSERT INTO audit_log (event_type, actor_email, target_name, metadata)
         VALUES ('ACCESS_REVOKED', $1, $2, $3)`,
-        [adminEmail, req_.request_ref, JSON.stringify({ reason, revokeSql })]);
+        [adminEmail, req_.request_ref, JSON.stringify({ reason, revokeSql, uc_executed: revokeResult.executed })]);
     } catch (_) {}
 
-    res.json({ status: 'Revoked', revoke_sql: revokeSql });
+    res.json({ status: 'Revoked', revoke_sql: revokeSql, uc_executed: revokeResult.executed });
   } catch (e) {
     console.error('[PUT revoke]', e.message);
     res.status(500).json({ error: e.message });
@@ -573,6 +722,182 @@ app.get('/api/portal/audit', async (req, res) => {
   }
 });
 
+// ─── UC Schema — live column metadata with synthetic fallback ────────────────
+app.get('/api/portal/products/:ref/schema', async (req, res) => {
+  try {
+    const { ref } = req.params;
+    const { rows: [product] } = await query('SELECT uc_full_name, domain FROM data_products WHERE product_ref = $1', [ref]);
+    if (!product) return res.status(404).json({ error: 'Product not found' });
+
+    // Try live UC schema first (requires SQL_WAREHOUSE_ID)
+    if (product.uc_full_name) {
+      const liveSchema = await fetchUcSchema(product.uc_full_name);
+      if (liveSchema) {
+        return res.json({ source: 'unity_catalog', uc_full_name: product.uc_full_name, columns: liveSchema });
+      }
+    }
+    // Fall back to signal that frontend should use its synthetic schemas
+    res.json({ source: 'synthetic', domain: product.domain, uc_full_name: product.uc_full_name || null });
+  } catch (e) {
+    console.error('[/api/portal/products/:ref/schema]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ─── Identity — resolve SSO user or return demo mode personas ────────────────
+app.get('/api/portal/identity', async (req, res) => {
+  if (DEMO_MODE) return res.json({ mode: 'demo' });
+
+  // In Databricks Apps, SSO identity is injected via request headers
+  const email = req.headers['x-forwarded-email'] || req.headers['x-forwarded-user'] || '';
+  if (!email) return res.json({ mode: 'demo', reason: 'no_sso_header' });
+
+  try {
+    const { rows: [user] } = await query(
+      `SELECT user_id, email, display_name, role, department FROM users WHERE email = $1`, [email]);
+    if (user) return res.json({ mode: 'sso', user });
+
+    // Auto-create new user on first login
+    const displayName = email.split('@')[0].replace(/[._]/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+    const { rows: [newUser] } = await query(
+      `INSERT INTO users (email, display_name, role, department)
+       VALUES ($1, $2, 'analyst', 'General') RETURNING *`, [email, displayName]);
+    return res.json({ mode: 'sso', user: newUser, new_user: true });
+  } catch (e) {
+    console.warn('[/api/portal/identity]', e.message);
+    return res.json({ mode: 'demo', reason: e.message });
+  }
+});
+
+// ─── Legacy KPI stubs (kept for backward compat) ─────────────────────────────
+app.get('/api/kpis', (_, res) => res.json({
+  total_revenue: { value: '$2.4M', trend: { direction: 'up', value: '+12%' } },
+  total_customers: { value: '15,234', trend: { direction: 'up', value: '+8%' } },
+  avg_order_value: { value: '$156', trend: { direction: 'up', value: '+5%' } },
+  conversion_rate: { value: '3.2%', trend: { direction: 'down', value: '-2%' } }
+}));
+
+// ─── Admin: Users ─────────────────────────────────────────────────────────────
+app.get('/api/portal/admin/users', async (req, res) => {
+  try {
+    const { rows } = await query(
+      `SELECT user_id, email, display_name, role, department, created_at FROM users ORDER BY display_name`);
+    res.json(rows);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.put('/api/portal/admin/users/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { role, department, display_name } = req.body;
+    const sets = [];
+    const params = [];
+    if (role)         { params.push(role);         sets.push(`role = $${params.length}`); }
+    if (department)   { params.push(department);   sets.push(`department = $${params.length}`); }
+    if (display_name) { params.push(display_name); sets.push(`display_name = $${params.length}`); }
+    if (sets.length === 0) return res.status(400).json({ error: 'Nothing to update' });
+    params.push(id);
+    const { rows: [user] } = await query(
+      `UPDATE users SET ${sets.join(', ')} WHERE user_id = $${params.length}::uuid RETURNING *`, params);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    res.json(user);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ─── Admin: Product inline update ─────────────────────────────────────────────
+app.put('/api/portal/products/:ref', async (req, res) => {
+  try {
+    const { ref } = req.params;
+    const { uc_full_name, source_type, refresh_frequency, report_url, domain, description, display_name } = req.body;
+    const sets = [];
+    const params = [];
+    if (uc_full_name !== undefined)    { params.push(uc_full_name);    sets.push(`uc_full_name = $${params.length}`); }
+    if (source_type !== undefined)     { params.push(source_type);     sets.push(`source_type = $${params.length}`); }
+    if (refresh_frequency !== undefined){ params.push(refresh_frequency); sets.push(`refresh_frequency = $${params.length}`); }
+    if (report_url !== undefined)      { params.push(report_url);      sets.push(`report_url = $${params.length}`); }
+    if (domain !== undefined)          { params.push(domain);          sets.push(`domain = $${params.length}`); }
+    if (description !== undefined)     { params.push(description);     sets.push(`description = $${params.length}`); }
+    if (display_name !== undefined)    { params.push(display_name);    sets.push(`display_name = $${params.length}`); }
+    if (sets.length === 0) return res.status(400).json({ error: 'Nothing to update' });
+    sets.push('updated_at = NOW()');
+    params.push(ref);
+    const { rows: [product] } = await query(
+      `UPDATE data_products SET ${sets.join(', ')} WHERE product_ref = $${params.length} RETURNING *`, params);
+    if (!product) return res.status(404).json({ error: 'Product not found' });
+    res.json(product);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ─── Admin: UC Table Discovery ────────────────────────────────────────────────
+app.get('/api/portal/admin/uc-tables', async (req, res) => {
+  try {
+    // Get already-registered UC table names
+    const { rows: existing } = await query(
+      `SELECT uc_full_name FROM data_products WHERE uc_full_name IS NOT NULL AND uc_full_name != ''`);
+    const registered = new Set(existing.map(r => r.uc_full_name));
+
+    // In production mode with a warehouse, query UC information_schema
+    if (!DEMO_MODE && SQL_WAREHOUSE_ID) {
+      const schema = await fetchUcSchema('information_schema.tables');
+      if (schema) return res.json({ source: 'unity_catalog', tables: schema.filter(t => !registered.has(t.full_name)) });
+    }
+
+    // Demo mode: return known tables from the demo catalog
+    const demoTables = [
+      { full_name: 'samir_raut_demo.lac_dna_portal.gold_budget_summary',   table_name: 'gold_budget_summary',   schema_name: 'lac_dna_portal', catalog_name: 'samir_raut_demo' },
+      { full_name: 'samir_raut_demo.lac_dna_portal.gold_data_products',    table_name: 'gold_data_products',    schema_name: 'lac_dna_portal', catalog_name: 'samir_raut_demo' },
+      { full_name: 'samir_raut_demo.lac_dna_portal.gold_departments',      table_name: 'gold_departments',      schema_name: 'lac_dna_portal', catalog_name: 'samir_raut_demo' },
+      { full_name: 'samir_raut_demo.lac_dna_portal.gold_internal_billing', table_name: 'gold_internal_billing', schema_name: 'lac_dna_portal', catalog_name: 'samir_raut_demo' },
+      { full_name: 'samir_raut_demo.lac_dna_portal.gold_vendor_payments',  table_name: 'gold_vendor_payments',  schema_name: 'lac_dna_portal', catalog_name: 'samir_raut_demo' },
+      { full_name: 'samir_raut_demo.lac_dna_portal.gold_vendors',          table_name: 'gold_vendors',          schema_name: 'lac_dna_portal', catalog_name: 'samir_raut_demo' },
+      { full_name: 'samir_raut_demo.lac_dna_portal.metadata_for_search',   table_name: 'metadata_for_search',   schema_name: 'lac_dna_portal', catalog_name: 'samir_raut_demo' },
+    ];
+    res.json({ source: 'demo', tables: demoTables.filter(t => !registered.has(t.full_name)), registered: existing.map(r => r.uc_full_name) });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/portal/admin/import-uc', async (req, res) => {
+  try {
+    const { tables } = req.body;
+    if (!Array.isArray(tables) || tables.length === 0) return res.status(400).json({ error: 'tables array required' });
+
+    const { rows: [maxRow] } = await query(
+      `SELECT MAX(CAST(SUBSTRING(product_ref FROM 4) AS INTEGER)) AS max_id FROM data_products`);
+    let nextId = (maxRow.max_id || 16) + 1;
+
+    const imported = [];
+    for (const t of tables) {
+      const ref = `DP-${String(nextId++).padStart(3, '0')}`;
+      const displayName = (t.table_name || t.full_name.split('.').pop())
+        .replace(/_/g, ' ').replace(/\bgold\b/i, '').trim()
+        .replace(/\b\w/g, c => c.toUpperCase());
+      const { rows: [product] } = await query(
+        `INSERT INTO data_products
+           (product_ref, display_name, description, type, domain, tags, source_system,
+            refresh_frequency, owner_email, classification, uc_full_name, is_active, status,
+            source_type, last_refreshed)
+         VALUES ($1, $2, $3, 'Dataset', $4, $5, 'Unity Catalog', 'Daily',
+                 $6, 'Internal', $7, TRUE, 'Published', 'Databricks', NOW())
+         ON CONFLICT (product_ref) DO NOTHING RETURNING *`,
+        [ref, t.display_name || displayName, t.description || `Imported from Unity Catalog: ${t.full_name}`,
+         t.domain || 'Other', `{${(t.domain || 'UC Import').replace(/'/g, '')}}`,
+         t.owner_email || 'datasteward@example.org', t.full_name]);
+      if (product) imported.push(product);
+    }
+    res.json({ imported: imported.length, products: imported });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ─── SPA fallback ─────────────────────────────────────────────────────────────
 app.get('*', (req, res) => {
   if (req.path.startsWith('/api/')) return res.status(404).json({ error: 'Not found' });
@@ -584,9 +909,40 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'Something went wrong!' });
 });
 
+// ─── Demo Reset (admin only) ───────────────────────────────────────────────
+app.post('/api/portal/demo-reset', async (req, res) => {
+  try {
+    const SEEDED_REFS = ['DP-001','DP-002','DP-003','DP-004','DP-005','DP-006',
+                         'DP-007','DP-008','DP-009','DP-010','DP-011','DP-012'];
+    await query(`DELETE FROM access_requests`);
+    await query(`DELETE FROM audit_log`);
+    await query(`DELETE FROM user_library`);
+    await query(
+      `DELETE FROM data_products
+       WHERE COALESCE(status,'Published') IN ('Pending','Rejected')
+         AND product_ref != ALL($1::text[])`,
+      [SEEDED_REFS]
+    );
+    const { rows: counts } = await query(`
+      SELECT
+        (SELECT COUNT(*) FROM access_requests) AS requests,
+        (SELECT COUNT(*) FROM audit_log)       AS audit,
+        (SELECT COUNT(*) FROM user_library)    AS library,
+        (SELECT COUNT(*) FROM data_products)   AS products
+    `);
+    console.log('[demo-reset] Demo data cleared:', counts[0]);
+    res.json({ success: true, counts: counts[0] });
+  } catch (e) {
+    console.error('[demo-reset]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 DataMarket running on 0.0.0.0:${PORT}`);
   console.log(`🗄️  Lakebase: ${LAKEBASE_HOST}/${LAKEBASE_DB}/${LAKEBASE_SCHEMA}`);
+  console.log(`🔧 Mode: ${DEMO_MODE ? 'DEMO (persona switcher, no real grants)' : 'PRODUCTION (SSO identity, UC grants enabled)'}`);
+  console.log(`📡 RFA: ${RFA_ENABLED ? 'ENABLED' : 'disabled'} | UC Grants: ${!DEMO_MODE && SQL_WAREHOUSE_ID ? 'ENABLED' : 'disabled'}`);
   console.log(`📊 Health: http://localhost:${PORT}/api/health`);
   getPool()
     .then(() => { console.log('✅ Lakebase pool initialized'); return runMigrations(); })

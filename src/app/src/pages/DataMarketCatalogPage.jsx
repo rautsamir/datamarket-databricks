@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react'
-import { Search, SlidersHorizontal, BarChart3, FileText, Database, ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react'
+import { Search, SlidersHorizontal, BarChart3, FileText, Database, ChevronLeft, ChevronRight, RefreshCw, Layers } from 'lucide-react'
 import { usePersona } from '../context/PersonaContext'
 
 const DataMarket_BLUE = '#003865'
 
-const categories = ['All', 'Property Tax', 'Audit', 'Accounting', 'ERP', 'Demographics', 'GIS', 'Health Services', 'Public Safety', 'HRIS', 'Payroll', 'Budget']
+const categories = ['All', 'Property Tax', 'Audit', 'Accounting', 'ERP', 'Demographics', 'GIS', 'Health Services', 'Public Safety', 'HRIS', 'Payroll', 'Budget', 'eHR']
 const types = ['All', 'Dashboard', 'Dataset', 'Report']
+const sourceTypes = ['All', 'Databricks', 'Power BI']
 
 // Static fallback — shown if Lakebase is unavailable
 const staticProducts = [
@@ -40,6 +41,9 @@ function normalizeProduct(p) {
     owner: p.owner_email || p.owner || '-',
     lastUpdated: p.updated_at ? new Date(p.updated_at).toLocaleDateString() : p.lastUpdated || '-',
     lastRefreshed: p.last_refreshed ? new Date(p.last_refreshed) : null,
+    productUrl: p.product_url || null,
+    sourceType: p.source_type || 'Databricks',
+    reportUrl: p.report_url || null,
     tags,
     status: p.status || 'Published'
   }
@@ -66,6 +70,8 @@ const tagColors = {
   Demographics: 'bg-rose-100 text-rose-800', Audit: 'bg-red-100 text-red-800',
   IT: 'bg-gray-100 text-gray-800', GIS: 'bg-cyan-100 text-cyan-800',
   'Health Services': 'bg-emerald-100 text-emerald-800',
+  'Power BI': 'bg-yellow-100 text-yellow-800',
+  'Public Safety': 'bg-slate-100 text-slate-800',
 }
 
 const typeIcons = { Dashboard: BarChart3, Report: FileText, Dataset: Database }
@@ -76,6 +82,7 @@ export function DataMarketCatalogPage({ onOpenProduct, initialSearch = '' }) {
   const [search, setSearch] = useState(initialSearch)
   const [selectedCategory, setSelectedCategory] = useState('All')
   const [selectedType, setSelectedType] = useState('All')
+  const [selectedSource, setSelectedSource] = useState('All')
   const [sortBy, setSortBy] = useState('Most Recent')
   const [page, setPage] = useState(1)
   const [allProducts, setAllProducts] = useState(staticProducts)
@@ -105,7 +112,8 @@ export function DataMarketCatalogPage({ onOpenProduct, initialSearch = '' }) {
     )
     const matchesCat = selectedCategory === 'All' || p.category === selectedCategory
     const matchesType = selectedType === 'All' || p.type === selectedType
-    return matchesSearch && matchesCat && matchesType
+    const matchesSource = selectedSource === 'All' || p.sourceType === selectedSource
+    return matchesSearch && matchesCat && matchesType && matchesSource
   })
 
   const totalPages = Math.ceil(filtered.length / PAGE_SIZE)
@@ -177,7 +185,7 @@ export function DataMarketCatalogPage({ onOpenProduct, initialSearch = '' }) {
           </div>
 
           {/* Type Filter */}
-          <div>
+          <div className="mb-5">
             <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Type</p>
             <div className="flex flex-wrap gap-1.5">
               {types.map(t => (
@@ -190,6 +198,29 @@ export function DataMarketCatalogPage({ onOpenProduct, initialSearch = '' }) {
                   style={selectedType === t ? { backgroundColor: DataMarket_BLUE } : {}}
                 >
                   {t}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Source Filter */}
+          <div>
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+              <Layers className="h-3 w-3" /> Source
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {sourceTypes.map(s => (
+                <button
+                  key={s}
+                  onClick={() => { setSelectedSource(s); setPage(1) }}
+                  className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors flex items-center gap-1 ${
+                    selectedSource === s ? 'text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                  style={selectedSource === s ? { backgroundColor: DataMarket_BLUE } : {}}
+                >
+                  {s === 'Power BI' && <span className="text-[10px]">📊</span>}
+                  {s === 'Databricks' && <span className="text-[10px]">⚡</span>}
+                  {s}
                 </button>
               ))}
             </div>
@@ -243,6 +274,11 @@ export function DataMarketCatalogPage({ onOpenProduct, initialSearch = '' }) {
                         <span>↻ {product.refreshFrequency}</span>
                         <span>Owner: {product.owner}</span>
                         <span>Updated: {product.lastUpdated}</span>
+                        {product.sourceType === 'Power BI' && (
+                          <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-yellow-50 text-yellow-700 border border-yellow-200">
+                            📊 Power BI
+                          </span>
+                        )}
                         {(() => {
                           const f = freshnessLabel(product.lastRefreshed, product.refreshFrequency)
                           return f ? (

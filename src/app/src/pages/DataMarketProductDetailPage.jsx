@@ -12,57 +12,70 @@ const tagColors = {
   Demographics: 'bg-rose-100 text-rose-800', Audit: 'bg-red-100 text-red-800',
   IT: 'bg-gray-100 text-gray-800', GIS: 'bg-cyan-100 text-cyan-800',
   'Health Services': 'bg-emerald-100 text-emerald-800',
+  'Power BI': 'bg-yellow-100 text-yellow-800',
+  'Public Safety': 'bg-slate-100 text-slate-800',
 }
 
 const typeIcons = { Dashboard: BarChart3, Report: FileText, Dataset: Database }
 
 // ── Column-level sensitivity schemas per domain ───────────────────────────────
 // Sensitivity levels: PUBLIC | INTERNAL | CONFIDENTIAL | PII
-// 'masked' = visible label but value hidden for non-approved users (ABAC column mask)
+// masked: true       = hidden before access granted (standard ABAC column mask)
+// elevatedPII: true  = stays masked even after standard approval (requires elevated grant)
 const schemaByDomain = {
   Budget: [
-    { name: 'department',        type: 'STRING',    sensitivity: 'PUBLIC',       masked: false, description: 'Department name' },
-    { name: 'fiscal_year',       type: 'INTEGER',   sensitivity: 'PUBLIC',       masked: false, description: 'Fiscal year' },
-    { name: 'budget_allocated',  type: 'DECIMAL',   sensitivity: 'INTERNAL',     masked: false, description: 'Total budget allocation' },
-    { name: 'ytd_spent',         type: 'DECIMAL',   sensitivity: 'INTERNAL',     masked: false, description: 'Year-to-date expenditure' },
-    { name: 'variance',          type: 'DECIMAL',   sensitivity: 'INTERNAL',     masked: false, description: 'Budget vs. actual variance' },
-    { name: 'cost_center_code',  type: 'STRING',    sensitivity: 'CONFIDENTIAL', masked: true,  description: 'Internal cost center identifier' },
-    { name: 'approver_id',       type: 'STRING',    sensitivity: 'CONFIDENTIAL', masked: true,  description: 'Budget approver employee ID' },
+    { name: 'department',        type: 'STRING',    sensitivity: 'PUBLIC',       masked: false,                   description: 'Department name' },
+    { name: 'fiscal_year',       type: 'INTEGER',   sensitivity: 'PUBLIC',       masked: false,                   description: 'Fiscal year' },
+    { name: 'budget_allocated',  type: 'DECIMAL',   sensitivity: 'INTERNAL',     masked: false,                   description: 'Total budget allocation' },
+    { name: 'ytd_spent',         type: 'DECIMAL',   sensitivity: 'INTERNAL',     masked: false,                   description: 'Year-to-date expenditure' },
+    { name: 'variance',          type: 'DECIMAL',   sensitivity: 'INTERNAL',     masked: false,                   description: 'Budget vs. actual variance' },
+    { name: 'cost_center_code',  type: 'STRING',    sensitivity: 'CONFIDENTIAL', masked: true,                    description: 'Internal cost center identifier' },
+    { name: 'approver_id',       type: 'STRING',    sensitivity: 'CONFIDENTIAL', masked: true,                    description: 'Budget approver employee ID' },
   ],
   HRIS: [
-    { name: 'department',        type: 'STRING',    sensitivity: 'PUBLIC',       masked: false, description: 'Department name' },
-    { name: 'job_title',         type: 'STRING',    sensitivity: 'INTERNAL',     masked: false, description: 'Employee job title' },
-    { name: 'headcount',         type: 'INTEGER',   sensitivity: 'INTERNAL',     masked: false, description: 'Total headcount' },
-    { name: 'turnover_rate',     type: 'DECIMAL',   sensitivity: 'INTERNAL',     masked: false, description: 'Annual turnover rate (%)' },
-    { name: 'avg_salary',        type: 'DECIMAL',   sensitivity: 'CONFIDENTIAL', masked: true,  description: 'Average salary by role' },
-    { name: 'employee_id',       type: 'STRING',    sensitivity: 'PII',          masked: true,  description: 'Unique employee identifier' },
-    { name: 'ssn_last4',         type: 'STRING',    sensitivity: 'PII',          masked: true,  description: 'Last 4 digits of SSN' },
-    { name: 'date_of_birth',     type: 'DATE',      sensitivity: 'PII',          masked: true,  description: 'Employee date of birth' },
+    { name: 'department',        type: 'STRING',    sensitivity: 'PUBLIC',       masked: false,                   description: 'Department name' },
+    { name: 'job_title',         type: 'STRING',    sensitivity: 'INTERNAL',     masked: false,                   description: 'Employee job title' },
+    { name: 'headcount',         type: 'INTEGER',   sensitivity: 'INTERNAL',     masked: false,                   description: 'Total headcount' },
+    { name: 'turnover_rate',     type: 'DECIMAL',   sensitivity: 'INTERNAL',     masked: false,                   description: 'Annual turnover rate (%)' },
+    { name: 'avg_salary',        type: 'DECIMAL',   sensitivity: 'CONFIDENTIAL', masked: true,                    description: 'Average salary by role' },
+    { name: 'employee_id',       type: 'STRING',    sensitivity: 'PII',          masked: true,                    description: 'Unique employee identifier' },
+    { name: 'ssn_last4',         type: 'STRING',    sensitivity: 'PII',          masked: true,  elevatedPII: true, description: 'Last 4 digits of SSN' },
+    { name: 'date_of_birth',     type: 'DATE',      sensitivity: 'PII',          masked: true,  elevatedPII: true, description: 'Employee date of birth' },
   ],
   Payroll: [
-    { name: 'pay_period',        type: 'DATE',      sensitivity: 'INTERNAL',     masked: false, description: 'Pay period end date' },
-    { name: 'department',        type: 'STRING',    sensitivity: 'PUBLIC',       masked: false, description: 'Department name' },
-    { name: 'gross_pay',         type: 'DECIMAL',   sensitivity: 'CONFIDENTIAL', masked: true,  description: 'Gross payroll amount' },
-    { name: 'net_pay',           type: 'DECIMAL',   sensitivity: 'CONFIDENTIAL', masked: true,  description: 'Net payroll after deductions' },
-    { name: 'overtime_hours',    type: 'DECIMAL',   sensitivity: 'INTERNAL',     masked: false, description: 'Total overtime hours' },
-    { name: 'employee_id',       type: 'STRING',    sensitivity: 'PII',          masked: true,  description: 'Employee identifier' },
-    { name: 'bank_account_last4',type: 'STRING',    sensitivity: 'PII',          masked: true,  description: 'Last 4 digits of bank account' },
+    { name: 'pay_period',        type: 'DATE',      sensitivity: 'INTERNAL',     masked: false,                   description: 'Pay period end date' },
+    { name: 'department',        type: 'STRING',    sensitivity: 'PUBLIC',       masked: false,                   description: 'Department name' },
+    { name: 'gross_pay',         type: 'DECIMAL',   sensitivity: 'CONFIDENTIAL', masked: true,                    description: 'Gross payroll amount' },
+    { name: 'net_pay',           type: 'DECIMAL',   sensitivity: 'CONFIDENTIAL', masked: true,                    description: 'Net payroll after deductions' },
+    { name: 'overtime_hours',    type: 'DECIMAL',   sensitivity: 'INTERNAL',     masked: false,                   description: 'Total overtime hours' },
+    { name: 'employee_id',       type: 'STRING',    sensitivity: 'PII',          masked: true,                    description: 'Employee identifier' },
+    { name: 'bank_account_last4',type: 'STRING',    sensitivity: 'PII',          masked: true,  elevatedPII: true, description: 'Last 4 digits of bank account' },
   ],
   'Property Tax': [
-    { name: 'parcel_id',         type: 'STRING',    sensitivity: 'PUBLIC',       masked: false, description: 'Property parcel identifier' },
-    { name: 'district',          type: 'STRING',    sensitivity: 'PUBLIC',       masked: false, description: 'Tax district' },
-    { name: 'assessed_value',    type: 'DECIMAL',   sensitivity: 'PUBLIC',       masked: false, description: 'Assessed property value' },
-    { name: 'tax_levied',        type: 'DECIMAL',   sensitivity: 'PUBLIC',       masked: false, description: 'Tax amount levied' },
-    { name: 'collection_status', type: 'STRING',    sensitivity: 'INTERNAL',     masked: false, description: 'Payment collection status' },
-    { name: 'owner_name',        type: 'STRING',    sensitivity: 'PII',          masked: true,  description: 'Property owner full name' },
-    { name: 'owner_address',     type: 'STRING',    sensitivity: 'PII',          masked: true,  description: 'Property owner mailing address' },
+    { name: 'parcel_id',         type: 'STRING',    sensitivity: 'PUBLIC',       masked: false,                   description: 'Property parcel identifier' },
+    { name: 'district',          type: 'STRING',    sensitivity: 'PUBLIC',       masked: false,                   description: 'Tax district' },
+    { name: 'assessed_value',    type: 'DECIMAL',   sensitivity: 'PUBLIC',       masked: false,                   description: 'Assessed property value' },
+    { name: 'tax_levied',        type: 'DECIMAL',   sensitivity: 'PUBLIC',       masked: false,                   description: 'Tax amount levied' },
+    { name: 'collection_status', type: 'STRING',    sensitivity: 'INTERNAL',     masked: false,                   description: 'Payment collection status' },
+    { name: 'owner_name',        type: 'STRING',    sensitivity: 'PII',          masked: true,  elevatedPII: true, description: 'Property owner full name' },
+    { name: 'owner_address',     type: 'STRING',    sensitivity: 'PII',          masked: true,  elevatedPII: true, description: 'Property owner mailing address' },
   ],
   Demographics: [
-    { name: 'census_tract',      type: 'STRING',    sensitivity: 'PUBLIC',       masked: false, description: 'Census tract identifier' },
-    { name: 'age_group',         type: 'STRING',    sensitivity: 'PUBLIC',       masked: false, description: 'Age bracket' },
-    { name: 'population',        type: 'INTEGER',   sensitivity: 'PUBLIC',       masked: false, description: 'Population count' },
-    { name: 'median_income',     type: 'DECIMAL',   sensitivity: 'INTERNAL',     masked: false, description: 'Median household income' },
-    { name: 'household_size',    type: 'DECIMAL',   sensitivity: 'INTERNAL',     masked: false, description: 'Average household size' },
+    { name: 'census_tract',      type: 'STRING',    sensitivity: 'PUBLIC',       masked: false,                   description: 'Census tract identifier' },
+    { name: 'age_group',         type: 'STRING',    sensitivity: 'PUBLIC',       masked: false,                   description: 'Age bracket' },
+    { name: 'population',        type: 'INTEGER',   sensitivity: 'PUBLIC',       masked: false,                   description: 'Population count' },
+    { name: 'median_income',     type: 'DECIMAL',   sensitivity: 'INTERNAL',     masked: false,                   description: 'Median household income' },
+    { name: 'household_size',    type: 'DECIMAL',   sensitivity: 'INTERNAL',     masked: false,                   description: 'Average household size' },
+  ],
+  'Public Safety': [
+    { name: 'incident_id',      type: 'STRING',    sensitivity: 'PUBLIC',       masked: false,                   description: 'Unique incident identifier' },
+    { name: 'incident_type',    type: 'STRING',    sensitivity: 'PUBLIC',       masked: false,                   description: 'Category of incident (fire, medical, crime)' },
+    { name: 'response_time_min',type: 'DECIMAL',   sensitivity: 'INTERNAL',     masked: false,                   description: 'Response time in minutes' },
+    { name: 'district',         type: 'STRING',    sensitivity: 'PUBLIC',       masked: false,                   description: 'Service district' },
+    { name: 'latitude',         type: 'DECIMAL',   sensitivity: 'INTERNAL',     masked: false,                   description: 'Incident latitude' },
+    { name: 'longitude',        type: 'DECIMAL',   sensitivity: 'INTERNAL',     masked: false,                   description: 'Incident longitude' },
+    { name: 'officer_badge',    type: 'STRING',    sensitivity: 'CONFIDENTIAL', masked: true,                    description: 'Responding officer badge number' },
+    { name: 'victim_name',      type: 'STRING',    sensitivity: 'PII',          masked: true,  elevatedPII: true, description: 'Victim full name' },
   ],
 }
 
@@ -75,10 +88,20 @@ const defaultSchema = [
 ]
 
 function getSchema(product) {
-  const domain = product.category || product.domain || ''
-  for (const key of Object.keys(schemaByDomain)) {
-    if (domain.toLowerCase().includes(key.toLowerCase())) return schemaByDomain[key]
-  }
+  const domain = (product.category || product.domain || '').toLowerCase()
+  if (domain.includes('hris') || domain.includes('ehr') || domain.includes('human resource') || domain.includes(' hr')) return schemaByDomain['HRIS']
+  if (domain.includes('payroll')) return schemaByDomain['Payroll']
+  if (domain.includes('budget') || domain.includes('financ') || domain.includes('account') || domain.includes('erp')) return schemaByDomain['Budget']
+  if (domain.includes('property tax') || domain.includes('tax')) return schemaByDomain['Property Tax']
+  if (domain.includes('demograph') || domain.includes('census') || domain.includes('population')) return schemaByDomain['Demographics']
+  if (domain.includes('public safety') || domain.includes('incident') || domain.includes('safety')) return schemaByDomain['Public Safety']
+  // Also match by product name keywords
+  const name = (product.name || '').toLowerCase()
+  if (name.includes('employee') || name.includes('headcount') || name.includes('workforce')) return schemaByDomain['HRIS']
+  if (name.includes('payroll') || name.includes('compensation')) return schemaByDomain['Payroll']
+  if (name.includes('budget') || name.includes('expenditure') || name.includes('finance')) return schemaByDomain['Budget']
+  if (name.includes('property tax')) return schemaByDomain['Property Tax']
+  if (name.includes('census') || name.includes('population') || name.includes('demographic')) return schemaByDomain['Demographics']
   return defaultSchema
 }
 
@@ -94,7 +117,10 @@ function DataSchemaPanel({ product, accessGranted, onRequestAccess }) {
   const schema = getSchema(product)
   const piiCount = schema.filter(c => c.sensitivity === 'PII').length
   const confCount = schema.filter(c => c.sensitivity === 'CONFIDENTIAL').length
-  const maskedCount = schema.filter(c => c.masked).length
+  const standardMasked = schema.filter(c => c.masked && !c.elevatedPII)
+  const elevatedMasked = schema.filter(c => c.elevatedPII)
+  const unlockedCount = accessGranted ? standardMasked.length : 0
+  const stillMaskedCount = elevatedMasked.length
 
   return (
     <div className="bg-white rounded-2xl border border-gray-200 p-6 mt-6">
@@ -104,7 +130,7 @@ function DataSchemaPanel({ product, accessGranted, onRequestAccess }) {
             <Shield className="h-4 w-4 text-gray-400" />
             <h3 className="font-semibold text-gray-900 text-sm">Data Schema & Sensitivity</h3>
           </div>
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5 flex-wrap">
             {piiCount > 0 && (
               <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-red-100 text-red-700 border border-red-200">
                 {piiCount} PII col{piiCount !== 1 ? 's' : ''}
@@ -115,14 +141,19 @@ function DataSchemaPanel({ product, accessGranted, onRequestAccess }) {
                 {confCount} Confidential
               </span>
             )}
-            {!accessGranted && maskedCount > 0 && (
+            {!accessGranted && (standardMasked.length + elevatedMasked.length) > 0 && (
               <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-gray-100 text-gray-600 border border-gray-200">
-                {maskedCount} masked
+                {standardMasked.length + elevatedMasked.length} masked
               </span>
             )}
-            {accessGranted && maskedCount > 0 && (
+            {accessGranted && unlockedCount > 0 && (
               <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-emerald-100 text-emerald-700 border border-emerald-200 flex items-center gap-1">
-                <CheckCircle2 className="h-2.5 w-2.5" /> Access unlocks {maskedCount} col{maskedCount !== 1 ? 's' : ''}
+                <CheckCircle2 className="h-2.5 w-2.5" /> {unlockedCount} unlocked
+              </span>
+            )}
+            {accessGranted && stillMaskedCount > 0 && (
+              <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-red-100 text-red-700 border border-red-200 flex items-center gap-1">
+                <Lock className="h-2.5 w-2.5" /> {stillMaskedCount} elevated PII
               </span>
             )}
           </div>
@@ -149,7 +180,10 @@ function DataSchemaPanel({ product, accessGranted, onRequestAccess }) {
                 {schema.map((col, i) => {
                   const cfg = sensitivityConfig[col.sensitivity] || sensitivityConfig.INTERNAL
                   const SIcon = cfg.icon
+                  // Three states: locked (no access), elevated PII (stays masked), unmasked
                   const isLocked = col.masked && !accessGranted
+                  const isElevated = col.elevatedPII && accessGranted
+                  const isUnmasked = col.masked && !col.elevatedPII && accessGranted
                   return (
                     <tr key={i} className="border-b border-gray-50 last:border-0">
                       <td className="px-3 py-2.5 font-mono text-gray-800 font-medium">{col.name}</td>
@@ -166,7 +200,11 @@ function DataSchemaPanel({ product, accessGranted, onRequestAccess }) {
                           <span className="inline-flex items-center gap-1 text-[10px] text-red-600 bg-red-50 border border-red-100 px-1.5 py-0.5 rounded font-medium">
                             <Lock className="h-2.5 w-2.5" /> Masked
                           </span>
-                        ) : col.masked ? (
+                        ) : isElevated ? (
+                          <span className="inline-flex items-center gap-1 text-[10px] text-red-600 bg-red-50 border border-red-100 px-1.5 py-0.5 rounded font-medium">
+                            <ShieldAlert className="h-2.5 w-2.5" /> Elevated PII
+                          </span>
+                        ) : isUnmasked ? (
                           <span className="inline-flex items-center gap-1 text-[10px] text-emerald-600 bg-emerald-50 border border-emerald-100 px-1.5 py-0.5 rounded font-medium">
                             <CheckCircle2 className="h-2.5 w-2.5" /> Unmasked
                           </span>
@@ -183,31 +221,41 @@ function DataSchemaPanel({ product, accessGranted, onRequestAccess }) {
             </table>
           </div>
 
-          {!accessGranted && maskedCount > 0 && (
+          {!accessGranted && (standardMasked.length + elevatedMasked.length) > 0 && (
             <div className="mt-3 flex items-center justify-between gap-3 bg-amber-50 border border-amber-100 rounded-lg px-4 py-3">
               <div className="flex items-center gap-2">
                 <ShieldAlert className="h-4 w-4 text-amber-600 shrink-0" />
                 <p className="text-xs text-amber-800">
-                  <strong>{maskedCount} column{maskedCount !== 1 ? 's are' : ' is'} masked</strong> by Unity Catalog column policy until access is granted.
-                  {piiCount > 0 && ` ${piiCount} PII column${piiCount !== 1 ? 's are' : ' is'} enforced via ABAC.`}
+                  <strong>{standardMasked.length + elevatedMasked.length} column{standardMasked.length + elevatedMasked.length !== 1 ? 's are' : ' is'} masked</strong> by Unity Catalog ABAC policy.
+                  {piiCount > 0 && ` ${piiCount} PII column${piiCount !== 1 ? 's require' : ' requires'} explicit access grant.`}
                 </p>
               </div>
-              <button
-                onClick={onRequestAccess}
+              <button onClick={onRequestAccess}
                 className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium text-white flex items-center gap-1.5 whitespace-nowrap"
-                style={{ backgroundColor: DataMarket_BLUE }}
-              >
+                style={{ backgroundColor: DataMarket_BLUE }}>
                 <Lock className="h-3 w-3" /> Request Access
               </button>
             </div>
           )}
 
-          {accessGranted && maskedCount > 0 && (
-            <div className="mt-3 flex items-center gap-2 bg-emerald-50 border border-emerald-100 rounded-lg px-4 py-3">
-              <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
-              <p className="text-xs text-emerald-800">
-                Your approved access has <strong>unmasked {maskedCount} column{maskedCount !== 1 ? 's' : ''}</strong> via Unity Catalog ABAC policy. Access is enforced at the query engine — applies across SQL, Genie, Excel, and all connected tools.
-              </p>
+          {accessGranted && (
+            <div className="mt-3 space-y-2">
+              {unlockedCount > 0 && (
+                <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-100 rounded-lg px-4 py-3">
+                  <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
+                  <p className="text-xs text-emerald-800">
+                    Your approved access has <strong>unmasked {unlockedCount} column{unlockedCount !== 1 ? 's' : ''}</strong> via Unity Catalog ABAC policy. Enforced at the query engine — applies across SQL, Genie, Excel, and all connected tools.
+                  </p>
+                </div>
+              )}
+              {stillMaskedCount > 0 && (
+                <div className="flex items-center gap-2 bg-red-50 border border-red-100 rounded-lg px-4 py-3">
+                  <ShieldAlert className="h-4 w-4 text-red-600 shrink-0" />
+                  <p className="text-xs text-red-800">
+                    <strong>{stillMaskedCount} column{stillMaskedCount !== 1 ? 's remain' : ' remains'} masked</strong> — these are Elevated PII fields requiring a separate, higher-privilege access grant from your Data Steward.
+                  </p>
+                </div>
+              )}
             </div>
           )}
         </>
@@ -217,73 +265,137 @@ function DataSchemaPanel({ product, accessGranted, onRequestAccess }) {
 }
 
 // Generic sample data schemas indexed by domain/category
+// rows: shown blurred when no access (masked cols also ••••)
+// grantedRows: shown after approval — standard masked cols show real values, elevatedPII cols stay ••••
 const sampleDataByDomain = {
   Budget: {
-    columns: ['Department', 'FY Budget', 'YTD Spent', 'Variance', 'Status'],
+    columns: ['Department', 'FY Budget', 'YTD Spent', 'Variance', 'Status', 'Cost Center', 'Approver ID'],
     rows: [
-      ['Public Works', '$4.2M', '$3.1M', '+$1.1M', 'On Track'],
-      ['Health Services', '$8.7M', '$7.9M', '+$0.8M', 'On Track'],
-      ['IT & Digital', '$2.3M', '$2.6M', '-$0.3M', 'Over Budget'],
-      ['Parks & Rec', '$1.8M', '$1.2M', '+$0.6M', 'Under Spend'],
-    ]
+      ['Public Works',    '$4.2M', '$3.1M', '+$1.1M', 'On Track',    '••••••', '•••••••'],
+      ['Health Services', '$8.7M', '$7.9M', '+$0.8M', 'On Track',    '••••••', '•••••••'],
+      ['IT & Digital',    '$2.3M', '$2.6M', '-$0.3M', 'Over Budget', '••••••', '•••••••'],
+      ['Parks & Rec',     '$1.8M', '$1.2M', '+$0.6M', 'Under Spend', '••••••', '•••••••'],
+    ],
+    grantedRows: [
+      ['Public Works',    '$4.2M', '$3.1M', '+$1.1M', 'On Track',    'CC-1042', 'EMP-8821'],
+      ['Health Services', '$8.7M', '$7.9M', '+$0.8M', 'On Track',    'CC-2207', 'EMP-6634'],
+      ['IT & Digital',    '$2.3M', '$2.6M', '-$0.3M', 'Over Budget', 'CC-3318', 'EMP-7741'],
+      ['Parks & Rec',     '$1.8M', '$1.2M', '+$0.6M', 'Under Spend', 'CC-0915', 'EMP-5502'],
+    ],
   },
   HRIS: {
-    columns: ['Department', 'Headcount', 'Avg Salary', 'Overtime Hrs', 'Turnover Rate'],
+    columns: ['Department', 'Job Title', 'Headcount', 'Turnover Rate', 'Avg Salary', 'Employee ID', 'SSN Last 4', 'Date of Birth'],
     rows: [
-      ['Finance', '142', '$78,400', '312', '4.2%'],
-      ['Engineering', '88', '$94,200', '188', '6.1%'],
-      ['HR & Admin', '56', '$72,100', '94', '3.8%'],
-      ['Operations', '210', '$65,800', '544', '8.3%'],
-    ]
+      ['Finance',      'Senior Analyst',  '142', '4.2%', '••••••', '•••••••', '••••', '••/••/••••'],
+      ['Engineering',  'Staff Engineer',  '88',  '6.1%', '••••••', '•••••••', '••••', '••/••/••••'],
+      ['HR & Admin',   'HR Generalist',   '56',  '3.8%', '••••••', '•••••••', '••••', '••/••/••••'],
+      ['Operations',   'Operations Lead', '210', '8.3%', '••••••', '•••••••', '••••', '••/••/••••'],
+    ],
+    grantedRows: [
+      ['Finance',      'Senior Analyst',  '142', '4.2%', '$78,400', 'EMP-4421', '••••', '••/••/••••'],
+      ['Engineering',  'Staff Engineer',  '88',  '6.1%', '$94,200', 'EMP-3817', '••••', '••/••/••••'],
+      ['HR & Admin',   'HR Generalist',   '56',  '3.8%', '$72,100', 'EMP-2094', '••••', '••/••/••••'],
+      ['Operations',   'Operations Lead', '210', '8.3%', '$65,800', 'EMP-5503', '••••', '••/••/••••'],
+    ],
   },
   Payroll: {
-    columns: ['Pay Period', 'Gross Pay', 'Benefits', 'Net Pay', 'Employees Paid'],
+    columns: ['Pay Period', 'Department', 'Gross Pay', 'Net Pay', 'Overtime Hrs', 'Employee ID', 'Bank Acct Last 4'],
     rows: [
-      ['Jan 2025', '$12.4M', '$2.1M', '$10.3M', '1,842'],
-      ['Feb 2025', '$12.6M', '$2.1M', '$10.5M', '1,851'],
-      ['Mar 2025', '$12.8M', '$2.2M', '$10.6M', '1,858'],
-      ['Apr 2025', '$13.1M', '$2.2M', '$10.9M', '1,872'],
-    ]
+      ['Jan 2025', 'Engineering',   '••••••', '••••••', '284', '•••••••', '••••'],
+      ['Jan 2025', 'Finance',       '••••••', '••••••', '142', '•••••••', '••••'],
+      ['Feb 2025', 'Operations',    '••••••', '••••••', '510', '•••••••', '••••'],
+      ['Feb 2025', 'Health Svcs',   '••••••', '••••••', '338', '•••••••', '••••'],
+    ],
+    grantedRows: [
+      ['Jan 2025', 'Engineering',  '$3.8M', '$3.2M', '284', 'EMP-4421', '••••'],
+      ['Jan 2025', 'Finance',      '$2.1M', '$1.8M', '142', 'EMP-3817', '••••'],
+      ['Feb 2025', 'Operations',   '$5.2M', '$4.4M', '510', 'EMP-2094', '••••'],
+      ['Feb 2025', 'Health Svcs',  '$4.6M', '$3.9M', '338', 'EMP-5503', '••••'],
+    ],
   },
   'Property Tax': {
-    columns: ['District', 'Assessed Value', 'Tax Levied', 'Collected', 'Delinquency %'],
+    columns: ['Parcel ID', 'District', 'Assessed Value', 'Tax Levied', 'Status', 'Owner Name', 'Owner Address'],
     rows: [
-      ['District 1', '$18.2B', '$182M', '$174M', '4.4%'],
-      ['District 2', '$11.7B', '$117M', '$109M', '6.8%'],
-      ['District 3', '$9.4B', '$94M', '$91M', '3.2%'],
-      ['District 4', '$14.8B', '$148M', '$142M', '4.1%'],
-    ]
+      ['PAR-00142', 'District 1', '$1.24M', '$12,400', 'Paid',    '••••••••••', '•••••••••••••••'],
+      ['PAR-00387', 'District 2', '$0.88M', '$8,800',  'Paid',    '••••••••••', '•••••••••••••••'],
+      ['PAR-00591', 'District 1', '$2.10M', '$21,000', 'Delinquent','••••••••••', '•••••••••••••••'],
+      ['PAR-00743', 'District 3', '$1.65M', '$16,500', 'Paid',    '••••••••••', '•••••••••••••••'],
+    ],
+    grantedRows: [
+      ['PAR-00142', 'District 1', '$1.24M', '$12,400', 'Paid',     '••••••••••', '•••••••••••••••'],
+      ['PAR-00387', 'District 2', '$0.88M', '$8,800',  'Paid',     '••••••••••', '•••••••••••••••'],
+      ['PAR-00591', 'District 1', '$2.10M', '$21,000', 'Delinquent','••••••••••', '•••••••••••••••'],
+      ['PAR-00743', 'District 3', '$1.65M', '$16,500', 'Paid',     '••••••••••', '•••••••••••••••'],
+    ],
   },
   Demographics: {
     columns: ['Age Group', 'Population', 'Median Income', 'Households', '% Total'],
     rows: [
-      ['Under 18', '241,832', 'N/A', '—', '18.4%'],
-      ['18–34', '298,441', '$52,400', '118,200', '22.7%'],
-      ['35–54', '342,108', '$74,800', '156,400', '26.1%'],
-      ['55+', '422,619', '$61,200', '198,300', '32.2%'],
-    ]
+      ['Under 18', '241,832', 'N/A',     '—',       '18.4%'],
+      ['18–34',    '298,441', '$52,400', '118,200', '22.7%'],
+      ['35–54',    '342,108', '$74,800', '156,400', '26.1%'],
+      ['55+',      '422,619', '$61,200', '198,300', '32.2%'],
+    ],
+    grantedRows: [
+      ['Under 18', '241,832', 'N/A',     '—',       '18.4%'],
+      ['18–34',    '298,441', '$52,400', '118,200', '22.7%'],
+      ['35–54',    '342,108', '$74,800', '156,400', '26.1%'],
+      ['55+',      '422,619', '$61,200', '198,300', '32.2%'],
+    ],
+  },
+  'Public Safety': {
+    columns: ['Incident ID', 'Type', 'Response Time', 'District', 'Officer Badge', 'Victim Name'],
+    rows: [
+      ['INC-2041', 'Medical',  '4.2 min', 'District 3', '•••••••', '••••••••••'],
+      ['INC-2042', 'Fire',     '6.8 min', 'District 1', '•••••••', '••••••••••'],
+      ['INC-2043', 'Crime',    '8.1 min', 'District 5', '•••••••', '••••••••••'],
+      ['INC-2044', 'Medical',  '3.5 min', 'District 2', '•••••••', '••••••••••'],
+    ],
+    grantedRows: [
+      ['INC-2041', 'Medical',  '4.2 min', 'District 3', 'BDG-1142', '••••••••••'],
+      ['INC-2042', 'Fire',     '6.8 min', 'District 1', 'BDG-0887', '••••••••••'],
+      ['INC-2043', 'Crime',    '8.1 min', 'District 5', 'BDG-2201', '••••••••••'],
+      ['INC-2044', 'Medical',  '3.5 min', 'District 2', 'BDG-1554', '••••••••••'],
+    ],
   },
 }
 
 function getSampleData(product) {
-  const domain = product.category || product.domain || ''
-  for (const key of Object.keys(sampleDataByDomain)) {
-    if (domain.toLowerCase().includes(key.toLowerCase())) return sampleDataByDomain[key]
-  }
-  return {
-    columns: ['ID', 'Name', 'Category', 'Value', 'Updated'],
-    rows: [
-      ['001', 'Sample Record A', product.category || 'General', '$12,400', '01/15/2025'],
-      ['002', 'Sample Record B', product.category || 'General', '$8,700', '01/20/2025'],
-      ['003', 'Sample Record C', product.category || 'General', '$23,100', '02/01/2025'],
-      ['004', 'Sample Record D', product.category || 'General', '$5,890', '02/11/2025'],
-    ]
-  }
+  const domain = (product.category || product.domain || '').toLowerCase()
+  const name = (product.name || '').toLowerCase()
+  if (domain.includes('hris') || domain.includes('ehr') || domain.includes('human resource') || name.includes('employee') || name.includes('headcount') || name.includes('workforce'))
+    return sampleDataByDomain['HRIS']
+  if (domain.includes('payroll') || name.includes('payroll') || name.includes('compensation'))
+    return sampleDataByDomain['Payroll']
+  if (domain.includes('budget') || domain.includes('financ') || domain.includes('account') || name.includes('budget') || name.includes('expenditure'))
+    return sampleDataByDomain['Budget']
+  if (domain.includes('property tax') || domain.includes('tax') || name.includes('property tax'))
+    return sampleDataByDomain['Property Tax']
+  if (domain.includes('demograph') || domain.includes('census') || name.includes('census') || name.includes('population'))
+    return sampleDataByDomain['Demographics']
+  if (domain.includes('public safety') || name.includes('incident') || name.includes('public safety'))
+    return sampleDataByDomain['Public Safety']
+  const fallbackRows = [
+    ['001', 'Sample Record A', product.category || 'General', '$12,400', '01/15/2025'],
+    ['002', 'Sample Record B', product.category || 'General', '$8,700', '01/20/2025'],
+    ['003', 'Sample Record C', product.category || 'General', '$23,100', '02/01/2025'],
+    ['004', 'Sample Record D', product.category || 'General', '$5,890', '02/11/2025'],
+  ]
+  return { columns: ['ID', 'Name', 'Category', 'Value', 'Updated'], rows: fallbackRows, grantedRows: fallbackRows }
 }
 
 function SampleDataPreview({ product, accessGranted, onRequestAccess }) {
   const [expanded, setExpanded] = useState(false)
-  const { columns, rows } = getSampleData(product)
+  const { columns, rows, grantedRows } = getSampleData(product)
+  const schema = getSchema(product)
+  const elevatedIndices = new Set(
+    columns.map((col, i) => {
+      const key = col.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '')
+      const match = schema.find(s => s.name.toLowerCase() === key || col.toLowerCase().includes(s.name.toLowerCase()))
+      return match?.elevatedPII ? i : null
+    }).filter(i => i !== null)
+  )
+  const displayRows = accessGranted ? grantedRows : rows
 
   return (
     <div className="bg-white rounded-2xl border border-gray-200 p-6 mt-6">
@@ -294,6 +406,11 @@ function SampleDataPreview({ product, accessGranted, onRequestAccess }) {
           {!accessGranted && (
             <span className="flex items-center gap-1 text-[10px] text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">
               <Lock className="h-2.5 w-2.5" /> Restricted
+            </span>
+          )}
+          {accessGranted && elevatedIndices.size > 0 && (
+            <span className="flex items-center gap-1 text-[10px] text-red-700 bg-red-50 border border-red-200 px-2 py-0.5 rounded-full">
+              <ShieldAlert className="h-2.5 w-2.5" /> {elevatedIndices.size} col{elevatedIndices.size !== 1 ? 's' : ''} elevated PII
             </span>
           )}
         </div>
@@ -310,16 +427,19 @@ function SampleDataPreview({ product, accessGranted, onRequestAccess }) {
           <table className="w-full text-xs">
             <thead>
               <tr className="bg-gray-50 border-b border-gray-100">
-                {columns.map(col => (
-                  <th key={col} className="text-left px-3 py-2 text-gray-500 font-medium whitespace-nowrap">{col}</th>
+                {columns.map((col, i) => (
+                  <th key={col} className={`text-left px-3 py-2 font-medium whitespace-nowrap ${accessGranted && elevatedIndices.has(i) ? 'text-red-400' : 'text-gray-500'}`}>
+                    {col}
+                    {accessGranted && elevatedIndices.has(i) && <ShieldAlert className="inline h-2.5 w-2.5 ml-1 text-red-400" />}
+                  </th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {rows.map((row, ri) => (
+              {displayRows.map((row, ri) => (
                 <tr key={ri} className={`border-b border-gray-50 last:border-0 ${!accessGranted ? 'select-none' : ''}`}>
                   {row.map((cell, ci) => (
-                    <td key={ci} className={`px-3 py-2 text-gray-700 ${!accessGranted ? 'blur-[5px]' : ''}`}>
+                    <td key={ci} className={`px-3 py-2 ${!accessGranted ? 'blur-[5px] text-gray-700' : elevatedIndices.has(ci) ? 'text-red-400 font-mono' : 'text-gray-700'}`}>
                       {cell}
                     </td>
                   ))}
@@ -347,7 +467,7 @@ function SampleDataPreview({ product, accessGranted, onRequestAccess }) {
       {!expanded && (
         <p className="text-xs text-gray-400">
           {accessGranted
-            ? `${rows.length} sample rows available — click Preview to explore`
+            ? `${displayRows.length} sample rows available — click Preview to explore`
             : 'Preview is blurred. Request access to unlock full dataset.'}
         </p>
       )}
@@ -453,8 +573,12 @@ export function DataMarketProductDetailPage({ product, onBack }) {
   const [showModal, setShowModal] = useState(false)
   const { hasAccess, myRequests } = usePersona()
   const Icon = typeIcons[product.type] || BarChart3
-  const existingRequest = myRequests.find(r => r.productId === product.id)
-  const accessGranted = hasAccess(product.id)
+  // Use product_ref as the canonical identifier — falls back to numeric id for static products
+  const productRef = product.product_ref || product.id
+  const existingRequest = myRequests.find(r =>
+    r.product_ref === productRef || r.productRef === productRef || r.productId === product.id
+  )
+  const accessGranted = hasAccess(productRef)
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
@@ -475,7 +599,14 @@ export function DataMarketProductDetailPage({ product, onBack }) {
                 <Icon className="h-7 w-7" style={{ color: DataMarket_BLUE }} />
               </div>
               <div>
-                <h1 className="text-2xl font-bold text-gray-900 leading-tight">{product.name}</h1>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h1 className="text-2xl font-bold text-gray-900 leading-tight">{product.name}</h1>
+                  {product.sourceType === 'Power BI' && (
+                    <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-50 text-yellow-700 border border-yellow-200 flex items-center gap-1">
+                      📊 Power BI
+                    </span>
+                  )}
+                </div>
                 <div className="flex flex-wrap gap-1.5 mt-2">
                   {product.tags.map(tag => (
                     <span key={tag} className={`text-xs px-2.5 py-1 rounded-full font-medium ${tagColors[tag] || 'bg-gray-100 text-gray-700'}`}>{tag}</span>
@@ -509,10 +640,30 @@ export function DataMarketProductDetailPage({ product, onBack }) {
                 </button>
               )}
 
-              {accessGranted && product.type === 'Dashboard' && (
-                <button className="px-4 py-2 border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 flex items-center gap-2">
-                  <ExternalLink className="h-4 w-4" /> Open Dashboard
-                </button>
+              {accessGranted && product.productUrl && (
+                <a
+                  href={product.productUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-4 py-2 border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                >
+                  <ExternalLink className="h-4 w-4" />
+                  {product.type === 'Dashboard' ? 'Open Dashboard'
+                   : product.type === 'Report' ? 'Open Report'
+                   : product.type === 'Dataset' ? 'Open Dataset'
+                   : 'Open Product'}
+                </a>
+              )}
+
+              {accessGranted && product.reportUrl && (
+                <a
+                  href={product.reportUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-4 py-2 bg-yellow-50 border border-yellow-200 rounded-lg text-sm font-medium text-yellow-800 hover:bg-yellow-100 flex items-center gap-2"
+                >
+                  <span>📊</span> View in Power BI
+                </a>
               )}
             </div>
           </div>
@@ -531,6 +682,16 @@ export function DataMarketProductDetailPage({ product, onBack }) {
                 <div>
                   <p className="text-xs text-gray-400 font-medium uppercase tracking-wide">Data Source Type</p>
                   <p className="text-sm font-medium text-gray-800 mt-0.5">{product.type}</p>
+                </div>
+              </div>
+
+              <div className="flex items-start gap-3">
+                <div className="w-8 h-8 rounded-lg bg-gray-50 flex items-center justify-center shrink-0">
+                  <span className="text-sm">{product.sourceType === 'Power BI' ? '📊' : '⚡'}</span>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-400 font-medium uppercase tracking-wide">Platform</p>
+                  <p className="text-sm font-medium text-gray-800 mt-0.5">{product.sourceType || 'Databricks'}</p>
                 </div>
               </div>
 
@@ -577,6 +738,49 @@ export function DataMarketProductDetailPage({ product, onBack }) {
                   <p className="text-sm font-medium text-gray-800 mt-0.5">{product.lastUpdated || '02/11/2025'}</p>
                 </div>
               </div>
+
+              {product.productUrl && (
+                <div className="flex items-start gap-3">
+                  <div className="w-8 h-8 rounded-lg bg-gray-50 flex items-center justify-center shrink-0">
+                    <ExternalLink className="h-4 w-4 text-gray-400" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-xs text-gray-400 font-medium uppercase tracking-wide">Product URL</p>
+                    {accessGranted ? (
+                      <a href={product.productUrl} target="_blank" rel="noopener noreferrer"
+                        className="text-xs font-medium text-blue-600 hover:underline mt-0.5 break-all block">
+                        {product.productUrl}
+                      </a>
+                    ) : (
+                      <p className="text-xs text-gray-400 mt-0.5 flex items-center gap-1">
+                        <Lock className="h-3 w-3" /> Visible after access approved
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {product.reportUrl && (
+                <div className="flex items-start gap-3">
+                  <div className="w-8 h-8 rounded-lg bg-yellow-50 flex items-center justify-center shrink-0">
+                    <span className="text-sm">📊</span>
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-xs text-gray-400 font-medium uppercase tracking-wide">Power BI Report</p>
+                    {accessGranted ? (
+                      <a href={product.reportUrl} target="_blank" rel="noopener noreferrer"
+                        className="text-xs font-medium text-yellow-700 hover:underline mt-0.5 break-all block">
+                        Open Report ↗
+                      </a>
+                    ) : (
+                      <p className="text-xs text-gray-400 mt-0.5 flex items-center gap-1">
+                        <Lock className="h-3 w-3" /> Available after access approved
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+
             </div>
           </div>
         </div>

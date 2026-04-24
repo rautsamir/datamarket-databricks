@@ -92,6 +92,10 @@ export function DataMarketHomePage({ onNavigate, onOpenProduct }) {
     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-10 space-y-12">
       {/* Hero Search */}
       <div className="text-center space-y-4">
+        <div className="flex flex-col items-center gap-2 mb-2">
+          <img src="/la-county-seal.png" alt="County of Los Angeles" className="w-16 h-16 rounded-full shadow-md ring-2 ring-gray-200" />
+          <span className="text-xs font-medium text-gray-400 uppercase tracking-widest">Los Angeles County Auditor-Controller</span>
+        </div>
         <h1 className="text-3xl sm:text-4xl font-bold text-gray-900">
           Hi {persona.name},
         </h1>
@@ -130,7 +134,7 @@ export function DataMarketHomePage({ onNavigate, onOpenProduct }) {
           <div className="flex flex-wrap gap-2 mt-3 justify-center">
             {[
               { label: '✦ Budget by department', q: 'Show me budget by department' },
-              { label: '✦ Headcount by department', q: 'Headcount by department' },
+              { label: '✦ Compensation by department', q: 'Show me headcount and compensation by department' },
               { label: '✦ Vendor fraud flags', q: 'Show me vendor fraud flags' },
               { label: '✦ Property tax revenue', q: 'Show me property tax revenue' },
             ].map(({ label, q }) => (

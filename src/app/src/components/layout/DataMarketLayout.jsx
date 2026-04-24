@@ -74,14 +74,10 @@ export function DataMarketLayout({ currentPage, onNavigate, children }) {
           <div className="flex items-center justify-between h-16">
             {/* Logo */}
             <button onClick={() => onNavigate('home')} className="flex items-center gap-3 hover:opacity-90 transition-opacity">
-              <div className="w-8 h-8 rounded flex items-center justify-center bg-white shrink-0">
-                <svg viewBox="0 0 24 24" className="w-5 h-5" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="#1B3A6B" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                </svg>
-              </div>
+              <img src="/la-county-seal.png" alt="County of Los Angeles" className="w-9 h-9 rounded-full shrink-0 ring-2 ring-white/30" />
               <div className="hidden sm:flex flex-col gap-0 self-center">
                 <span className="text-white font-semibold text-base tracking-wide leading-[1.1]">DataMarket</span>
-                <span className="text-white/60 text-[10px] tracking-wide leading-[1.1]">Data Discovery &amp; Access</span>
+                <span className="text-white/60 text-[10px] tracking-wide leading-[1.1]">LA County · Data Discovery &amp; Access</span>
               </div>
               <span className="text-white font-semibold text-sm sm:hidden">DataMarket</span>
             </button>
@@ -296,12 +292,8 @@ export function DataMarketLayout({ currentPage, onNavigate, children }) {
       <footer className="border-t border-gray-200 bg-white mt-12">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2">
-            <div className="w-6 h-6 rounded flex items-center justify-center" style={{ backgroundColor: DataMarket_BLUE }}>
-              <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
-              </svg>
-            </div>
-            <span className="text-sm text-gray-500">DataMarket · Data Discovery &amp; Access</span>
+            <img src="/la-county-seal.png" alt="County of Los Angeles" className="w-6 h-6 rounded-full" />
+            <span className="text-sm text-gray-500">Los Angeles County · DataMarket</span>
           </div>
           <nav className="flex items-center gap-6">
             {['About', 'FAQ', 'Contact'].map(item => (
