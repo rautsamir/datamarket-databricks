@@ -78,14 +78,14 @@ export function DataMarketHomePage({ onNavigate, onOpenProduct }) {
     e.preventDefault()
     if (!searchQuery.trim()) return
     if (isAI) {
-      onNavigate('ai-explorer', { question: searchQuery })
+      onNavigate('ask-ai', { question: searchQuery })
     } else {
-      onNavigate('catalog', { search: searchQuery })
+      onNavigate('discover', { search: searchQuery })
     }
   }
 
   const launchChip = (text) => {
-    onNavigate('ai-explorer', { question: text })
+    onNavigate('ask-ai', { question: text })
   }
 
   return (
@@ -93,8 +93,7 @@ export function DataMarketHomePage({ onNavigate, onOpenProduct }) {
       {/* Hero Search */}
       <div className="text-center space-y-4">
         <div className="flex flex-col items-center gap-2 mb-2">
-          <img src="/la-county-seal.png" alt="County of Los Angeles" className="w-16 h-16 rounded-full shadow-md ring-2 ring-gray-200" />
-          <span className="text-xs font-medium text-gray-400 uppercase tracking-widest">Los Angeles County Auditor-Controller</span>
+          <img src="/la-county-seal.png" alt="DataMarket" className="w-16 h-16 rounded-full shadow-md ring-2 ring-gray-200" />
         </div>
         <h1 className="text-3xl sm:text-4xl font-bold text-gray-900">
           Hi {persona.name},
@@ -156,8 +155,8 @@ export function DataMarketHomePage({ onNavigate, onOpenProduct }) {
         <div className="flex items-center justify-between mb-5">
           <h2 className="text-xl font-semibold text-gray-900">Featured</h2>
           <button
-            onClick={() => onNavigate('catalog')}
-            className="text-sm font-medium flex items-center gap-1 hover:gap-2 transition-all"
+                onClick={() => onNavigate('discover')}
+                className="text-sm font-medium flex items-center gap-1 hover:gap-2 transition-all"
             style={{ color: DataMarket_BLUE }}
           >
             View All <ArrowRight className="h-4 w-4" />
@@ -211,7 +210,7 @@ export function DataMarketHomePage({ onNavigate, onOpenProduct }) {
             return (
               <button
                 key={i}
-                onClick={() => onNavigate('catalog')}
+                onClick={() => onNavigate('discover')}
                 className="w-full flex items-center gap-4 px-5 py-4 hover:bg-gray-50 transition-colors text-left group"
               >
                 <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: '#E8F0F7' }}>
