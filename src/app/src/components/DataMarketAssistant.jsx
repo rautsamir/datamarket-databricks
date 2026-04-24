@@ -61,7 +61,7 @@ function buildResponse(input, persona, myRequests, pendingRequests, hasAccess, a
     if (myRequests.length === 0) {
       return {
         text: `You have no open access requests, ${persona.name}. Head to the Data Catalog to find datasets and request access.`,
-        actions: [{ label: 'Browse Catalog', page: 'catalog' }]
+        actions: [{ label: 'Browse Catalog', page: 'discover' }]
       }
     }
     const pending = myRequests.filter(r => r.status === 'Pending')
@@ -100,14 +100,14 @@ function buildResponse(input, persona, myRequests, pendingRequests, hasAccess, a
     if (accessible.length === 0) {
       return {
         text: `You don't have approved access to any datasets yet, ${persona.name}. Browse the catalog to find what you need and submit a request.`,
-        actions: [{ label: 'Browse Catalog', page: 'catalog' }]
+        actions: [{ label: 'Browse Catalog', page: 'discover' }]
       }
     }
     return {
       text: `You currently have access to ${accessible.length} data product${accessible.length > 1 ? 's' : ''}:`,
       products: accessible.slice(0, 5),
       followUp: accessible.length > 5 ? `...and ${accessible.length - 5} more. Check your Library for the full list.` : null,
-      actions: [{ label: 'View My Library', page: 'library' }]
+      actions: [{ label: 'View My Access', page: 'my-access' }]
     }
   }
 
@@ -132,15 +132,15 @@ function buildResponse(input, persona, myRequests, pendingRequests, hasAccess, a
     if (matches.length === 0) {
       return {
         text: `I didn't find an exact match for that topic. Browse the full catalog — it has 12 data products across Budget, HR, Property Tax, Demographics, and more.`,
-        actions: [{ label: 'Browse Catalog', page: 'catalog' }]
+        actions: [{ label: 'Browse Catalog', page: 'discover' }]
       }
     }
     return {
       text: `Found ${matches.length} data product${matches.length > 1 ? 's' : ''} matching your query:`,
       products: matches.slice(0, 4),
       actions: matches.length > 0 && !hasAccess(matches[0].ref)
-        ? [{ label: `Request Access to ${matches[0].name.split(' ').slice(0, 3).join(' ')}...`, page: 'catalog' }]
-        : [{ label: 'View in Catalog', page: 'catalog' }]
+        ? [{ label: `Request Access to ${matches[0].name.split(' ').slice(0, 3).join(' ')}...`, page: 'discover' }]
+        : [{ label: 'View in Catalog', page: 'discover' }]
     }
   }
 
@@ -155,7 +155,7 @@ function buildResponse(input, persona, myRequests, pendingRequests, hasAccess, a
         'The Data Steward is notified and typically responds within 1-2 business days',
         'Once approved, the dataset appears in your Library'
       ],
-      actions: [{ label: 'Go to Catalog', page: 'catalog' }]
+      actions: [{ label: 'Go to Catalog', page: 'discover' }]
     }
   }
 

@@ -439,7 +439,7 @@ export function DataMarketLibraryPage({ onNavigate, onOpenProduct }) {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">
-            {isSteward ? 'Product Management' : 'My Library'}
+            {isSteward ? 'Product Management' : 'My Access'}
           </h1>
           <p className="text-sm text-gray-500 mt-1">
             {isSteward ? 'Manage data products, onboard from UC, and configure user roles' : 'Your saved and requested data products'}
