@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { CheckCircle2, ChevronRight, Users, Lock, Eye, X, Plus, Loader2 } from 'lucide-react'
+import { CheckCircle2, ChevronRight, Users, Lock, Eye, X, Plus, Loader2, Link } from 'lucide-react'
 import { usePersona } from '../context/PersonaContext'
 
 const DataMarket_BLUE = '#003865'
@@ -30,6 +30,7 @@ export function DataMarketRegisterPage({ onNavigate }) {
     source: '',
     tags: [],
     refreshFrequency: 'Daily',
+    productUrl: '',
     usageDescription: '',
     useCases: '',
     sla: '',
@@ -49,6 +50,7 @@ export function DataMarketRegisterPage({ onNavigate }) {
     source: 'ERP',
     tags: ['Budget', 'Financial', 'ERP'],
     refreshFrequency: 'Weekly',
+    productUrl: 'https://adb-3438839487639471.11.azuredatabricks.net/dashboardsv3/demo-q2-finance',
     usageDescription: 'Used by Finance and department heads for quarterly budget reviews and variance analysis.',
     useCases: 'Q2 Board reporting, departmental cost reviews, headcount reconciliation.',
     sla: '99.5% uptime, refreshed every Monday 6am.',
@@ -81,7 +83,7 @@ export function DataMarketRegisterPage({ onNavigate }) {
           <button onClick={() => onNavigate('catalog')} className="px-6 py-2.5 rounded-lg text-sm font-medium text-white" style={{ backgroundColor: DataMarket_BLUE }}>
             Browse Catalog
           </button>
-          <button onClick={() => { setSubmitted(false); setCurrentStep(1); setForm({ name: '', description: '', type: 'Dashboard', source: '', tags: [], refreshFrequency: 'Daily', usageDescription: '', useCases: '', sla: '', dataOwner: '', steward: '', contributors: [], classification: 'Internal', accessLevel: 'Read Only', hasPII: false, retentionYears: '7' }) }} className="px-6 py-2.5 border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50">
+          <button onClick={() => { setSubmitted(false); setCurrentStep(1); setForm({ name: '', description: '', type: 'Dashboard', source: '', tags: [], refreshFrequency: 'Daily', productUrl: '', usageDescription: '', useCases: '', sla: '', dataOwner: '', steward: '', contributors: [], classification: 'Internal', accessLevel: 'Read Only', hasPII: false, retentionYears: '7' }) }} className="px-6 py-2.5 border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50">
             Register Another
           </button>
         </div>
@@ -163,6 +165,20 @@ export function DataMarketRegisterPage({ onNavigate }) {
                   </button>
                 ))}
               </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1.5">
+                <Link className="h-3.5 w-3.5 text-gray-400" /> Product URL
+                <span className="text-xs text-gray-400 font-normal ml-1">(optional)</span>
+              </label>
+              <input
+                type="url"
+                placeholder="https://your-workspace.azuredatabricks.net/dashboardsv3/..."
+                value={form.productUrl}
+                onChange={e => updateForm('productUrl', e.target.value)}
+                className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
+              />
+              <p className="text-xs text-gray-400 mt-1">Link to the live dashboard, report, or dataset location — shown as an "Open" button to approved users.</p>
             </div>
           </div>
         )
@@ -297,21 +313,27 @@ export function DataMarketRegisterPage({ onNavigate }) {
           <div className="space-y-5">
             <div className="bg-blue-50 rounded-xl p-5 space-y-4">
               <h4 className="font-semibold text-gray-900">Review Your Submission</h4>
-              {[
+            {[
                 { label: 'Name', value: form.name || '—' },
                 { label: 'Type', value: form.type },
                 { label: 'Source', value: form.source || '—' },
                 { label: 'Tags', value: form.tags.join(', ') || '—' },
                 { label: 'Refresh Frequency', value: form.refreshFrequency },
+                ...(form.productUrl ? [{ label: 'Product URL', value: form.productUrl, isLink: true }] : []),
                 { label: 'Data Owner', value: form.dataOwner || '—' },
                 { label: 'Classification', value: form.classification },
                 { label: 'Access Level', value: form.accessLevel },
                 { label: 'Contains PII', value: form.hasPII ? 'Yes' : 'No' },
                 { label: 'Retention', value: `${form.retentionYears} years` },
-              ].map(({ label, value }) => (
+              ].map(({ label, value, isLink }) => (
                 <div key={label} className="flex justify-between text-sm border-b border-blue-100 pb-2">
                   <span className="text-gray-500">{label}</span>
-                  <span className="font-medium text-gray-900 text-right max-w-[60%]">{value}</span>
+                  {isLink
+                    ? <a href={value} target="_blank" rel="noopener noreferrer" className="font-medium text-blue-600 hover:underline text-right max-w-[60%] truncate flex items-center gap-1">
+                        <Link className="h-3 w-3 shrink-0" />{value}
+                      </a>
+                    : <span className="font-medium text-gray-900 text-right max-w-[60%]">{value}</span>
+                  }
                 </div>
               ))}
             </div>
@@ -416,6 +438,7 @@ export function DataMarketRegisterPage({ onNavigate }) {
                       source: form.source,
                       tags: form.tags,
                       refreshFrequency: form.refreshFrequency,
+                      productUrl: form.productUrl,
                       ownerEmail: form.dataOwner || persona.email,
                       classification: form.classification,
                       domain: form.source,
