@@ -34,15 +34,19 @@ export function DataMarketLayout({ currentPage, onNavigate, children }) {
   const { persona, currentPersona, setCurrentPersona, pendingRequests, notifications, unreadNotificationCount } = usePersona()
 
   const navItems = [
-    { id: 'home', label: 'Home' },
-    { id: 'data', label: 'Data' },
-    { id: 'library', label: 'Library' },
+    { id: 'home',     label: 'Home' },
+    { id: 'discover', label: 'Discover' },
+    { id: 'ask-ai',   label: 'Ask AI' },
+    { id: 'insights', label: 'Insights' },
+    { id: 'my-access',label: 'My Access' },
   ]
 
   const isActive = (id) => {
-    if (id === 'home') return currentPage === 'home'
-    if (id === 'data') return ['data', 'catalog', 'detail'].includes(currentPage)
-    if (id === 'library') return ['library', 'my-library', 'register'].includes(currentPage)
+    if (id === 'home')      return currentPage === 'home'
+    if (id === 'discover')  return ['discover', 'data', 'catalog', 'detail'].includes(currentPage)
+    if (id === 'ask-ai')    return ['ask-ai', 'ai-explorer'].includes(currentPage)
+    if (id === 'insights')  return currentPage === 'insights'
+    if (id === 'my-access') return ['my-access', 'library', 'my-library', 'register'].includes(currentPage)
     return false
   }
 
@@ -77,7 +81,7 @@ export function DataMarketLayout({ currentPage, onNavigate, children }) {
               <img src="/la-county-seal.png" alt="County of Los Angeles" className="w-9 h-9 rounded-full shrink-0 ring-2 ring-white/30" />
               <div className="hidden sm:flex flex-col gap-0 self-center">
                 <span className="text-white font-semibold text-base tracking-wide leading-[1.1]">DataMarket</span>
-                <span className="text-white/60 text-[10px] tracking-wide leading-[1.1]">LA County · Data Discovery &amp; Access</span>
+                <span className="text-white/60 text-[10px] tracking-wide leading-[1.1]">Data Discovery &amp; Access</span>
               </div>
               <span className="text-white font-semibold text-sm sm:hidden">DataMarket</span>
             </button>
@@ -150,7 +154,7 @@ export function DataMarketLayout({ currentPage, onNavigate, children }) {
                           <div className="border-t border-gray-100 pt-1">
                             <button onClick={() => { onNavigate('admin'); setNotifOpen(false) }}
                               className="w-full text-center text-xs text-blue-600 hover:text-blue-800 py-2">
-                              View all in Approvals →
+          View all in Approvals →
                             </button>
                           </div>
                         </>
@@ -188,7 +192,7 @@ export function DataMarketLayout({ currentPage, onNavigate, children }) {
                   type="text"
                   placeholder="Search..."
                   className="pl-9 pr-4 py-1.5 rounded text-sm bg-white/15 text-white placeholder-white/60 border border-white/20 focus:outline-none focus:bg-white/25 w-40"
-                  onKeyDown={e => { if (e.key === 'Enter' && e.target.value) onNavigate('catalog') }}
+                  onKeyDown={e => { if (e.key === 'Enter' && e.target.value) onNavigate('discover') }}
                 />
               </div>
 
@@ -223,7 +227,7 @@ export function DataMarketLayout({ currentPage, onNavigate, children }) {
 
                     {/* Quick links */}
                     <div className="py-1 border-b border-gray-100">
-                      <button onClick={() => { onNavigate('my-library'); setUserMenuOpen(false) }} className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">My Library</button>
+                      <button onClick={() => { onNavigate('my-access'); setUserMenuOpen(false) }} className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">My Access</button>
                       {currentPersona === 'admin' && (
                         <button onClick={() => { onNavigate('admin'); setUserMenuOpen(false) }} className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center justify-between">
                           Approval Queue
@@ -293,7 +297,7 @@ export function DataMarketLayout({ currentPage, onNavigate, children }) {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2">
             <img src="/la-county-seal.png" alt="County of Los Angeles" className="w-6 h-6 rounded-full" />
-            <span className="text-sm text-gray-500">Los Angeles County · DataMarket</span>
+            <span className="text-sm text-gray-500">DataMarket · Data Discovery &amp; Access</span>
           </div>
           <nav className="flex items-center gap-6">
             {['About', 'FAQ', 'Contact'].map(item => (

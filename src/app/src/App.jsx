@@ -7,6 +7,7 @@ import { DataMarketProductDetailPage } from './pages/DataMarketProductDetailPage
 import { DataMarketLibraryPage } from './pages/DataMarketLibraryPage'
 import { DataMarketRegisterPage } from './pages/DataMarketRegisterPage'
 import { DataMarketAdminPage } from './pages/DataMarketAdminPage'
+import { DataMarketInsightsPage } from './pages/DataMarketInsightsPage'
 import { AIExplorerPage } from './pages/AIExplorerPage'
 
 function AppInner() {
@@ -29,13 +30,21 @@ function AppInner() {
 
   const renderPage = () => {
     if (currentPage === 'detail' && selectedProduct) {
-      return <DataMarketProductDetailPage product={selectedProduct} onBack={() => navigate('catalog')} />
+      return <DataMarketProductDetailPage product={selectedProduct} onBack={() => navigate('discover')} onNavigate={navigate} />
     }
     switch (currentPage) {
       case 'home':         return <DataMarketHomePage onNavigate={navigate} onOpenProduct={openProduct} />
+      // Discover (catalog)
+      case 'discover':
       case 'data':
-      case 'catalog':      return <DataMarketCatalogPage onOpenProduct={openProduct} initialSearch={pageProps.search || ''} />
+      case 'catalog':      return <DataMarketCatalogPage onOpenProduct={openProduct} initialSearch={pageProps.search || ''} onNavigate={navigate} />
+      // Ask AI (Genie explorer)
+      case 'ask-ai':
       case 'ai-explorer':  return <AIExplorerPage initialQuestion={pageProps.question || ''} onNavigate={navigate} onOpenProduct={openProduct} />
+      // Insights (dashboard gallery)
+      case 'insights':     return <DataMarketInsightsPage onNavigate={navigate} onOpenProduct={openProduct} />
+      // My Access (library)
+      case 'my-access':
       case 'library':
       case 'my-library':   return <DataMarketLibraryPage onNavigate={navigate} onOpenProduct={openProduct} />
       case 'register':     return <DataMarketRegisterPage onNavigate={navigate} />

@@ -262,7 +262,7 @@ export function AIExplorerPage({ initialQuestion = '', onNavigate, onOpenProduct
                                 } catch (_) {}
                               }
                               // Fallback: go to catalog filtered to the product name
-                              onNavigate && onNavigate('catalog', { search: msg.productName || '' })
+                              onNavigate && onNavigate('discover', { search: msg.productName || '' })
                             }}
                             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white"
                             style={{ backgroundColor: '#1B3A6B' }}

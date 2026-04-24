@@ -80,7 +80,7 @@ export function DataMarketRegisterPage({ onNavigate }) {
           <strong>{form.name || 'Your data product'}</strong> has been submitted for review. It will appear in the catalog once approved by the data governance team.
         </p>
         <div className="flex justify-center gap-3">
-          <button onClick={() => onNavigate('catalog')} className="px-6 py-2.5 rounded-lg text-sm font-medium text-white" style={{ backgroundColor: DataMarket_BLUE }}>
+          <button onClick={() => onNavigate('discover')} className="px-6 py-2.5 rounded-lg text-sm font-medium text-white" style={{ backgroundColor: DataMarket_BLUE }}>
             Browse Catalog
           </button>
           <button onClick={() => { setSubmitted(false); setCurrentStep(1); setForm({ name: '', description: '', type: 'Dashboard', source: '', tags: [], refreshFrequency: 'Daily', productUrl: '', usageDescription: '', useCases: '', sla: '', dataOwner: '', steward: '', contributors: [], classification: 'Internal', accessLevel: 'Read Only', hasPII: false, retentionYears: '7' }) }} className="px-6 py-2.5 border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50">
@@ -397,7 +397,7 @@ export function DataMarketRegisterPage({ onNavigate }) {
           <p className="text-sm text-red-600 mb-2">{submitError}</p>
         )}
         <div className="flex gap-2">
-          <button onClick={() => onNavigate('catalog')} className="px-4 py-2 text-sm text-gray-500 hover:text-gray-700">
+          <button onClick={() => onNavigate('discover')} className="px-4 py-2 text-sm text-gray-500 hover:text-gray-700">
             Discard Draft
           </button>
           <button className="px-4 py-2 border border-gray-200 rounded-lg text-sm text-gray-600 hover:bg-gray-50">
