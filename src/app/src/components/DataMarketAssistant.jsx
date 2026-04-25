@@ -107,7 +107,7 @@ function buildResponse(input, persona, myRequests, pendingRequests, hasAccess, a
       text: `You currently have access to ${accessible.length} data product${accessible.length > 1 ? 's' : ''}:`,
       products: accessible.slice(0, 5),
       followUp: accessible.length > 5 ? `...and ${accessible.length - 5} more. Check your Library for the full list.` : null,
-      actions: [{ label: 'View My Access', page: 'my-access' }]
+      actions: [{ label: 'View My Data', page: 'my-access' }]
     }
   }
 
