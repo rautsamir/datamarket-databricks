@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { Search, Plus, BarChart3, FileText, Database, BookmarkCheck, Edit3, Check, X, Upload, Users, ExternalLink, Link2, Shield } from 'lucide-react'
+import { Search, Plus, BarChart3, FileText, Database, BookmarkCheck, Edit3, Check, X, Upload, Users, ExternalLink, Link2, Shield, Clock, Package, ClipboardList, FolderOpen } from 'lucide-react'
 import { usePersona } from '../context/PersonaContext'
 
 const DataMarket_BLUE = '#003865'
@@ -426,20 +426,28 @@ export function DataMarketLibraryPage({ onNavigate, onOpenProduct }) {
     !search || item.name.toLowerCase().includes(search.toLowerCase())
   )
 
-  const tabs = isSteward
-    ? ['Data Products', 'Requests', 'Users']
-    : ['Data Product', 'Request']
-
   const tabCounts = isSteward
     ? { 'Data Products': allProducts.length, 'Requests': fromRequests.length, 'Users': null }
     : { 'Data Product': analystItems.filter(i => i.status === 'Approved').length, 'Request': fromRequests.length }
+
+  // Tab config: icon, label, colors per persona
+  const tabConfig = isSteward
+    ? [
+        { id: 'Data Products', icon: Package,       label: 'Data Products', desc: 'All registered products',  activeColor: 'bg-blue-600 text-white border-blue-600',   countColor: 'bg-blue-500 text-white' },
+        { id: 'Requests',      icon: ClipboardList, label: 'Requests',      desc: 'Incoming access requests', activeColor: 'bg-amber-500 text-white border-amber-500',  countColor: 'bg-amber-400 text-white' },
+        { id: 'Users',         icon: Users,          label: 'Users',         desc: 'Manage user roles',        activeColor: 'bg-purple-600 text-white border-purple-600',countColor: 'bg-purple-500 text-white' },
+      ]
+    : [
+        { id: 'Data Product',  icon: FolderOpen,    label: 'My Products',   desc: 'Data you have access to',  activeColor: 'bg-emerald-600 text-white border-emerald-600', countColor: 'bg-emerald-500 text-white' },
+        { id: 'Request',       icon: Clock,         label: 'My Requests',   desc: 'Pending & past requests',  activeColor: 'bg-blue-600 text-white border-blue-600',      countColor: 'bg-blue-500 text-white' },
+      ]
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">
-            {isSteward ? 'Product Management' : 'My Access'}
+            {isSteward ? 'Product Management' : 'My Data'}
           </h1>
           <p className="text-sm text-gray-500 mt-1">
             {isSteward ? 'Manage data products, onboard from UC, and configure user roles' : 'Your saved and requested data products'}
@@ -464,25 +472,34 @@ export function DataMarketLibraryPage({ onNavigate, onOpenProduct }) {
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className="flex gap-1 border-b border-gray-200 mb-5">
-        {tabs.map(tab => (
-          <button
-            key={tab}
-            onClick={() => setActiveTab(tab)}
-            className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px flex items-center gap-1.5 ${
-              activeTab === tab ? 'border-blue-600 text-blue-700' : 'border-transparent text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            {tab === 'Users' && <Users className="h-3.5 w-3.5" />}
-            {tab}
-            {tabCounts[tab] != null && (
-              <span className={`text-xs px-1.5 py-0.5 rounded-full ${activeTab === tab ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'}`}>
-                {tabCounts[tab]}
-              </span>
-            )}
-          </button>
-        ))}
+      {/* ── Pill Tabs ─────────────────────────────────────────────────────────── */}
+      <div className="flex gap-2 mb-6 flex-wrap">
+        {tabConfig.map(tab => {
+          const count = tabCounts[tab.id]
+          const isActive = activeTab === tab.id
+          const Icon = tab.icon
+          return (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`flex items-center gap-2.5 px-4 py-2.5 rounded-xl border text-sm font-medium transition-all ${
+                isActive
+                  ? `${tab.activeColor} shadow-sm`
+                  : 'bg-white border-gray-200 text-gray-500 hover:border-gray-300 hover:text-gray-700 hover:bg-gray-50'
+              }`}
+            >
+              <Icon className={`h-4 w-4 shrink-0 ${isActive ? 'opacity-90' : 'opacity-60'}`} />
+              <span>{tab.label}</span>
+              {count != null && (
+                <span className={`text-xs font-semibold px-1.5 py-0.5 rounded-full min-w-[20px] text-center ${
+                  isActive ? tab.countColor : 'bg-gray-100 text-gray-500'
+                }`}>
+                  {count}
+                </span>
+              )}
+            </button>
+          )
+        })}
       </div>
 
       {/* ── Users Tab (Steward) ───────────────────────────────────────────────── */}

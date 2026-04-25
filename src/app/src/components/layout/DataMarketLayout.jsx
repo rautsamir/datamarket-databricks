@@ -38,7 +38,7 @@ export function DataMarketLayout({ currentPage, onNavigate, children }) {
     { id: 'discover', label: 'Discover' },
     { id: 'ask-ai',   label: 'Ask AI' },
     { id: 'insights', label: 'Insights' },
-    { id: 'my-access',label: 'My Access' },
+    { id: 'my-access',label: 'My Data' },
   ]
 
   const isActive = (id) => {
@@ -227,7 +227,7 @@ export function DataMarketLayout({ currentPage, onNavigate, children }) {
 
                     {/* Quick links */}
                     <div className="py-1 border-b border-gray-100">
-                      <button onClick={() => { onNavigate('my-access'); setUserMenuOpen(false) }} className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">My Access</button>
+                      <button onClick={() => { onNavigate('my-access'); setUserMenuOpen(false) }} className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">My Data</button>
                       {currentPersona === 'admin' && (
                         <button onClick={() => { onNavigate('admin'); setUserMenuOpen(false) }} className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center justify-between">
                           Approval Queue
