@@ -217,6 +217,14 @@ async function runMigrations() {
     await query(`ALTER TABLE data_products ADD COLUMN IF NOT EXISTS source_type VARCHAR(20) DEFAULT 'Databricks'`);
     await query(`ALTER TABLE data_products ADD COLUMN IF NOT EXISTS report_url TEXT DEFAULT NULL`);
     await query(`UPDATE data_products SET source_type = 'Databricks' WHERE source_type IS NULL`);
+    // Always ensure the three core demo users exist — safe upsert, never overwrites existing rows
+    await query(`
+      INSERT INTO users (email, display_name, role, department) VALUES
+        ('analyst@example.org',     'Alex Analyst',   'analyst',      'Finance'),
+        ('manager@example.org',     'Morgan Manager', 'manager',      'Operations'),
+        ('datasteward@example.org', 'Dana Steward',   'data_steward', 'Data Governance')
+      ON CONFLICT (email) DO NOTHING
+    `);
     console.log('[Lakebase] Migrations applied');
   } catch (e) {
     console.warn('[Lakebase] Migration warning (non-fatal):', e.message);
@@ -913,21 +921,36 @@ app.post('/api/portal/demo-reset', async (req, res) => {
   try {
     const SEEDED_REFS = ['DP-001','DP-002','DP-003','DP-004','DP-005','DP-006',
                          'DP-007','DP-008','DP-009','DP-010','DP-011','DP-012'];
+
+    // Clear request history, audit trail, and personal libraries — NOT users or published products
     await query(`DELETE FROM access_requests`);
     await query(`DELETE FROM audit_log`);
     await query(`DELETE FROM user_library`);
+
+    // Remove any pending/rejected products that were added during demos (not seeded refs)
     await query(
       `DELETE FROM data_products
        WHERE COALESCE(status,'Published') IN ('Pending','Rejected')
          AND product_ref != ALL($1::text[])`,
       [SEEDED_REFS]
     );
+
+    // Re-ensure the three seed users always exist (safe upsert — never deletes anyone)
+    await query(`
+      INSERT INTO users (email, display_name, role, department) VALUES
+        ('analyst@example.org',     'Alex Analyst',   'analyst',      'Finance'),
+        ('manager@example.org',     'Morgan Manager', 'manager',      'Operations'),
+        ('datasteward@example.org', 'Dana Steward',   'data_steward', 'Data Governance')
+      ON CONFLICT (email) DO NOTHING
+    `);
+
     const { rows: counts } = await query(`
       SELECT
         (SELECT COUNT(*) FROM access_requests) AS requests,
         (SELECT COUNT(*) FROM audit_log)       AS audit,
         (SELECT COUNT(*) FROM user_library)    AS library,
-        (SELECT COUNT(*) FROM data_products)   AS products
+        (SELECT COUNT(*) FROM data_products)   AS products,
+        (SELECT COUNT(*) FROM users)           AS users
     `);
     console.log('[demo-reset] Demo data cleared:', counts[0]);
     res.json({ success: true, counts: counts[0] });
