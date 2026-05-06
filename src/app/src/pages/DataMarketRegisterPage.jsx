@@ -127,18 +127,42 @@ export function DataMarketRegisterPage({ onNavigate }) {
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Data Product Type *</label>
-              <div className="flex gap-3">
-                {['Source', 'Dashboard', 'Dataset', 'Report'].map(t => (
+              <div className="flex flex-wrap gap-2">
+                {[
+                  { id: 'Dashboard',       label: 'Dashboard',       hint: 'Lakeview / embedded viz' },
+                  { id: 'AI/BI Dashboard', label: 'AI/BI Dashboard', hint: 'Databricks AI/BI' },
+                  { id: 'Genie Space',     label: 'Genie Space',     hint: 'Natural-language SQL' },
+                  { id: 'Dataset',         label: 'Dataset',         hint: 'Delta table / UC asset' },
+                  { id: 'Report',          label: 'Report',          hint: 'Scheduled / static report' },
+                  { id: 'App',             label: 'App',             hint: 'Databricks App' },
+                  { id: 'ML Model',        label: 'ML Model',        hint: 'Served model / endpoint' },
+                  { id: 'Source',          label: 'Source System',   hint: 'External data source' },
+                ].map(t => (
                   <button
-                    key={t}
-                    onClick={() => updateForm('type', t)}
-                    className={`px-4 py-2 rounded-lg text-sm font-medium border transition-colors ${form.type === t ? 'text-white border-transparent' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}
-                    style={form.type === t ? { backgroundColor: DataMarket_BLUE } : {}}
+                    key={t.id}
+                    onClick={() => updateForm('type', t.id)}
+                    title={t.hint}
+                    className={`px-3 py-2 rounded-lg text-sm font-medium border transition-colors ${form.type === t.id ? 'text-white border-transparent' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}
+                    style={form.type === t.id ? { backgroundColor: DataMarket_BLUE } : {}}
                   >
-                    {t}
+                    {t.label}
                   </button>
                 ))}
               </div>
+              {form.type && (
+                <p className="text-xs text-gray-400 mt-1.5">
+                  {[
+                    { id: 'Dashboard',       hint: 'Embedded visualization — link to the dashboard URL in the next field.' },
+                    { id: 'AI/BI Dashboard', hint: 'Databricks AI/BI (Lakeview) dashboard — paste the dashboard URL below.' },
+                    { id: 'Genie Space',     hint: 'Natural-language SQL exploration space — paste the Genie Space URL below.' },
+                    { id: 'Dataset',         hint: 'Delta table or Unity Catalog asset — add the UC full name (catalog.schema.table).' },
+                    { id: 'Report',          hint: 'Static or scheduled report — link to the report URL or file location.' },
+                    { id: 'App',             hint: 'Databricks App — paste the app URL (e.g. https://your-app.azuredatabricksapps.com).' },
+                    { id: 'ML Model',        hint: 'Served model or endpoint — link to the Model Serving endpoint URL.' },
+                    { id: 'Source',          hint: 'Reference to an upstream source system — no direct URL required.' },
+                  ].find(h => h.id === form.type)?.hint}
+                </p>
+              )}
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Source System</label>

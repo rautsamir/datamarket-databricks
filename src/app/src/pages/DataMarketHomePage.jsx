@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { Search, ArrowRight, Clock, Sparkles, BarChart3, FileText, Database, Lock } from 'lucide-react'
+import { Search, ArrowRight, Clock, Sparkles, BarChart3, FileText, Database, Lock, Bot, LayoutDashboard, AppWindow, Cpu, Layers } from 'lucide-react'
 import { usePersona } from '../context/PersonaContext'
 
 // Heuristic: treat input as a natural-language question if it looks conversational
@@ -66,7 +66,16 @@ const tagColors = {
   Demographics: 'bg-rose-100 text-rose-800',
 }
 
-const typeIcons = { Dashboard: BarChart3, Report: FileText, Dataset: Database }
+const typeIcons = {
+  Dashboard:         BarChart3,
+  'AI/BI Dashboard': LayoutDashboard,
+  'Genie Space':     Bot,
+  Dataset:           Database,
+  Report:            FileText,
+  App:               AppWindow,
+  'ML Model':        Cpu,
+  Source:            Layers,
+}
 
 export function DataMarketHomePage({ onNavigate, onOpenProduct }) {
   const [searchQuery, setSearchQuery] = useState('')

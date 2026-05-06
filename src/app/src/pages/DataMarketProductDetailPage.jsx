@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { ArrowLeft, BarChart3, FileText, Database, X, Calendar, User, RefreshCw, Tag, Lock, ExternalLink, CheckCircle2, Clock, Eye, EyeOff, ShieldAlert, ShieldCheck, Shield } from 'lucide-react'
+import { ArrowLeft, BarChart3, FileText, Database, X, Calendar, User, RefreshCw, Tag, Lock, ExternalLink, CheckCircle2, Clock, Eye, EyeOff, ShieldAlert, ShieldCheck, Shield, Bot, LayoutDashboard, AppWindow, Cpu, Layers } from 'lucide-react'
 import { usePersona } from '../context/PersonaContext'
 
 const DataMarket_BLUE = '#003865'
@@ -16,7 +16,27 @@ const tagColors = {
   'Public Safety': 'bg-slate-100 text-slate-800',
 }
 
-const typeIcons = { Dashboard: BarChart3, Report: FileText, Dataset: Database }
+const typeIcons = {
+  Dashboard:         BarChart3,
+  'AI/BI Dashboard': LayoutDashboard,
+  'Genie Space':     Bot,
+  Dataset:           Database,
+  Report:            FileText,
+  App:               AppWindow,
+  'ML Model':        Cpu,
+  Source:            Layers,
+}
+
+const typeOpenLabel = {
+  Dashboard:         'Open Dashboard',
+  'AI/BI Dashboard': 'Open AI/BI Dashboard',
+  'Genie Space':     'Open Genie',
+  Dataset:           'Open Dataset',
+  Report:            'Open Report',
+  App:               'Open App',
+  'ML Model':        'View Model',
+  Source:            'View Source',
+}
 
 // ── Column-level sensitivity schemas per domain ───────────────────────────────
 // Sensitivity levels: PUBLIC | INTERNAL | CONFIDENTIAL | PII
@@ -648,10 +668,7 @@ export function DataMarketProductDetailPage({ product, onBack }) {
                   className="px-4 py-2 border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 flex items-center gap-2"
                 >
                   <ExternalLink className="h-4 w-4" />
-                  {product.type === 'Dashboard' ? 'Open Dashboard'
-                   : product.type === 'Report' ? 'Open Report'
-                   : product.type === 'Dataset' ? 'Open Dataset'
-                   : 'Open Product'}
+                  {typeOpenLabel[product.type] || 'Open Product'}
                 </a>
               )}
 
