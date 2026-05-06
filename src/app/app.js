@@ -14,82 +14,53 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.DATABRICKS_APP_PORT || process.env.PORT || 3000;
 
-// ─── Lakebase connection config ──────────────────────────────────────────────
-// Set these environment variables to connect to your own Lakebase instance.
-// In Databricks Apps, DATABRICKS_HOST and DATABRICKS_TOKEN are injected automatically.
-const LAKEBASE_HOST     = process.env.LAKEBASE_HOST     || 'your-instance.database.azuredatabricks.net';
-const LAKEBASE_DB       = process.env.LAKEBASE_DB       || 'your_database';
-const LAKEBASE_SCHEMA   = process.env.LAKEBASE_SCHEMA   || 'datamarket';
-const LAKEBASE_INSTANCE = process.env.LAKEBASE_INSTANCE || 'your-lakebase-instance';
+// ─── Lakebase Autoscaling connection config ───────────────────────────────────
+// Lakebase Autoscaling uses the Databricks OAuth token directly as the Postgres
+// password — no separate credential API call needed.
+// In Databricks Apps, DATABRICKS_TOKEN is injected and auto-rotated every hour.
+const LAKEBASE_HOST   = process.env.LAKEBASE_HOST   || 'your-project.database.eastus2.azuredatabricks.net';
+const LAKEBASE_DB     = process.env.LAKEBASE_DB     || 'databricks_postgres';
+const LAKEBASE_SCHEMA = process.env.LAKEBASE_SCHEMA || 'datamarket';
 
-const DEMO_MODE         = (process.env.DEMO_MODE || 'true').toLowerCase() === 'true';
-const SQL_WAREHOUSE_ID  = process.env.SQL_WAREHOUSE_ID  || '';
-const RFA_ENABLED       = (process.env.RFA_ENABLED || 'false').toLowerCase() === 'true';
+const DEMO_MODE        = (process.env.DEMO_MODE || 'true').toLowerCase() === 'true';
+const SQL_WAREHOUSE_ID = process.env.SQL_WAREHOUSE_ID || '';
+const RFA_ENABLED      = (process.env.RFA_ENABLED || 'false').toLowerCase() === 'true';
+
+// ─── App branding (customize via env vars in app.yaml) ────────────────────────
+const APP_NAME     = process.env.APP_NAME     || 'DataMarket';
+const APP_SUBTITLE = process.env.APP_SUBTITLE || 'Data Discovery & Access';
+const APP_LOGO_URL = process.env.APP_LOGO_URL || '/la-county-seal.png';
 
 let dbPool = null;
-let tokenExpiresAt = 0;
-
-async function generateDbToken() {
-  return new Promise((resolve, reject) => {
-    const host = (process.env.DATABRICKS_HOST || '').replace(/^https?:\/\//, '');
-    const token = process.env.DATABRICKS_TOKEN || '';
-    if (!host || !token) {
-      reject(new Error('DATABRICKS_HOST or DATABRICKS_TOKEN not set'));
-      return;
-    }
-    const body = JSON.stringify({ request_id: `app-${Date.now()}`, instance_names: [LAKEBASE_INSTANCE] });
-    const options = {
-      hostname: host,
-      path: '/api/2.0/database/credentials',
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) }
-    };
-    const req = https.request(options, (res) => {
-      let data = '';
-      res.on('data', chunk => data += chunk);
-      res.on('end', () => {
-        try { resolve(JSON.parse(data).token); }
-        catch (e) { reject(new Error(`Token parse error: ${data}`)); }
-      });
-    });
-    req.on('error', reject);
-    req.write(body);
-    req.end();
-  });
-}
+let poolCreatedAt = 0;
+const POOL_TTL_MS = 55 * 60 * 1000; // recreate pool every 55 min (token TTL is 1h)
 
 async function getPool() {
   const now = Date.now();
-  if (dbPool && now < tokenExpiresAt - 120_000) return dbPool; // reuse if > 2 min remaining
+  // Recreate pool before token expires so in-flight queries aren't dropped
+  if (dbPool && now < poolCreatedAt + POOL_TTL_MS) return dbPool;
 
-  console.log('[Lakebase] Refreshing database credential token...');
+  console.log('[Lakebase] Creating connection pool (Autoscaling)...');
   if (dbPool) { try { await dbPool.end(); } catch (_) {} }
 
-  let pgPassword;
-  try {
-    pgPassword = await generateDbToken();
-  } catch (err) {
-    console.warn('[Lakebase] Token generation failed (will use fallback):', err.message);
-    pgPassword = process.env.LAKEBASE_PASSWORD || '';
-  }
+  const token = process.env.DATABRICKS_TOKEN || process.env.LAKEBASE_PASSWORD || '';
+  if (!token) throw new Error('DATABRICKS_TOKEN is required for Lakebase Autoscaling');
 
   dbPool = new Pool({
-    host: LAKEBASE_HOST,
-    port: 5432,
+    host:     LAKEBASE_HOST,
+    port:     5432,
     database: LAKEBASE_DB,
-    user: process.env.DATABRICKS_USER || (() => { throw new Error('DATABRICKS_USER env var is required'); })(),
-    password: pgPassword,
-    ssl: process.env.LAKEBASE_SSL_REJECT_UNAUTHORIZED === 'false'
-      ? { rejectUnauthorized: false }
-      : { rejectUnauthorized: true },
-    max: 5,
-    idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 5000,
-    options: `-c search_path=${LAKEBASE_SCHEMA},public`
+    user:     process.env.DATABRICKS_USER || (() => { throw new Error('DATABRICKS_USER env var is required'); })(),
+    password: token,
+    ssl:      { rejectUnauthorized: true },
+    max:      5,
+    idleTimeoutMillis:      30000,
+    connectionTimeoutMillis: 8000,
+    options: `-c search_path=${LAKEBASE_SCHEMA},public`,
   });
 
   dbPool.on('error', (err) => console.error('[Lakebase] Pool error:', err.message));
-  tokenExpiresAt = now + 60 * 60 * 1000; // 1 hour
+  poolCreatedAt = now;
   return dbPool;
 }
 
@@ -285,6 +256,11 @@ app.get('/api/health', async (req, res) => {
     lakebase: dbStatus, demo_mode: DEMO_MODE, rfa_enabled: RFA_ENABLED,
     uc_grants_enabled: !DEMO_MODE && !!SQL_WAREHOUSE_ID
   });
+});
+
+// ─── App Config (branding) ────────────────────────────────────────────────────
+app.get('/api/portal/config', (req, res) => {
+  res.json({ appName: APP_NAME, appSubtitle: APP_SUBTITLE, appLogoUrl: APP_LOGO_URL });
 });
 
 // ─── Data Products ────────────────────────────────────────────────────────────

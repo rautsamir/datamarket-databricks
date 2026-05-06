@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { Search, Menu, X, ChevronDown, ShieldCheck, Bell, CheckCircle, XCircle, Clock, AlertTriangle } from 'lucide-react'
 import { usePersona, personas } from '../../context/PersonaContext'
+import { useAppConfig } from '../../context/AppConfigContext'
 import { DataMarketAssistant } from '../DataMarketAssistant'
 
 const DataMarket_BLUE = '#003865'
@@ -32,6 +33,7 @@ export function DataMarketLayout({ currentPage, onNavigate, children }) {
   const [personaMenuOpen, setPersonaMenuOpen] = useState(false)
   const [notifOpen, setNotifOpen] = useState(false)
   const { persona, currentPersona, setCurrentPersona, pendingRequests, notifications, unreadNotificationCount } = usePersona()
+  const { appName, appSubtitle, appLogoUrl } = useAppConfig()
 
   const navItems = [
     { id: 'home',     label: 'Home' },
@@ -78,12 +80,12 @@ export function DataMarketLayout({ currentPage, onNavigate, children }) {
           <div className="flex items-center justify-between h-16">
             {/* Logo */}
             <button onClick={() => onNavigate('home')} className="flex items-center gap-3 hover:opacity-90 transition-opacity">
-              <img src="/la-county-seal.png" alt="County of Los Angeles" className="w-9 h-9 rounded-full shrink-0 ring-2 ring-white/30" />
+              {appLogoUrl && <img src={appLogoUrl} alt={appName} className="w-9 h-9 rounded-full shrink-0 ring-2 ring-white/30" />}
               <div className="hidden sm:flex flex-col gap-0 self-center">
-                <span className="text-white font-semibold text-base tracking-wide leading-[1.1]">DataMarket</span>
-                <span className="text-white/60 text-[10px] tracking-wide leading-[1.1]">Data Discovery &amp; Access</span>
+                <span className="text-white font-semibold text-base tracking-wide leading-[1.1]">{appName}</span>
+                <span className="text-white/60 text-[10px] tracking-wide leading-[1.1]">{appSubtitle}</span>
               </div>
-              <span className="text-white font-semibold text-sm sm:hidden">DataMarket</span>
+              <span className="text-white font-semibold text-sm sm:hidden">{appName}</span>
             </button>
 
             {/* Desktop Nav */}
@@ -296,8 +298,8 @@ export function DataMarketLayout({ currentPage, onNavigate, children }) {
       <footer className="border-t border-gray-200 bg-white mt-12">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2">
-            <img src="/la-county-seal.png" alt="County of Los Angeles" className="w-6 h-6 rounded-full" />
-            <span className="text-sm text-gray-500">DataMarket · Data Discovery &amp; Access</span>
+            {appLogoUrl && <img src={appLogoUrl} alt={appName} className="w-6 h-6 rounded-full" />}
+            <span className="text-sm text-gray-500">{appName} · {appSubtitle}</span>
           </div>
           <nav className="flex items-center gap-6">
             {['About', 'FAQ', 'Contact'].map(item => (

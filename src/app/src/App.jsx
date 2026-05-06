@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 import { PersonaProvider } from './context/PersonaContext'
+import { AppConfigProvider } from './context/AppConfigContext'
 import { DataMarketLayout } from './components/layout/DataMarketLayout'
 import { DataMarketHomePage } from './pages/DataMarketHomePage'
 import { DataMarketCatalogPage } from './pages/DataMarketCatalogPage'
@@ -62,9 +63,11 @@ function AppInner() {
 
 function App() {
   return (
-    <PersonaProvider>
-      <AppInner />
-    </PersonaProvider>
+    <AppConfigProvider>
+      <PersonaProvider>
+        <AppInner />
+      </PersonaProvider>
+    </AppConfigProvider>
   )
 }
 
