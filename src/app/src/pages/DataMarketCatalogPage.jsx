@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
-import { Search, SlidersHorizontal, BarChart3, FileText, Database, ChevronLeft, ChevronRight, RefreshCw, Layers, Bot, LayoutDashboard, AppWindow, Cpu } from 'lucide-react'
+import { Search, SlidersHorizontal, BarChart3, FileText, Database, ChevronLeft, ChevronRight, RefreshCw, Layers, Bot, LayoutDashboard, AppWindow, Cpu, Upload, PlusCircle, Sparkles } from 'lucide-react'
 import { usePersona } from '../context/PersonaContext'
+import { ImportUCModal } from '../components/ImportUCModal'
 
 const DataMarket_BLUE = '#003865'
 
@@ -86,7 +87,7 @@ const typeIcons = {
 }
 const PAGE_SIZE = 6
 
-export function DataMarketCatalogPage({ onOpenProduct, initialSearch = '' }) {
+export function DataMarketCatalogPage({ onOpenProduct, onNavigate, initialSearch = '' }) {
   const { currentPersona } = usePersona()
   const [search, setSearch] = useState(initialSearch)
   const [selectedCategory, setSelectedCategory] = useState('All')
@@ -96,19 +97,27 @@ export function DataMarketCatalogPage({ onOpenProduct, initialSearch = '' }) {
   const [page, setPage] = useState(1)
   const [allProducts, setAllProducts] = useState(staticProducts)
   const [loading, setLoading] = useState(true)
+  const [showImport, setShowImport] = useState(false)
+  const [lakebaseEmpty, setLakebaseEmpty] = useState(false)
 
-  useEffect(() => {
+  const loadProducts = () => {
     const isAdmin = currentPersona === 'admin'
     fetch(`/api/portal/products${isAdmin ? '?includeAll=true' : ''}`)
       .then(r => r.json())
       .then(rows => {
         if (Array.isArray(rows) && rows.length > 0) {
           setAllProducts(rows.map(normalizeProduct))
+          setLakebaseEmpty(false)
+        } else if (Array.isArray(rows) && rows.length === 0) {
+          setAllProducts([])
+          setLakebaseEmpty(true)
         }
       })
       .catch(() => { /* keep static fallback */ })
       .finally(() => setLoading(false))
-  }, [currentPersona])
+  }
+
+  useEffect(() => { loadProducts() }, [currentPersona])
 
   const filtered = allProducts.filter(p => {
     const words = search.toLowerCase().split(/\s+/).filter(Boolean)
@@ -129,6 +138,7 @@ export function DataMarketCatalogPage({ onOpenProduct, initialSearch = '' }) {
   const paged = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
   return (
+    <>
     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
       {/* Header */}
       <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -140,6 +150,16 @@ export function DataMarketCatalogPage({ onOpenProduct, initialSearch = '' }) {
           </p>
         </div>
         <div className="flex items-center gap-3">
+          {currentPersona === 'admin' && (
+            <button
+              onClick={() => setShowImport(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white"
+              style={{ backgroundColor: '#003865' }}
+            >
+              <Upload className="h-3.5 w-3.5" />
+              Import from UC
+            </button>
+          )}
           <div className="flex items-center gap-2 text-sm text-gray-600">
             <span>Sort By</span>
             <select
@@ -250,8 +270,41 @@ export function DataMarketCatalogPage({ onOpenProduct, initialSearch = '' }) {
             />
           </div>
 
+          {/* First-run onboarding banner — shown only when catalog is empty */}
+          {lakebaseEmpty && currentPersona === 'admin' && (
+            <div className="rounded-2xl border-2 border-dashed border-blue-200 bg-blue-50/40 p-10 mb-6 text-center">
+              <div className="w-16 h-16 rounded-full bg-white shadow-sm flex items-center justify-center mx-auto mb-4">
+                <Sparkles className="h-8 w-8 text-blue-500" />
+              </div>
+              <h2 className="text-xl font-bold text-gray-900 mb-2">Welcome to DataMarket</h2>
+              <p className="text-sm text-gray-500 max-w-md mx-auto mb-6">
+                Your data catalog is empty. Get started by importing existing tables from Unity Catalog,
+                or register a new data product manually.
+              </p>
+              <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                <button
+                  onClick={() => setShowImport(true)}
+                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium text-white shadow"
+                  style={{ backgroundColor: '#003865' }}
+                >
+                  <Upload className="h-4 w-4" />
+                  Import from Unity Catalog
+                </button>
+                {onNavigate && (
+                  <button
+                    onClick={() => onNavigate('register')}
+                    className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium text-gray-700 bg-white border border-gray-200 hover:bg-gray-50"
+                  >
+                    <PlusCircle className="h-4 w-4" />
+                    Register a Product
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
           <div className="space-y-3">
-            {paged.length === 0 && (
+            {paged.length === 0 && !lakebaseEmpty && (
               <div className="text-center py-16 text-gray-400">
                 <Database className="h-12 w-12 mx-auto mb-3 opacity-30" />
                 <p>No data products match your filters.</p>
@@ -336,5 +389,13 @@ export function DataMarketCatalogPage({ onOpenProduct, initialSearch = '' }) {
         </div>
       </div>
     </div>
+
+    {showImport && (
+      <ImportUCModal
+        onClose={() => setShowImport(false)}
+        onImported={() => { setShowImport(false); loadProducts() }}
+      />
+    )}
+    </>
   )
 }

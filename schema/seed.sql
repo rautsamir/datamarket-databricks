@@ -1,11 +1,13 @@
--- DataMarket — Lakebase Schema + Seed Data
--- Run against your Lakebase Postgres instance to initialize the datamarket schema.
+-- DataMarket — Schema + Generic Demo Data
+-- Runs schema.sql first, then inserts generic sample data for demos.
+-- For production deployments with an empty catalog, use schema.sql only.
 --
 -- Usage:
---   PGPASSWORD="$LAKEBASE_TOKEN" psql \
+--   PGPASSWORD="$TOKEN" psql \
 --     -h YOUR_LAKEBASE_HOST -p 5432 \
 --     -U YOUR_EMAIL -d databricks_postgres \
 --     --set=sslmode=require \
+--     -c "CREATE SCHEMA IF NOT EXISTS datamarket;" \
 --     -f schema/seed.sql
 
 SET search_path TO datamarket, public;
@@ -36,6 +38,9 @@ CREATE TABLE IF NOT EXISTS data_products (
     classification    VARCHAR(50) DEFAULT 'Internal',
     is_active         BOOLEAN DEFAULT TRUE,
     status            VARCHAR(20) DEFAULT 'Published',
+    source_type       VARCHAR(20) DEFAULT 'Databricks',
+    product_url       TEXT,
+    report_url        TEXT,
     last_refreshed    TIMESTAMPTZ,
     created_at        TIMESTAMPTZ DEFAULT NOW(),
     updated_at        TIMESTAMPTZ DEFAULT NOW()
@@ -82,14 +87,14 @@ CREATE TABLE IF NOT EXISTS user_library (
     UNIQUE(user_id, product_id)
 );
 
--- ─── Seed Users ─────────────────────────────────────────────────────────────────
+-- ─── Demo Users ─────────────────────────────────────────────────────────────────
 INSERT INTO users (email, display_name, role, department) VALUES
     ('analyst@example.org',      'Alex Analyst',     'analyst',       'Finance'),
     ('manager@example.org',      'Morgan Manager',   'manager',       'Operations'),
     ('datasteward@example.org',  'Dana Steward',     'data_steward',  'Data Governance')
 ON CONFLICT (email) DO NOTHING;
 
--- ─── Seed Data Products ─────────────────────────────────────────────────────────
+-- ─── Demo Data Products ─────────────────────────────────────────────────────────
 -- Replace uc_full_name values with your own Unity Catalog table paths.
 INSERT INTO data_products (product_ref, uc_full_name, display_name, description, type, domain, tags, source_system, refresh_frequency, owner_email, classification, last_refreshed) VALUES
     ('DP-001', 'your_catalog.your_schema.revenue_summary',
@@ -118,7 +123,7 @@ INSERT INTO data_products (product_ref, uc_full_name, display_name, description,
      'Dataset', 'IT', ARRAY['assets','inventory','it'], 'CMDB', 'Weekly', 'datasteward@example.org', 'Internal', NOW() - INTERVAL '4 days')
 ON CONFLICT (product_ref) DO NOTHING;
 
--- ─── Seed a sample access request ───────────────────────────────────────────────
+-- ─── Demo access request ─────────────────────────────────────────────────────────
 INSERT INTO access_requests (request_ref, product_id, requester_id, requester_team, business_reason, access_level, status)
 SELECT 'REQ-001',
        (SELECT product_id FROM data_products WHERE product_ref = 'DP-002'),
@@ -129,7 +134,7 @@ SELECT 'REQ-001',
        'Pending'
 WHERE NOT EXISTS (SELECT 1 FROM access_requests WHERE request_ref = 'REQ-001');
 
--- ─── Seed audit log ─────────────────────────────────────────────────────────────
+-- ─── Demo audit log ──────────────────────────────────────────────────────────────
 INSERT INTO audit_log (event_type, actor_email, target_name, metadata) VALUES
     ('REQUEST_SUBMITTED', 'analyst@example.org', 'REQ-001', '{"productRef":"DP-002","reason":"Quarterly churn analysis"}')
 ON CONFLICT DO NOTHING;
