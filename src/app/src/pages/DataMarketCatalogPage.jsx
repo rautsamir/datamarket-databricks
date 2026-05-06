@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react'
-import { Search, SlidersHorizontal, BarChart3, FileText, Database, ChevronLeft, ChevronRight, RefreshCw, Layers } from 'lucide-react'
+import { Search, SlidersHorizontal, BarChart3, FileText, Database, ChevronLeft, ChevronRight, RefreshCw, Layers, Bot, LayoutDashboard, AppWindow, Cpu } from 'lucide-react'
 import { usePersona } from '../context/PersonaContext'
 
 const DataMarket_BLUE = '#003865'
 
 const categories = ['All', 'Property Tax', 'Audit', 'Accounting', 'ERP', 'Demographics', 'GIS', 'Health Services', 'Public Safety', 'HRIS', 'Payroll', 'Budget', 'eHR']
-const types = ['All', 'Dashboard', 'Dataset', 'Report']
+const types = ['All', 'Dashboard', 'AI/BI Dashboard', 'Genie Space', 'Dataset', 'Report', 'App', 'ML Model']
 const sourceTypes = ['All', 'Databricks', 'Power BI']
 
 // Static fallback — shown if Lakebase is unavailable
@@ -74,7 +74,16 @@ const tagColors = {
   'Public Safety': 'bg-slate-100 text-slate-800',
 }
 
-const typeIcons = { Dashboard: BarChart3, Report: FileText, Dataset: Database }
+const typeIcons = {
+  Dashboard:         BarChart3,
+  'AI/BI Dashboard': LayoutDashboard,
+  'Genie Space':     Bot,
+  Dataset:           Database,
+  Report:            FileText,
+  App:               AppWindow,
+  'ML Model':        Cpu,
+  Source:            Layers,
+}
 const PAGE_SIZE = 6
 
 export function DataMarketCatalogPage({ onOpenProduct, initialSearch = '' }) {

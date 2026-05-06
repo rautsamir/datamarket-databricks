@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react'
 import {
   BarChart3, FileText, Database, Lock, ExternalLink, Sparkles,
   RefreshCw, CheckCircle, ArrowRight, LayoutDashboard, TrendingUp,
-  PieChart, Activity, AlertCircle, Filter
+  PieChart, Activity, AlertCircle, Filter, Bot, AppWindow, Cpu, Layers
 } from 'lucide-react'
 import { usePersona } from '../context/PersonaContext'
 
@@ -21,7 +21,27 @@ const domainColors = {
   Other:        { bg: 'bg-gray-50',   border: 'border-gray-200',   icon: 'text-gray-600',   badge: 'bg-gray-100 text-gray-700' },
 }
 
-const typeIcons = { Dashboard: LayoutDashboard, Report: FileText, Dataset: Database }
+const typeIcons = {
+  Dashboard:         LayoutDashboard,
+  'AI/BI Dashboard': LayoutDashboard,
+  'Genie Space':     Bot,
+  Dataset:           Database,
+  Report:            FileText,
+  App:               AppWindow,
+  'ML Model':        Cpu,
+  Source:            Layers,
+}
+
+const typeOpenLabel = {
+  Dashboard:         'Open Dashboard',
+  'AI/BI Dashboard': 'Open AI/BI Dashboard',
+  'Genie Space':     'Open Genie',
+  Dataset:           'Open Dataset',
+  Report:            'Open Report',
+  App:               'Open App',
+  'ML Model':        'View Model',
+  Source:            'View Source',
+}
 
 // Insight-flavoured descriptions per product to make this page feel purposeful
 const insightMeta = {
@@ -195,9 +215,9 @@ export function DataMarketInsightsPage({ onNavigate, onOpenProduct }) {
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           {[
             { label: 'Accessible to you', value: accessible.length, icon: CheckCircle, color: 'text-emerald-600', bg: 'bg-emerald-50' },
-            { label: 'Awaiting access', value: restricted.length, icon: Lock, color: 'text-amber-600', bg: 'bg-amber-50' },
-            { label: 'Dashboards', value: products.filter(p => p.type === 'Dashboard').length, icon: LayoutDashboard, color: 'text-blue-600', bg: 'bg-blue-50' },
-            { label: 'Datasets & Reports', value: products.filter(p => p.type !== 'Dashboard').length, icon: Database, color: 'text-indigo-600', bg: 'bg-indigo-50' },
+            { label: 'Available to request', value: restricted.length, icon: Lock, color: 'text-amber-600', bg: 'bg-amber-50' },
+            { label: 'Dashboards & Genie', value: products.filter(p => ['Dashboard', 'AI/BI Dashboard', 'Genie Space'].includes(p.type)).length, icon: LayoutDashboard, color: 'text-blue-600', bg: 'bg-blue-50' },
+            { label: 'Datasets, Apps & Models', value: products.filter(p => ['Dataset', 'Report', 'App', 'ML Model', 'Source'].includes(p.type) || !['Dashboard','AI/BI Dashboard','Genie Space'].includes(p.type)).length, icon: Database, color: 'text-indigo-600', bg: 'bg-indigo-50' },
           ].map(stat => (
             <div key={stat.label} className="bg-white rounded-xl border border-gray-200 px-4 py-3 flex items-center gap-3">
               <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${stat.bg}`}>
@@ -305,7 +325,7 @@ export function DataMarketInsightsPage({ onNavigate, onOpenProduct }) {
                         style={{ backgroundColor: DataMarket_BLUE }}
                       >
                         {product.productUrl ? <ExternalLink className="h-3 w-3" /> : <BarChart3 className="h-3 w-3" />}
-                        {product.type === 'Dashboard' ? 'Open Dashboard' : product.type === 'Report' ? 'Open Report' : 'View Data'}
+                        {typeOpenLabel[product.type] || 'Open'}
                       </button>
                     </div>
                   </div>
