@@ -7,7 +7,6 @@ import { DataMarketCatalogPage } from './pages/DataMarketCatalogPage'
 import { DataMarketProductDetailPage } from './pages/DataMarketProductDetailPage'
 import { DataMarketLibraryPage } from './pages/DataMarketLibraryPage'
 import { DataMarketRegisterPage } from './pages/DataMarketRegisterPage'
-import { DataMarketAdminPage } from './pages/DataMarketAdminPage'
 import { DataMarketInsightsPage } from './pages/DataMarketInsightsPage'
 import { AIExplorerPage } from './pages/AIExplorerPage'
 
@@ -44,12 +43,12 @@ function AppInner() {
       case 'ai-explorer':  return <AIExplorerPage initialQuestion={pageProps.question || ''} onNavigate={navigate} onOpenProduct={openProduct} />
       // Insights (dashboard gallery)
       case 'insights':     return <DataMarketInsightsPage onNavigate={navigate} onOpenProduct={openProduct} />
-      // My Access (library)
+      // My Data / Manage — unified for both regular users and admin
       case 'my-access':
       case 'library':
       case 'my-library':   return <DataMarketLibraryPage onNavigate={navigate} onOpenProduct={openProduct} />
+      case 'admin':        return <DataMarketLibraryPage onNavigate={navigate} onOpenProduct={openProduct} initialTab="Manage Approvals" />
       case 'register':     return <DataMarketRegisterPage onNavigate={navigate} />
-      case 'admin':        return <DataMarketAdminPage />
       default:             return <DataMarketHomePage onNavigate={navigate} onOpenProduct={openProduct} />
     }
   }

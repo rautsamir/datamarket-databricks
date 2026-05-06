@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { ShieldCheck, CheckCircle2, XCircle, Clock, Terminal, ChevronDown, ChevronUp, User, Calendar, Database, Package, Eye, RotateCcw, AlertTriangle } from 'lucide-react'
 import { usePersona } from '../context/PersonaContext'
+import { useAppConfig } from '../context/AppConfigContext'
 
 const DataMarket_BLUE = '#003865'
 
@@ -65,8 +66,9 @@ function norm(r) {
   }
 }
 
-export function DataMarketAdminPage() {
+export function DataMarketAdminPage({ embedded = false }) {
   const { requests, approveRequest, denyRequest, revokeRequest, currentPersona } = usePersona()
+  const { demoMode } = useAppConfig()
   const [filter, setFilter] = useState('Pending')
   const [activeView, setActiveView] = useState('access') // 'access' | 'products'
   const [denyModal, setDenyModal] = useState(null)
@@ -159,9 +161,13 @@ export function DataMarketAdminPage() {
     return `${Math.floor(hrs / 24)}d ago`
   }
 
+  const wrapperClass = embedded
+    ? 'w-full'
+    : 'max-w-7xl mx-auto px-4 sm:px-6 py-8'
+
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
-      <div className="mb-6 flex items-start justify-between">
+    <div className={wrapperClass}>
+      {!embedded && <div className="mb-6 flex items-start justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
             <ShieldCheck className="h-6 w-6" style={{ color: DataMarket_BLUE }} />
@@ -200,8 +206,8 @@ export function DataMarketAdminPage() {
             )}
           </button>
 
-          {/* Demo Reset */}
-          <div className="relative ml-1">
+          {/* Demo Reset — only shown when DEMO_MODE=true */}
+          {demoMode && <div className="relative ml-1">
             {resetState === 'idle' && (
               <button
                 onClick={() => setResetState('confirm')}
@@ -243,9 +249,39 @@ export function DataMarketAdminPage() {
                 <CheckCircle2 className="h-3.5 w-3.5" /> Reset done
               </span>
             )}
-          </div>
+          </div>}
         </div>
-      </div>
+      </div>}
+
+      {/* View toggle shown in embedded mode as compact pills */}
+      {embedded && (
+        <div className="flex items-center gap-2 mb-5">
+          <button
+            onClick={() => setActiveView('access')}
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors ${activeView === 'access' ? 'text-white border-transparent' : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'}`}
+            style={activeView === 'access' ? { backgroundColor: DataMarket_BLUE } : {}}
+          >
+            <ShieldCheck className="h-4 w-4" /> Access Requests
+            {requests.filter(r => r.status === 'Pending').length > 0 && (
+              <span className="bg-amber-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+                {requests.filter(r => r.status === 'Pending').length}
+              </span>
+            )}
+          </button>
+          <button
+            onClick={() => setActiveView('products')}
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors ${activeView === 'products' ? 'text-white border-transparent' : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'}`}
+            style={activeView === 'products' ? { backgroundColor: DataMarket_BLUE } : {}}
+          >
+            <Package className="h-4 w-4" /> New Products
+            {pendingProducts.length > 0 && (
+              <span className="bg-blue-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+                {pendingProducts.length}
+              </span>
+            )}
+          </button>
+        </div>
+      )}
 
       {/* ── Product Registration Queue ─────────────────────────────────────────── */}
       {activeView === 'products' && (

@@ -35,12 +35,14 @@ export function DataMarketLayout({ currentPage, onNavigate, children }) {
   const { persona, currentPersona, setCurrentPersona, pendingRequests, notifications, unreadNotificationCount } = usePersona()
   const { appName, appSubtitle, appLogoUrl } = useAppConfig()
 
+  const isAdmin = currentPersona === 'admin'
+
   const navItems = [
     { id: 'home',     label: 'Home' },
     { id: 'discover', label: 'Discover' },
     { id: 'ask-ai',   label: 'Ask AI' },
     { id: 'insights', label: 'Insights' },
-    { id: 'my-access',label: 'My Data' },
+    { id: 'my-access', label: isAdmin ? 'Manage' : 'My Data' },
   ]
 
   const isActive = (id) => {
@@ -48,7 +50,7 @@ export function DataMarketLayout({ currentPage, onNavigate, children }) {
     if (id === 'discover')  return ['discover', 'data', 'catalog', 'detail'].includes(currentPage)
     if (id === 'ask-ai')    return ['ask-ai', 'ai-explorer'].includes(currentPage)
     if (id === 'insights')  return currentPage === 'insights'
-    if (id === 'my-access') return ['my-access', 'library', 'my-library', 'register'].includes(currentPage)
+    if (id === 'my-access') return ['my-access', 'library', 'my-library', 'register', 'admin'].includes(currentPage)
     return false
   }
 
@@ -68,7 +70,7 @@ export function DataMarketLayout({ currentPage, onNavigate, children }) {
         Demo mode — viewing as <strong>{persona.name}</strong> ({persona.role}, {persona.department})
         {currentPersona !== 'admin' && ' · '}
         {currentPersona === 'admin' && pendingRequests.length > 0 && (
-          <button onClick={() => onNavigate('admin')} className="underline ml-1">
+          <button onClick={() => onNavigate('my-access')} className="underline ml-1">
             {pendingRequests.length} pending approval{pendingRequests.length !== 1 ? 's' : ''} →
           </button>
         )}
@@ -94,28 +96,18 @@ export function DataMarketLayout({ currentPage, onNavigate, children }) {
                 <button
                   key={item.id}
                   onClick={() => onNavigate(item.id)}
-                  className={`px-4 py-2 rounded text-sm font-medium transition-colors ${
+                  className={`px-4 py-2 rounded text-sm font-medium transition-colors flex items-center gap-1.5 ${
                     isActive(item.id) ? 'bg-white/20 text-white' : 'text-white/80 hover:text-white hover:bg-white/10'
                   }`}
                 >
                   {item.label}
-                </button>
-              ))}
-              {currentPersona === 'admin' && (
-                <button
-                  onClick={() => onNavigate('admin')}
-                  className={`px-4 py-2 rounded text-sm font-medium transition-colors flex items-center gap-1.5 ${
-                    currentPage === 'admin' ? 'bg-white/20 text-white' : 'text-white/80 hover:text-white hover:bg-white/10'
-                  }`}
-                >
-                  Approvals
-                  {pendingRequests.length > 0 && (
+                  {item.id === 'my-access' && isAdmin && pendingRequests.length > 0 && (
                     <span className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">
                       {pendingRequests.length}
                     </span>
                   )}
                 </button>
-              )}
+              ))}
             </nav>
 
             {/* Right side */}
@@ -154,9 +146,9 @@ export function DataMarketLayout({ currentPage, onNavigate, children }) {
                             </button>
                           ))}
                           <div className="border-t border-gray-100 pt-1">
-                            <button onClick={() => { onNavigate('admin'); setNotifOpen(false) }}
+                            <button onClick={() => { onNavigate('my-access'); setNotifOpen(false) }}
                               className="w-full text-center text-xs text-blue-600 hover:text-blue-800 py-2">
-          View all in Approvals →
+                              View all in Manage →
                             </button>
                           </div>
                         </>
@@ -231,8 +223,8 @@ export function DataMarketLayout({ currentPage, onNavigate, children }) {
                     <div className="py-1 border-b border-gray-100">
                       <button onClick={() => { onNavigate('my-access'); setUserMenuOpen(false) }} className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">My Data</button>
                       {currentPersona === 'admin' && (
-                        <button onClick={() => { onNavigate('admin'); setUserMenuOpen(false) }} className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center justify-between">
-                          Approval Queue
+                        <button onClick={() => { onNavigate('my-access'); setUserMenuOpen(false) }} className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center justify-between">
+                          Manage
                           {pendingRequests.length > 0 && <span className="bg-red-100 text-red-700 text-xs font-medium px-2 py-0.5 rounded-full">{pendingRequests.length}</span>}
                         </button>
                       )}
@@ -277,16 +269,16 @@ export function DataMarketLayout({ currentPage, onNavigate, children }) {
           <div className="md:hidden border-t border-white/20 px-4 pb-3">
             {navItems.map(item => (
               <button key={item.id} onClick={() => { onNavigate(item.id); setMobileOpen(false) }}
-                className="block w-full text-left px-3 py-2 text-sm text-white/90 hover:text-white hover:bg-white/10 rounded mt-1">
-                {item.label}
+                className="flex items-center justify-between w-full px-3 py-2 text-sm text-white/90 hover:text-white hover:bg-white/10 rounded mt-1">
+                <span>{item.label}</span>
+                {item.id === 'my-access' && isAdmin && pendingRequests.length > 0 && (
+                  <span className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+                    {pendingRequests.length}
+                  </span>
+                )}
               </button>
             ))}
-            {currentPersona === 'admin' && (
-              <button onClick={() => { onNavigate('admin'); setMobileOpen(false) }}
-                className="block w-full text-left px-3 py-2 text-sm text-white/90 hover:text-white hover:bg-white/10 rounded mt-1">
-                Approvals {pendingRequests.length > 0 && `(${pendingRequests.length})`}
-              </button>
-            )}
+            {/* Mobile: pending badge shown inline on "Manage" item via navItems loop above */}
           </div>
         )}
       </header>

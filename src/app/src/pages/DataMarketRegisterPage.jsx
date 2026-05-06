@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { CheckCircle2, ChevronRight, Users, Lock, Eye, X, Plus, Loader2, Link } from 'lucide-react'
 import { usePersona } from '../context/PersonaContext'
+import { useAppConfig } from '../context/AppConfigContext'
 
 const DataMarket_BLUE = '#003865'
 
@@ -19,6 +20,7 @@ const accessLevelOptions = ['Read Only', 'Read + Export', 'Read + Write', 'Admin
 
 export function DataMarketRegisterPage({ onNavigate }) {
   const { persona } = usePersona()
+  const { demoMode } = useAppConfig()
   const [currentStep, setCurrentStep] = useState(1)
   const [submitted, setSubmitted] = useState(false)
   const [submitting, setSubmitting] = useState(false)
@@ -98,12 +100,14 @@ export function DataMarketRegisterPage({ onNavigate }) {
           <div className="space-y-5">
             <div className="flex items-center justify-between">
               <p className="text-xs text-gray-500">Required fields marked with *</p>
-              <button
-                onClick={loadDemoData}
-                className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border border-dashed border-blue-300 text-blue-600 hover:bg-blue-50 transition-colors"
-              >
-                ✦ Load demo data
-              </button>
+              {demoMode && (
+                <button
+                  onClick={loadDemoData}
+                  className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border border-dashed border-blue-300 text-blue-600 hover:bg-blue-50 transition-colors"
+                >
+                  ✦ Load demo data
+                </button>
+              )}
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Name *</label>
