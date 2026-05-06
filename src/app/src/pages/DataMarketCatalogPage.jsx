@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { Search, SlidersHorizontal, BarChart3, FileText, Database, ChevronLeft, ChevronRight, RefreshCw, Layers, Bot, LayoutDashboard, AppWindow, Cpu, Upload, PlusCircle, Sparkles } from 'lucide-react'
 import { usePersona } from '../context/PersonaContext'
+import { useAppConfig } from '../context/AppConfigContext'
 import { ImportUCModal } from '../components/ImportUCModal'
 
 const DataMarket_BLUE = '#003865'
@@ -89,13 +90,14 @@ const PAGE_SIZE = 6
 
 export function DataMarketCatalogPage({ onOpenProduct, onNavigate, initialSearch = '' }) {
   const { currentPersona } = usePersona()
+  const { demoMode } = useAppConfig()
   const [search, setSearch] = useState(initialSearch)
   const [selectedCategory, setSelectedCategory] = useState('All')
   const [selectedType, setSelectedType] = useState('All')
   const [selectedSource, setSelectedSource] = useState('All')
   const [sortBy, setSortBy] = useState('Most Recent')
   const [page, setPage] = useState(1)
-  const [allProducts, setAllProducts] = useState(staticProducts)
+  const [allProducts, setAllProducts] = useState([])
   const [loading, setLoading] = useState(true)
   const [showImport, setShowImport] = useState(false)
   const [lakebaseEmpty, setLakebaseEmpty] = useState(false)
@@ -113,7 +115,10 @@ export function DataMarketCatalogPage({ onOpenProduct, onNavigate, initialSearch
           setLakebaseEmpty(true)
         }
       })
-      .catch(() => { /* keep static fallback */ })
+      .catch(() => {
+        // In demo mode fall back to static products so demos work offline
+        if (demoMode) setAllProducts(staticProducts)
+      })
       .finally(() => setLoading(false))
   }
 

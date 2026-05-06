@@ -4,6 +4,7 @@ const defaults = {
   appName:    'DataMarket',
   appSubtitle: 'Data Discovery & Access',
   appLogoUrl: '/la-county-seal.png',
+  demoMode:   true,
 }
 
 const AppConfigContext = createContext(defaults)
