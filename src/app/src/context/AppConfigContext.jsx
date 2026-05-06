@@ -4,6 +4,7 @@ const defaults = {
   appName:    'DataMarket',
   appSubtitle: 'Data Discovery & Access',
   appLogoUrl: '/datamarket-logo.png',
+  demoMode:   true,
 }
 
 const AppConfigContext = createContext(defaults)

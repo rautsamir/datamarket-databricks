@@ -258,9 +258,9 @@ app.get('/api/health', async (req, res) => {
   });
 });
 
-// ─── App Config (branding) ────────────────────────────────────────────────────
+// ─── App Config (branding + mode) ────────────────────────────────────────────
 app.get('/api/portal/config', (req, res) => {
-  res.json({ appName: APP_NAME, appSubtitle: APP_SUBTITLE, appLogoUrl: APP_LOGO_URL });
+  res.json({ appName: APP_NAME, appSubtitle: APP_SUBTITLE, appLogoUrl: APP_LOGO_URL, demoMode: DEMO_MODE });
 });
 
 // ─── Data Products ────────────────────────────────────────────────────────────
@@ -764,6 +764,26 @@ app.get('/api/portal/admin/users', async (req, res) => {
   }
 });
 
+app.post('/api/portal/admin/users', async (req, res) => {
+  try {
+    const { email, display_name, role, department } = req.body;
+    if (!email) return res.status(400).json({ error: 'email is required' });
+    const { rows: [user] } = await query(
+      `INSERT INTO users (email, display_name, role, department)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (email) DO UPDATE
+         SET display_name = EXCLUDED.display_name,
+             role         = EXCLUDED.role,
+             department   = EXCLUDED.department
+       RETURNING *`,
+      [email.trim().toLowerCase(), display_name || '', role || 'analyst', department || '']
+    );
+    res.status(201).json(user);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.put('/api/portal/admin/users/:id', async (req, res) => {
   try {
     const { id } = req.params;
@@ -887,6 +907,9 @@ app.use((err, req, res, next) => {
 
 // ─── Demo Reset (admin only) ───────────────────────────────────────────────
 app.post('/api/portal/demo-reset', async (req, res) => {
+  if (!DEMO_MODE) {
+    return res.status(403).json({ error: 'Demo reset is disabled in production mode (DEMO_MODE=false).' });
+  }
   try {
     const SEEDED_REFS = ['DP-001','DP-002','DP-003','DP-004','DP-005','DP-006',
                          'DP-007','DP-008','DP-009','DP-010','DP-011','DP-012'];

@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { Search, Plus, BarChart3, FileText, Database, BookmarkCheck, Edit3, Check, X, Upload, Users, ExternalLink, Link2, Shield, Clock, Package, ClipboardList, FolderOpen } from 'lucide-react'
+import { Search, Plus, BarChart3, FileText, Database, BookmarkCheck, Edit3, Check, X, Upload, Users, ExternalLink, Link2, Shield, Clock, Package, ClipboardList, FolderOpen, ShieldCheck } from 'lucide-react'
 import { usePersona } from '../context/PersonaContext'
 import { ImportUCModal } from '../components/ImportUCModal'
+import { DataMarketAdminPage } from './DataMarketAdminPage'
 
 const DataMarket_BLUE = '#003865'
 
@@ -102,6 +103,10 @@ function UsersPanel() {
   const [editingId, setEditingId] = useState(null)
   const [editForm, setEditForm] = useState({})
   const [search, setSearch] = useState('')
+  const [showAdd, setShowAdd] = useState(false)
+  const [addForm, setAddForm] = useState({ email: '', display_name: '', role: 'analyst', department: '' })
+  const [adding, setAdding] = useState(false)
+  const [addError, setAddError] = useState('')
 
   const loadUsers = useCallback(() => {
     fetch('/api/portal/admin/users')
@@ -130,17 +135,92 @@ function UsersPanel() {
     } catch (e) { console.error(e) }
   }
 
+  const handleAddUser = async () => {
+    if (!addForm.email.trim()) { setAddError('Email is required'); return }
+    setAdding(true); setAddError('')
+    try {
+      const r = await fetch('/api/portal/admin/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(addForm)
+      })
+      if (!r.ok) { const d = await r.json(); setAddError(d.error || 'Failed to add user'); return }
+      setShowAdd(false)
+      setAddForm({ email: '', display_name: '', role: 'analyst', department: '' })
+      loadUsers()
+    } catch (e) { setAddError(e.message) }
+    finally { setAdding(false) }
+  }
+
   const filtered = users.filter(u =>
     !search || u.display_name?.toLowerCase().includes(search.toLowerCase()) || u.email?.toLowerCase().includes(search.toLowerCase())
   )
 
   return (
     <div>
-      <div className="relative mb-4 max-w-sm">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-        <input type="text" placeholder="Search users" value={search} onChange={e => setSearch(e.target.value)}
-          className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+      <div className="flex items-center gap-3 mb-4">
+        <div className="relative flex-1 max-w-sm">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+          <input type="text" placeholder="Search users" value={search} onChange={e => setSearch(e.target.value)}
+            className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+        </div>
+        <button
+          onClick={() => { setShowAdd(v => !v); setAddError('') }}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium text-white"
+          style={{ backgroundColor: '#003865' }}
+        >
+          <Plus className="h-4 w-4" /> Add User
+        </button>
       </div>
+
+      {showAdd && (
+        <div className="mb-4 p-4 bg-blue-50/60 border border-blue-100 rounded-xl">
+          <p className="text-sm font-semibold text-gray-800 mb-3">Add / update a user</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+            <input
+              placeholder="Email *"
+              value={addForm.email}
+              onChange={e => setAddForm(f => ({ ...f, email: e.target.value }))}
+              className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            <input
+              placeholder="Display name"
+              value={addForm.display_name}
+              onChange={e => setAddForm(f => ({ ...f, display_name: e.target.value }))}
+              className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            <select
+              value={addForm.role}
+              onChange={e => setAddForm(f => ({ ...f, role: e.target.value }))}
+              className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="analyst">Analyst</option>
+              <option value="manager">Manager</option>
+              <option value="data_steward">Data Steward</option>
+            </select>
+            <input
+              placeholder="Department"
+              value={addForm.department}
+              onChange={e => setAddForm(f => ({ ...f, department: e.target.value }))}
+              className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          {addError && <p className="text-xs text-red-500 mb-2">{addError}</p>}
+          <div className="flex gap-2">
+            <button
+              onClick={handleAddUser}
+              disabled={adding}
+              className="px-4 py-2 rounded-lg text-sm font-medium text-white disabled:opacity-50"
+              style={{ backgroundColor: '#003865' }}
+            >
+              {adding ? 'Saving...' : 'Save User'}
+            </button>
+            <button onClick={() => setShowAdd(false)} className="px-4 py-2 rounded-lg text-sm font-medium border border-gray-200 text-gray-600 hover:bg-gray-50">
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         <div className="overflow-x-auto">
@@ -221,11 +301,11 @@ function UsersPanel() {
 }
 
 // ─── Main Library Page ─────────────────────────────────────────────────────────
-export function DataMarketLibraryPage({ onNavigate, onOpenProduct }) {
-  const [search, setSearch] = useState('')
-  const [activeTab, setActiveTab] = useState('Data Product')
-  const { myRequests, persona, currentPersona } = usePersona()
+export function DataMarketLibraryPage({ onNavigate, onOpenProduct, initialTab }) {
+  const { myRequests, persona, currentPersona, pendingRequests } = usePersona()
   const isSteward = currentPersona === 'admin'
+  const [search, setSearch] = useState('')
+  const [activeTab, setActiveTab] = useState(initialTab || (isSteward ? 'Data Products' : 'Data Product'))
 
   const [allProducts, setAllProducts] = useState([])
   const [loadingProducts, setLoadingProducts] = useState(false)
@@ -279,20 +359,22 @@ export function DataMarketLibraryPage({ onNavigate, onOpenProduct }) {
     !search || item.name.toLowerCase().includes(search.toLowerCase())
   )
 
+  const pendingApprovalCount = pendingRequests?.length || 0
+
   const tabCounts = isSteward
-    ? { 'Data Products': allProducts.length, 'Requests': fromRequests.length, 'Users': null }
+    ? { 'Data Products': allProducts.length, 'Manage Approvals': pendingApprovalCount || null, 'Users': null }
     : { 'Data Product': analystItems.filter(i => i.status === 'Approved').length, 'Request': fromRequests.length }
 
   // Tab config: icon, label, colors per persona
   const tabConfig = isSteward
     ? [
-        { id: 'Data Products', icon: Package,       label: 'Data Products', desc: 'All registered products',  activeColor: 'bg-blue-600 text-white border-blue-600',   countColor: 'bg-blue-500 text-white' },
-        { id: 'Requests',      icon: ClipboardList, label: 'Requests',      desc: 'Incoming access requests', activeColor: 'bg-amber-500 text-white border-amber-500',  countColor: 'bg-amber-400 text-white' },
-        { id: 'Users',         icon: Users,          label: 'Users',         desc: 'Manage user roles',        activeColor: 'bg-purple-600 text-white border-purple-600',countColor: 'bg-purple-500 text-white' },
+        { id: 'Data Products',    icon: Package,       label: 'Data Products',    desc: 'All registered products',     activeColor: 'bg-blue-600 text-white border-blue-600',    countColor: 'bg-blue-500 text-white' },
+        { id: 'Manage Approvals', icon: ShieldCheck,   label: 'Manage Approvals', desc: 'Review access requests',      activeColor: 'bg-amber-500 text-white border-amber-500',  countColor: 'bg-red-500 text-white' },
+        { id: 'Users',            icon: Users,         label: 'Users',            desc: 'Manage user roles',           activeColor: 'bg-purple-600 text-white border-purple-600',countColor: 'bg-purple-500 text-white' },
       ]
     : [
-        { id: 'Data Product',  icon: FolderOpen,    label: 'My Products',   desc: 'Data you have access to',  activeColor: 'bg-emerald-600 text-white border-emerald-600', countColor: 'bg-emerald-500 text-white' },
-        { id: 'Request',       icon: Clock,         label: 'My Requests',   desc: 'Pending & past requests',  activeColor: 'bg-blue-600 text-white border-blue-600',      countColor: 'bg-blue-500 text-white' },
+        { id: 'Data Product',     icon: FolderOpen,    label: 'My Products',      desc: 'Data you have access to',     activeColor: 'bg-emerald-600 text-white border-emerald-600', countColor: 'bg-emerald-500 text-white' },
+        { id: 'Request',          icon: Clock,         label: 'My Requests',      desc: 'Pending & past requests',     activeColor: 'bg-blue-600 text-white border-blue-600',      countColor: 'bg-blue-500 text-white' },
       ]
 
   return (
@@ -358,8 +440,11 @@ export function DataMarketLibraryPage({ onNavigate, onOpenProduct }) {
       {/* ── Users Tab (Steward) ───────────────────────────────────────────────── */}
       {activeTab === 'Users' && isSteward && <UsersPanel />}
 
+      {/* ── Manage Approvals Tab (Steward) — embeds the full admin approval UI ── */}
+      {activeTab === 'Manage Approvals' && isSteward && <DataMarketAdminPage embedded />}
+
       {/* ── Steward: All Products ─────────────────────────────────────────────── */}
-      {((activeTab === 'Data Products' && isSteward) || (activeTab === 'Requests' && isSteward)) && (
+      {((activeTab === 'Data Products' && isSteward)) && (
         <>
           <div className="relative mb-4 max-w-sm">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
