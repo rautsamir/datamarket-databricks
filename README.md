@@ -135,7 +135,42 @@ Once registered as a UC catalog, tables are queryable directly from Databricks S
 
 ## Deploying in a New Databricks Environment
 
-> This is the full step-by-step for deploying DataMarket in any Databricks workspace from scratch.
+### Option A — One-step script (recommended)
+
+```bash
+git clone https://github.com/databricks-field-eng/datamarket.git
+cd datamarket
+./scripts/deploy.sh
+```
+
+The script walks you through everything interactively:
+1. Picks up your Databricks CLI profile and workspace URL
+2. Creates or reuses a Lakebase instance
+3. Seeds the database with demo data (if `psql` is available)
+4. Builds the React frontend
+5. Uploads all files to your workspace
+6. Creates and deploys the Databricks App
+7. Prints the app URL when done
+
+Non-interactive (CI/CD) usage:
+
+```bash
+./scripts/deploy.sh \
+  --profile my-profile \
+  --email you@company.com \
+  --lakebase-instance my-lakebase \
+  --app-slug datamarket \
+  --app-name "Acme DataMarket" \
+  --seed demo
+```
+
+Run `./scripts/deploy.sh --help` for all flags.
+
+---
+
+### Option B — Manual steps
+
+> Follow these if you prefer step-by-step control or are troubleshooting.
 
 ### Step 1 — Clone the repo
 
