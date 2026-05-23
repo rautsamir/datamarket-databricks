@@ -4,14 +4,18 @@ command:
 env:
   # DATABRICKS_HOST and DATABRICKS_TOKEN are injected automatically by Databricks Apps.
   # DATABRICKS_TOKEN is also used directly as the Lakebase password (Autoscaling model).
+  # For Provisioned instances, set LAKEBASE_INSTANCE_NAME to enable credential generation.
   - name: DATABRICKS_USER
     value: "your-email@example.com"
   - name: LAKEBASE_HOST
-    value: "your-project.database.eastus2.azuredatabricks.net"
+    value: "your-project.database.region.azuredatabricks.net"
   - name: LAKEBASE_DB
     value: "databricks_postgres"
   - name: LAKEBASE_SCHEMA
     value: "datamarket"
+  # Uncomment for Provisioned (non-Autoscaling) Lakebase instances:
+  # - name: LAKEBASE_INSTANCE_NAME
+  #   value: "your-instance-name"
   # ── Branding ─────────────────────────────────────────────────────────────
   # Customize the portal name, tagline, and logo for your organization.
   # Leave APP_LOGO_URL blank ("") to hide the logo entirely.
@@ -20,7 +24,7 @@ env:
   - name: APP_SUBTITLE
     value: "Data Discovery & Access"
   - name: APP_LOGO_URL
-    value: "/la-county-seal.png"
+    value: ""
   # ── Deployment Mode ──────────────────────────────────────────────────────
   # "true" = persona switcher, no real UC grants (default for demos)
   # "false" = SSO identity, real UC grants via SQL Statement Execution API
