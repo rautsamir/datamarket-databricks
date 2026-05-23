@@ -14,13 +14,15 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.DATABRICKS_APP_PORT || process.env.PORT || 3000;
 
-// ─── Lakebase Autoscaling connection config ───────────────────────────────────
-// Lakebase Autoscaling uses the Databricks OAuth token directly as the Postgres
-// password — no separate credential API call needed.
-// In Databricks Apps, DATABRICKS_TOKEN is injected and auto-rotated every hour.
-const LAKEBASE_HOST   = process.env.LAKEBASE_HOST   || 'your-project.database.eastus2.azuredatabricks.net';
-const LAKEBASE_DB     = process.env.LAKEBASE_DB     || 'databricks_postgres';
-const LAKEBASE_SCHEMA = process.env.LAKEBASE_SCHEMA || 'datamarket';
+// ─── Lakebase connection config ───────────────────────────────────────────────
+// Autoscaling instances: set LAKEBASE_HOST, LAKEBASE_DB, LAKEBASE_SCHEMA.
+//   DATABRICKS_TOKEN (auto-injected by Apps) is used directly as PG password.
+// Provisioned instances: also set LAKEBASE_INSTANCE_NAME.
+//   A short-lived DB credential is generated via the REST API each connection.
+const LAKEBASE_HOST          = process.env.LAKEBASE_HOST          || 'your-project.database.eastus2.azuredatabricks.net';
+const LAKEBASE_DB            = process.env.LAKEBASE_DB            || 'databricks_postgres';
+const LAKEBASE_SCHEMA        = process.env.LAKEBASE_SCHEMA        || 'datamarket';
+const LAKEBASE_INSTANCE_NAME = process.env.LAKEBASE_INSTANCE_NAME || '';
 
 const DEMO_MODE        = (process.env.DEMO_MODE || 'true').toLowerCase() === 'true';
 const SQL_WAREHOUSE_ID = process.env.SQL_WAREHOUSE_ID || '';
@@ -40,18 +42,51 @@ async function getPool() {
   // Recreate pool before token expires so in-flight queries aren't dropped
   if (dbPool && now < poolCreatedAt + POOL_TTL_MS) return dbPool;
 
-  console.log('[Lakebase] Creating connection pool (Autoscaling)...');
   if (dbPool) { try { await dbPool.end(); } catch (_) {} }
 
-  const token = process.env.DATABRICKS_TOKEN || process.env.LAKEBASE_PASSWORD || '';
-  if (!token) throw new Error('DATABRICKS_TOKEN is required for Lakebase Autoscaling');
+  let pgPassword;
+  if (LAKEBASE_INSTANCE_NAME) {
+    // Provisioned instance: generate a short-lived DB credential via REST API
+    console.log(`[Lakebase] Generating DB credential for provisioned instance "${LAKEBASE_INSTANCE_NAME}"...`);
+    const host = (process.env.DATABRICKS_HOST || '').replace(/^https?:\/\//, '');
+    const pat  = process.env.DATABRICKS_TOKEN || '';
+    if (!host || !pat) throw new Error('DATABRICKS_HOST and DATABRICKS_TOKEN required for credential generation');
+    const credResult = await new Promise((resolve, reject) => {
+      const payload = JSON.stringify({ instance_names: [LAKEBASE_INSTANCE_NAME], request_id: `dm-${Date.now()}` });
+      const req = https.request({
+        hostname: host,
+        path: '/api/2.0/database/credentials',
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${pat}`,
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(payload),
+        },
+      }, (res) => {
+        let data = '';
+        res.on('data', c => data += c);
+        res.on('end', () => { try { resolve(JSON.parse(data)); } catch (_) { reject(new Error('Bad credential response')); } });
+      });
+      req.on('error', reject);
+      req.write(payload);
+      req.end();
+    });
+    pgPassword = credResult.token;
+    if (!pgPassword) throw new Error(`DB credential generation failed: ${JSON.stringify(credResult)}`);
+    console.log('[Lakebase] Creating connection pool (Provisioned)...');
+  } else {
+    // Autoscaling instance: use DATABRICKS_TOKEN (OAuth) directly as PG password
+    pgPassword = process.env.DATABRICKS_TOKEN || process.env.LAKEBASE_PASSWORD || '';
+    if (!pgPassword) throw new Error('DATABRICKS_TOKEN is required for Lakebase Autoscaling');
+    console.log('[Lakebase] Creating connection pool (Autoscaling)...');
+  }
 
   dbPool = new Pool({
     host:     LAKEBASE_HOST,
     port:     5432,
     database: LAKEBASE_DB,
     user:     process.env.DATABRICKS_USER || (() => { throw new Error('DATABRICKS_USER env var is required'); })(),
-    password: token,
+    password: pgPassword,
     ssl:      { rejectUnauthorized: true },
     max:      5,
     idleTimeoutMillis:      30000,
@@ -220,9 +255,9 @@ async function runMigrations() {
     // Always ensure the three core demo users exist — safe upsert, never overwrites existing rows
     await query(`
       INSERT INTO users (email, display_name, role, department) VALUES
-        ('analyst@example.org',     'Alex Analyst',   'analyst',      'Finance'),
-        ('manager@example.org',     'Morgan Manager', 'manager',      'Operations'),
-        ('datasteward@example.org', 'Dana Steward',   'data_steward', 'Data Governance')
+        ('analyst@example.org',     'Alex Analyst',   'analyst',   'Finance'),
+        ('manager@example.org',     'Morgan Manager', 'manager',   'Operations'),
+        ('datasteward@example.org', 'Dana Steward',   'steward',   'Data Governance')
       ON CONFLICT (email) DO NOTHING
     `);
     console.log('[Lakebase] Migrations applied');
@@ -938,9 +973,9 @@ app.post('/api/portal/demo-reset', async (req, res) => {
     // Re-ensure the three seed users always exist (safe upsert — never deletes anyone)
     await query(`
       INSERT INTO users (email, display_name, role, department) VALUES
-        ('analyst@example.org',     'Alex Analyst',   'analyst',      'Finance'),
-        ('manager@example.org',     'Morgan Manager', 'manager',      'Operations'),
-        ('datasteward@example.org', 'Dana Steward',   'data_steward', 'Data Governance')
+        ('analyst@example.org',     'Alex Analyst',   'analyst',   'Finance'),
+        ('manager@example.org',     'Morgan Manager', 'manager',   'Operations'),
+        ('datasteward@example.org', 'Dana Steward',   'steward',   'Data Governance')
       ON CONFLICT (email) DO NOTHING
     `);
 
