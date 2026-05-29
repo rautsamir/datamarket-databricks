@@ -30,18 +30,27 @@
 #   --workspace-path  Workspace folder (default: /Workspace/Users/<email>/<app-slug>)
 #   --seed            "demo" | "schema" | "skip" (default: demo)
 #   --demo-mode       "true" | "false" (default: true)
+#   --verbose / -v    Show full output of every command (default: off)
+#   --log-file PATH   Where to write the full deployment log (default: /tmp/datamarket-deploy-<ts>.log)
 # =============================================================================
 set -euo pipefail
 
 # ─── Colours ──────────────────────────────────────────────────────────────────
-BOLD="\033[1m"; RESET="\033[0m"
-RED="\033[31m"; GREEN="\033[32m"; YELLOW="\033[33m"; CYAN="\033[36m"
+BOLD="\033[1m"; RESET="\033[0m"; DIM="\033[2m"
+RED="\033[31m"; GREEN="\033[32m"; YELLOW="\033[33m"; CYAN="\033[36m"; MAGENTA="\033[35m"
 
-info()    { echo -e "${CYAN}${BOLD}[•]${RESET} $*"; }
-success() { echo -e "${GREEN}${BOLD}[✓]${RESET} $*"; }
-warn()    { echo -e "${YELLOW}${BOLD}[!]${RESET} $*"; }
-error()   { echo -e "${RED}${BOLD}[✗]${RESET} $*" >&2; exit 1; }
+info()    { echo -e "${CYAN}${BOLD}[•]${RESET} $*" | tee -a "$LOG_FILE"; }
+success() { echo -e "${GREEN}${BOLD}[✓]${RESET} $*" | tee -a "$LOG_FILE"; }
+warn()    { echo -e "${YELLOW}${BOLD}[!]${RESET} $*" | tee -a "$LOG_FILE"; }
+error()   { echo -e "${RED}${BOLD}[✗]${RESET} $*" | tee -a "$LOG_FILE" >&2; exit 1; }
 prompt()  { echo -e "${BOLD}${1}${RESET}"; }
+debug()   {
+  if [[ "$VERBOSE" == "true" ]]; then
+    echo -e "${DIM}${MAGENTA}    [dbg] $*${RESET}" | tee -a "$LOG_FILE"
+  else
+    echo "    [dbg] $*" >> "$LOG_FILE"
+  fi
+}
 
 # ─── Script location ──────────────────────────────────────────────────────────
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -63,6 +72,8 @@ OPT_APP_SUBTITLE="Data Discovery & Access"
 OPT_WORKSPACE_PATH=""
 OPT_SEED="demo"
 OPT_DEMO_MODE="true"
+VERBOSE="false"
+LOG_FILE="/tmp/datamarket-deploy-$(date +%Y%m%d-%H%M%S).log"
 
 # ─── Arg parsing ──────────────────────────────────────────────────────────────
 while [[ $# -gt 0 ]]; do
@@ -80,18 +91,78 @@ while [[ $# -gt 0 ]]; do
     --workspace-path)    OPT_WORKSPACE_PATH="$2";     shift 2 ;;
     --seed)              OPT_SEED="$2";               shift 2 ;;
     --demo-mode)         OPT_DEMO_MODE="$2";          shift 2 ;;
+    --verbose|-v)        VERBOSE="true";              shift ;;
+    --log-file)          LOG_FILE="$2";               shift 2 ;;
     --help|-h)
-      sed -n '/^# Usage/,/^# ===/p' "$0" | head -40
+      sed -n '/^# Usage/,/^# ===/p' "$0" | head -45
       exit 0 ;;
     *) error "Unknown flag: $1. Run with --help for usage." ;;
   esac
 done
+
+# ─── Logging helper ──────────────────────────────────────────────────────────
+# run_cmd CMD [ARGS...]
+#   Normal mode  — runs CMD, captures output to log, shows nothing on success,
+#                  shows captured output only on failure.
+#   Verbose mode — runs CMD, tees output to both terminal and log in real time.
+run_cmd() {
+  local label="${1}"; shift
+  debug "Running: $*"
+  if [[ "$VERBOSE" == "true" ]]; then
+    echo -e "${DIM}    ┌─ output ────────────────────────────────${RESET}"
+    "$@" 2>&1 | sed 's/^/    │ /' | tee -a "$LOG_FILE" || {
+      echo -e "${DIM}    └─────────────────────────────────────────${RESET}"
+      error "$label failed. See $LOG_FILE"
+    }
+    echo -e "${DIM}    └─────────────────────────────────────────${RESET}"
+  else
+    local tmp_out
+    tmp_out=$(mktemp)
+    if ! "$@" >"$tmp_out" 2>&1; then
+      cat "$tmp_out" >> "$LOG_FILE"
+      echo -e "${RED}${BOLD}[✗]${RESET} $label failed. Output:" | tee -a "$LOG_FILE"
+      cat "$tmp_out" | tee -a "$LOG_FILE"
+      rm -f "$tmp_out"
+      error "See full log: $LOG_FILE"
+    fi
+    cat "$tmp_out" >> "$LOG_FILE"
+    rm -f "$tmp_out"
+  fi
+}
+
+# run_cmd_tolerant — like run_cmd but non-fatal on failure (returns exit code)
+run_cmd_tolerant() {
+  local label="${1}"; shift
+  debug "Running (tolerant): $*"
+  if [[ "$VERBOSE" == "true" ]]; then
+    "$@" 2>&1 | sed 's/^/    │ /' | tee -a "$LOG_FILE" || true
+  else
+    "$@" >> "$LOG_FILE" 2>&1 || true
+  fi
+}
+
+# ─── Error trap ───────────────────────────────────────────────────────────────
+trap 'echo -e "\n${RED}${BOLD}[✗] Deploy failed at line $LINENO.${RESET}\n    Full log: ${LOG_FILE}\n    Share this file when reporting issues." >&2' ERR
+
+# ─── Init log file ────────────────────────────────────────────────────────────
+mkdir -p "$(dirname "$LOG_FILE")"
+{
+  echo "DataMarket deploy log — $(date)"
+  echo "Script: $0"
+  echo "Args: $*"
+  echo "Verbose: $VERBOSE"
+  echo "─────────────────────────────────────────"
+} > "$LOG_FILE"
 
 # ─── Banner ───────────────────────────────────────────────────────────────────
 echo ""
 echo -e "${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
 echo -e "${BOLD}  🗂  DataMarket — One-Step Deployment${RESET}"
 echo -e "${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+if [[ "$VERBOSE" == "true" ]]; then
+  echo -e "  ${MAGENTA}${BOLD}verbose mode on${RESET} — all command output will be shown"
+fi
+echo -e "  ${DIM}Full log: $LOG_FILE${RESET}"
 echo ""
 
 # ─── STEP 0: Prerequisites ────────────────────────────────────────────────────
@@ -100,16 +171,21 @@ info "Checking prerequisites..."
 if ! command -v databricks &>/dev/null; then
   error "Databricks CLI not found. Install from https://docs.databricks.com/en/dev-tools/cli/install.html"
 fi
-success "Databricks CLI: $(databricks version 2>/dev/null | head -1)"
+CLI_VERSION=$(databricks version 2>/dev/null | head -1)
+success "Databricks CLI: $CLI_VERSION"
+debug "CLI path: $(command -v databricks)"
 
 if ! command -v node &>/dev/null; then
   error "Node.js not found. Install from https://nodejs.org (>=18)"
 fi
-success "Node.js: $(node --version)"
+NODE_VERSION=$(node --version)
+success "Node.js: $NODE_VERSION"
+debug "Node path: $(command -v node)"
 
 if ! command -v npm &>/dev/null; then
   error "npm not found. Install Node.js from https://nodejs.org"
 fi
+debug "npm: $(npm --version)"
 
 # Find psql (optional — needed only for seeding)
 PSQL=""
@@ -133,6 +209,7 @@ if [[ -z "$PSQL" ]]; then
   OPT_SEED="skip"
 else
   success "psql: $PSQL"
+  debug "psql version: $("$PSQL" --version 2>/dev/null)"
 fi
 
 echo ""
@@ -143,7 +220,6 @@ echo ""
 
 # Profile
 if [[ -z "$OPT_PROFILE" ]]; then
-  # List available profiles
   PROFILES=$(grep '^\[' ~/.databrickscfg 2>/dev/null | tr -d '[]' | grep -v 'DEFAULT' || true)
   if [[ -n "$PROFILES" ]]; then
     echo -e "${BOLD}Available Databricks CLI profiles:${RESET}"
@@ -153,16 +229,21 @@ if [[ -z "$OPT_PROFILE" ]]; then
   read -rp "$(prompt 'Databricks CLI profile [DEFAULT]: ')" OPT_PROFILE
   OPT_PROFILE="${OPT_PROFILE:-DEFAULT}"
 fi
+debug "Profile: $OPT_PROFILE"
 
 # Validate profile / get token
 info "Validating authentication (profile: $OPT_PROFILE)..."
 TOKEN_JSON=$(databricks auth token --profile "$OPT_PROFILE" 2>&1) || {
   error "Could not get token for profile '$OPT_PROFILE'. Run: databricks auth login --profile $OPT_PROFILE"
 }
+debug "Token response length: ${#TOKEN_JSON} chars"
 DATABRICKS_TOKEN=$(echo "$TOKEN_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])" 2>/dev/null) || {
-  error "Failed to parse token response. Re-authenticate: databricks auth login --profile $OPT_PROFILE"
+  debug "Raw token response: $TOKEN_JSON"
+  error "Failed to parse token. Re-authenticate: databricks auth login --profile $OPT_PROFILE"
 }
+TOKEN_EXPIRY=$(echo "$TOKEN_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin).get('expiry','unknown'))" 2>/dev/null || true)
 success "Auth OK (profile: $OPT_PROFILE)"
+debug "Token expires: $TOKEN_EXPIRY"
 
 # Host
 if [[ -z "$OPT_HOST" ]]; then
@@ -171,14 +252,19 @@ fi
 if [[ -z "$OPT_HOST" ]]; then
   read -rp "$(prompt 'Databricks workspace URL (e.g. https://adb-xxx.azuredatabricks.net): ')" OPT_HOST
 fi
-OPT_HOST="${OPT_HOST%/}"  # strip trailing slash
+OPT_HOST="${OPT_HOST%/}"
 success "Workspace: $OPT_HOST"
 
-# Email
+# Email (auto-detect via SCIM /Me)
 if [[ -z "$OPT_EMAIL" ]]; then
+  debug "Detecting email via SCIM /Me..."
   DETECTED_EMAIL=$(databricks auth env --profile "$OPT_PROFILE" 2>/dev/null | grep 'DATABRICKS_USERNAME' | cut -d= -f2 | tr -d '"' || true)
-  [[ -z "$DETECTED_EMAIL" ]] && DETECTED_EMAIL=$(curl -s -H "Authorization: Bearer $DATABRICKS_TOKEN" \
-    "$OPT_HOST/api/2.0/preview/scim/v2/Me" 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin).get('userName',''))" 2>/dev/null || true)
+  if [[ -z "$DETECTED_EMAIL" ]]; then
+    SCIM_RESPONSE=$(curl -s -H "Authorization: Bearer $DATABRICKS_TOKEN" \
+      "$OPT_HOST/api/2.0/preview/scim/v2/Me" 2>/dev/null || true)
+    debug "SCIM /Me response: $SCIM_RESPONSE"
+    DETECTED_EMAIL=$(echo "$SCIM_RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin).get('userName',''))" 2>/dev/null || true)
+  fi
   read -rp "$(prompt "Your Databricks email [${DETECTED_EMAIL:-you@company.com}]: ")" OPT_EMAIL
   OPT_EMAIL="${OPT_EMAIL:-$DETECTED_EMAIL}"
 fi
@@ -216,8 +302,10 @@ echo ""
 # ─── STEP 2: Lakebase setup ───────────────────────────────────────────────────
 info "Setting up Lakebase..."
 
-# List instances
+debug "Listing database instances..."
 INSTANCES_JSON=$(databricks database list-database-instances --profile "$OPT_PROFILE" 2>/dev/null || echo "[]")
+debug "Instances response: $INSTANCES_JSON"
+
 INSTANCE_NAMES=$(echo "$INSTANCES_JSON" | python3 -c "
 import sys,json
 items = json.load(sys.stdin)
@@ -235,12 +323,10 @@ if [[ -z "$OPT_LAKEBASE_INSTANCE" ]]; then
   read -rp "$(prompt 'Lakebase instance name [datamarket-lakebase]: ')" OPT_LAKEBASE_INSTANCE
   OPT_LAKEBASE_INSTANCE="${OPT_LAKEBASE_INSTANCE:-datamarket-lakebase}"
 fi
+debug "Target instance: $OPT_LAKEBASE_INSTANCE"
 
-# Check if instance exists
+# Find instance in list
 INSTANCE_INFO=$(echo "$INSTANCES_JSON" | python3 -c "
-import sys,json
-items = json.load(sys.stdin) if isinstance(json.load(open('/dev/stdin')), list) else []
-" 2>/dev/null || echo "$INSTANCES_JSON" | python3 -c "
 import sys,json
 data=sys.stdin.read()
 items=json.loads(data) if data.strip().startswith('[') else []
@@ -253,35 +339,43 @@ LAKEBASE_HOST=""
 IS_PROVISIONED="false"
 
 if [[ -n "$INSTANCE_INFO" ]]; then
+  debug "Instance found: $INSTANCE_INFO"
   LAKEBASE_HOST=$(echo "$INSTANCE_INFO" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('read_write_dns',''))" 2>/dev/null || true)
   IS_STOPPED=$(echo "$INSTANCE_INFO" | python3 -c "import sys,json; d=json.load(sys.stdin); print(str(d.get('effective_stopped',False)).lower())" 2>/dev/null || true)
+  INSTANCE_STATE=$(echo "$INSTANCE_INFO" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('state','unknown'))" 2>/dev/null || true)
   IS_PROVISIONED="true"
+  debug "Instance state: $INSTANCE_STATE | stopped: $IS_STOPPED | host: $LAKEBASE_HOST"
   if [[ "$IS_STOPPED" == "true" ]]; then
     warn "Instance '$OPT_LAKEBASE_INSTANCE' is stopped. Attempting to start..."
-    databricks database update-database-instance "$OPT_LAKEBASE_INSTANCE" \
-      --json '{"stopped": false}' --profile "$OPT_PROFILE" &>/dev/null || true
+    run_cmd_tolerant "Start instance" databricks database update-database-instance \
+      "$OPT_LAKEBASE_INSTANCE" --json '{"stopped": false}' --profile "$OPT_PROFILE"
     sleep 10
   fi
-  success "Using existing provisioned instance: $OPT_LAKEBASE_INSTANCE ($LAKEBASE_HOST)"
+  success "Using existing instance: $OPT_LAKEBASE_INSTANCE"
+  debug "Lakebase host: $LAKEBASE_HOST"
 else
-  # Instance not found — offer to create
+  debug "Instance '$OPT_LAKEBASE_INSTANCE' not found in list"
   echo ""
   warn "Instance '$OPT_LAKEBASE_INSTANCE' not found."
   read -rp "$(prompt "Create it? [Y/n]: ")" CREATE_CONFIRM
   CREATE_CONFIRM="${CREATE_CONFIRM:-Y}"
   if [[ "$CREATE_CONFIRM" =~ ^[Yy] ]]; then
     info "Creating Lakebase instance '$OPT_LAKEBASE_INSTANCE' (CU_1 provisioned)..."
-    databricks database create-database-instance "$OPT_LAKEBASE_INSTANCE" \
-      --json '{"capacity": "CU_1"}' --profile "$OPT_PROFILE" &>/dev/null || \
-    databricks database create-database-instance \
-      --json "{\"name\": \"${OPT_LAKEBASE_INSTANCE}\", \"capacity\": \"CU_1\"}" \
-      --profile "$OPT_PROFILE" &>/dev/null || true
+    debug "Trying: databricks database create-database-instance $OPT_LAKEBASE_INSTANCE --json {capacity:CU_1}"
+    run_cmd_tolerant "Create instance (form 1)" \
+      databricks database create-database-instance "$OPT_LAKEBASE_INSTANCE" \
+        --json '{"capacity": "CU_1"}' --profile "$OPT_PROFILE"
+    # Fallback form if CLI expects name in JSON
+    run_cmd_tolerant "Create instance (form 2)" \
+      databricks database create-database-instance \
+        --json "{\"name\": \"${OPT_LAKEBASE_INSTANCE}\", \"capacity\": \"CU_1\"}" \
+        --profile "$OPT_PROFILE"
 
     info "Waiting for instance to become available (up to 2 minutes)..."
     for i in $(seq 1 24); do
       sleep 5
-      STATE=$(databricks database list-database-instances --profile "$OPT_PROFILE" 2>/dev/null | \
-        python3 -c "
+      POLL_JSON=$(databricks database list-database-instances --profile "$OPT_PROFILE" 2>/dev/null || echo "[]")
+      STATE=$(echo "$POLL_JSON" | python3 -c "
 import sys,json
 items=json.load(sys.stdin)
 for i in items:
@@ -289,9 +383,9 @@ for i in items:
         print(i.get('state',''))
         break
 " 2>/dev/null || true)
+      debug "Poll $i/24: state=$STATE"
       if [[ "$STATE" == "AVAILABLE" ]]; then
-        LAKEBASE_HOST=$(databricks database list-database-instances --profile "$OPT_PROFILE" 2>/dev/null | \
-          python3 -c "
+        LAKEBASE_HOST=$(echo "$POLL_JSON" | python3 -c "
 import sys,json
 items=json.load(sys.stdin)
 for i in items:
@@ -305,10 +399,9 @@ for i in items:
       echo -n "."
     done
     echo ""
-    [[ -z "$LAKEBASE_HOST" ]] && error "Instance did not become available. Check the Databricks UI."
+    [[ -z "$LAKEBASE_HOST" ]] && error "Instance did not become available. Check the Databricks UI and re-run."
     success "Instance created: $LAKEBASE_HOST"
   else
-    # Autoscaling path — user must provide host manually
     echo ""
     warn "Provide the Lakebase hostname from your Databricks UI (Compute → Lakebase)."
     read -rp "$(prompt 'Lakebase hostname: ')" LAKEBASE_HOST
@@ -317,33 +410,39 @@ for i in items:
   fi
 fi
 
+debug "Final Lakebase: host=$LAKEBASE_HOST db=$OPT_DB schema=$OPT_SCHEMA provisioned=$IS_PROVISIONED"
 echo ""
 
 # ─── STEP 3: Database schema + seed ──────────────────────────────────────────
 if [[ "$OPT_SEED" != "skip" ]] && [[ -n "$PSQL" ]]; then
   info "Seeding database (mode: $OPT_SEED)..."
 
-  # Get a DB credential (works for both provisioned and autoscaling)
   PG_PASSWORD=""
   if [[ "$IS_PROVISIONED" == "true" ]]; then
     info "Generating database credential for provisioned instance..."
-    PG_PASSWORD=$(databricks database generate-database-credential \
+    CRED_JSON=$(databricks database generate-database-credential \
       --profile "$OPT_PROFILE" \
       --json "{\"instance_names\": [\"${OPT_LAKEBASE_INSTANCE}\"], \"request_id\": \"deploy-$(date +%s)\"}" \
-      2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin)['token'])" 2>/dev/null || true)
+      2>&1 || true)
+    debug "Credential response length: ${#CRED_JSON} chars"
+    PG_PASSWORD=$(echo "$CRED_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['token'])" 2>/dev/null || true)
+    if [[ -z "$PG_PASSWORD" ]]; then
+      debug "Credential generation failed: $CRED_JSON"
+      warn "Could not generate DB credential — falling back to OAuth token"
+    else
+      debug "DB credential obtained (length: ${#PG_PASSWORD})"
+    fi
   fi
-  # Fall back to OAuth token for autoscaling
   [[ -z "$PG_PASSWORD" ]] && PG_PASSWORD="$DATABRICKS_TOKEN"
 
   CONN="host=$LAKEBASE_HOST port=5432 dbname=$OPT_DB user=$OPT_EMAIL sslmode=require"
+  debug "Postgres connection: $CONN"
 
-  # Create schema
   info "Creating schema '$OPT_SCHEMA'..."
-  PGPASSWORD="$PG_PASSWORD" "$PSQL" "$CONN" \
-    -c "CREATE SCHEMA IF NOT EXISTS ${OPT_SCHEMA};" &>/dev/null \
-    || warn "Schema creation returned a warning (may already exist — continuing)"
+  SCHEMA_OUT=$(PGPASSWORD="$PG_PASSWORD" "$PSQL" "$CONN" -c "CREATE SCHEMA IF NOT EXISTS ${OPT_SCHEMA};" 2>&1 || true)
+  debug "Schema create output: $SCHEMA_OUT"
+  echo "$SCHEMA_OUT" >> "$LOG_FILE"
 
-  # Run SQL file
   if [[ "$OPT_SEED" == "demo" ]]; then
     SQL_FILE="$SCHEMA_DIR/seed.sql"
     info "Running seed.sql (demo data)..."
@@ -351,18 +450,31 @@ if [[ "$OPT_SEED" != "skip" ]] && [[ -n "$PSQL" ]]; then
     SQL_FILE="$SCHEMA_DIR/schema.sql"
     info "Running schema.sql (empty tables)..."
   fi
+  debug "SQL file: $SQL_FILE"
 
-  # Replace search_path placeholder if schema is not 'datamarket'
   if [[ "$OPT_SCHEMA" != "datamarket" ]]; then
     TEMP_SQL=$(mktemp /tmp/datamarket_deploy_XXXXXX.sql)
     sed "s/SET search_path TO datamarket/SET search_path TO ${OPT_SCHEMA}/g" "$SQL_FILE" > "$TEMP_SQL"
     SQL_FILE="$TEMP_SQL"
     trap "rm -f $TEMP_SQL" EXIT
+    debug "Rewrote search_path to $OPT_SCHEMA in temp file: $TEMP_SQL"
   fi
 
-  PGPASSWORD="$PG_PASSWORD" "$PSQL" "$CONN" -f "$SQL_FILE" &>/dev/null \
-    && success "Database seeded" \
-    || warn "Seed script returned warnings (tables may already exist — app will run migrations on start)"
+  if [[ "$VERBOSE" == "true" ]]; then
+    PGPASSWORD="$PG_PASSWORD" "$PSQL" "$CONN" -f "$SQL_FILE" 2>&1 | tee -a "$LOG_FILE" \
+      && success "Database seeded" \
+      || warn "Seed returned warnings — app will run migrations on first start"
+  else
+    SEED_OUT=$(PGPASSWORD="$PG_PASSWORD" "$PSQL" "$CONN" -f "$SQL_FILE" 2>&1 || true)
+    echo "$SEED_OUT" >> "$LOG_FILE"
+    debug "Seed output: $SEED_OUT"
+    if echo "$SEED_OUT" | grep -qi "error"; then
+      warn "Seed script had errors (see log). App migrations will attempt on first start."
+      warn "Log: $LOG_FILE"
+    else
+      success "Database seeded"
+    fi
+  fi
 else
   if [[ "$OPT_SEED" == "skip" ]]; then
     warn "Skipping database seed. Tables will be auto-created when the app first starts."
@@ -374,24 +486,25 @@ echo ""
 # ─── STEP 4: Build frontend ───────────────────────────────────────────────────
 info "Building frontend..."
 cd "$APP_DIR"
+debug "App dir: $APP_DIR"
 
 if [[ ! -d dist ]]; then
   info "Running npm install..."
-  npm install --silent
+  run_cmd "npm install" npm install --silent
   info "Running vite build..."
-  npm run build:local
+  run_cmd "npm build" npm run build:local
   success "Frontend built"
 else
-  # Check if dist is up to date
   NEWEST_SRC=$(find src -name "*.jsx" -o -name "*.js" -o -name "*.css" 2>/dev/null | \
     xargs stat -f "%m" 2>/dev/null | sort -n | tail -1 || \
     find src -name "*.jsx" -newer dist/index.html 2>/dev/null | head -1)
   if [[ -n "$NEWEST_SRC" ]]; then
     info "Source files changed — rebuilding..."
-    npm run build:local
+    run_cmd "npm build" npm run build:local
     success "Frontend rebuilt"
   else
     success "Frontend dist is up to date (skipping rebuild)"
+    debug "dist/ is newer than all src/ files"
   fi
 fi
 
@@ -443,65 +556,81 @@ ${LAKEBASE_INSTANCE_LINE}
   #   value: "true"
 YAML
 
+debug "Generated app.yaml:"
+cat "$APP_DIR/app.yaml" >> "$LOG_FILE"
 success "app.yaml generated"
 echo ""
 
 # ─── STEP 6: Upload to workspace ─────────────────────────────────────────────
 info "Uploading to workspace: $OPT_WORKSPACE_PATH ..."
 
-# Upload app.js and app.yaml
 for f in app.js app.yaml package.json; do
   [[ -f "$f" ]] || continue
-  databricks workspace import "${OPT_WORKSPACE_PATH}/${f}" \
-    --file "$f" --format RAW --overwrite --profile "$OPT_PROFILE" &>/dev/null
+  debug "Uploading $f..."
+  run_cmd "Upload $f" databricks workspace import "${OPT_WORKSPACE_PATH}/${f}" \
+    --file "$f" --format RAW --overwrite --profile "$OPT_PROFILE"
 done
 success "Server files uploaded (app.js, app.yaml, package.json)"
 
-# Upload dist assets
 DIST_COUNT=0
+DIST_ERRORS=0
 while IFS= read -r -d '' filepath; do
   relpath="${filepath#./}"
-  databricks workspace import "${OPT_WORKSPACE_PATH}/${relpath}" \
-    --file "$filepath" --format RAW --overwrite --profile "$OPT_PROFILE" &>/dev/null || true
+  debug "Uploading $relpath..."
+  if ! databricks workspace import "${OPT_WORKSPACE_PATH}/${relpath}" \
+      --file "$filepath" --format RAW --overwrite \
+      --profile "$OPT_PROFILE" >> "$LOG_FILE" 2>&1; then
+    DIST_ERRORS=$((DIST_ERRORS + 1))
+    debug "Upload failed for $relpath"
+  fi
   DIST_COUNT=$((DIST_COUNT + 1))
 done < <(find dist -type f -print0)
-success "Frontend assets uploaded ($DIST_COUNT files)"
+
+if [[ "$DIST_ERRORS" -gt 0 ]]; then
+  warn "Frontend assets: $DIST_COUNT files, $DIST_ERRORS upload errors (see $LOG_FILE)"
+else
+  success "Frontend assets uploaded ($DIST_COUNT files)"
+fi
 echo ""
 
 # ─── STEP 7: Create or update the Databricks App ─────────────────────────────
 info "Deploying Databricks App '$OPT_APP_SLUG'..."
 
-# Check if app exists
+debug "Checking if app '$OPT_APP_SLUG' already exists..."
 APP_EXISTS=$(databricks apps get "$OPT_APP_SLUG" --profile "$OPT_PROFILE" 2>/dev/null | \
   python3 -c "import sys,json; print(json.load(sys.stdin).get('name',''))" 2>/dev/null || true)
+debug "App exists: '${APP_EXISTS}'"
 
 if [[ -z "$APP_EXISTS" ]]; then
   info "App does not exist yet — creating..."
-  databricks apps create "$OPT_APP_SLUG" \
+  run_cmd_tolerant "Create app" databricks apps create "$OPT_APP_SLUG" \
     --source-code-path "$OPT_WORKSPACE_PATH" \
-    --profile "$OPT_PROFILE" &>/dev/null \
-    || warn "App create returned a warning — proceeding to deploy"
+    --profile "$OPT_PROFILE"
 fi
 
-# Deploy
+info "Running apps deploy (this takes ~30s)..."
 databricks apps deploy "$OPT_APP_SLUG" \
   --source-code-path "$OPT_WORKSPACE_PATH" \
-  --profile "$OPT_PROFILE"
+  --profile "$OPT_PROFILE" 2>&1 | tee -a "$LOG_FILE"
 
 echo ""
 
 # ─── STEP 8: Done ─────────────────────────────────────────────────────────────
-APP_URL=$(databricks apps get "$OPT_APP_SLUG" --profile "$OPT_PROFILE" 2>/dev/null | \
-  python3 -c "import sys,json; print(json.load(sys.stdin).get('url',''))" 2>/dev/null || true)
+APP_JSON=$(databricks apps get "$OPT_APP_SLUG" --profile "$OPT_PROFILE" 2>/dev/null || true)
+APP_URL=$(echo "$APP_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin).get('url',''))" 2>/dev/null || true)
+APP_STATE=$(echo "$APP_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin).get('app_status',{}).get('state','unknown'))" 2>/dev/null || true)
+debug "App final state: $APP_STATE | url: $APP_URL"
 
 echo -e "${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
 echo -e "${GREEN}${BOLD}  ✅  DataMarket deployed successfully!${RESET}"
 echo -e "${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
 echo ""
 if [[ -n "$APP_URL" ]]; then
-  echo -e "  ${BOLD}App URL:${RESET} $APP_URL"
-  echo ""
+  echo -e "  ${BOLD}App URL:${RESET}      $APP_URL"
 fi
+echo -e "  ${BOLD}App status:${RESET}   $APP_STATE"
+echo -e "  ${DIM}Full log:${RESET}     $LOG_FILE"
+echo ""
 echo -e "  ${BOLD}Next steps:${RESET}"
 echo "  1. Open the app URL above and log in"
 echo "  2. Switch to the Admin persona (top-right dropdown)"
