@@ -886,23 +886,21 @@ app.get('/api/portal/admin/uc-tables', async (req, res) => {
       `SELECT uc_full_name FROM data_products WHERE uc_full_name IS NOT NULL AND uc_full_name != ''`);
     const registered = new Set(existing.map(r => r.uc_full_name));
 
-    // In production mode with a warehouse, query UC information_schema
-    if (!DEMO_MODE && SQL_WAREHOUSE_ID) {
+    // If a warehouse is configured, always query real UC tables (even in demo mode)
+    if (SQL_WAREHOUSE_ID) {
       const schema = await fetchUcSchema('information_schema.tables');
       if (schema) return res.json({ source: 'unity_catalog', tables: schema.filter(t => !registered.has(t.full_name)) });
     }
 
-    // Demo mode: return known tables from the demo catalog
+    // No warehouse configured — return generic placeholder tables so the UI isn't empty
     const demoTables = [
-      { full_name: 'samir_raut_demo.lac_dna_portal.gold_budget_summary',   table_name: 'gold_budget_summary',   schema_name: 'lac_dna_portal', catalog_name: 'samir_raut_demo' },
-      { full_name: 'samir_raut_demo.lac_dna_portal.gold_data_products',    table_name: 'gold_data_products',    schema_name: 'lac_dna_portal', catalog_name: 'samir_raut_demo' },
-      { full_name: 'samir_raut_demo.lac_dna_portal.gold_departments',      table_name: 'gold_departments',      schema_name: 'lac_dna_portal', catalog_name: 'samir_raut_demo' },
-      { full_name: 'samir_raut_demo.lac_dna_portal.gold_internal_billing', table_name: 'gold_internal_billing', schema_name: 'lac_dna_portal', catalog_name: 'samir_raut_demo' },
-      { full_name: 'samir_raut_demo.lac_dna_portal.gold_vendor_payments',  table_name: 'gold_vendor_payments',  schema_name: 'lac_dna_portal', catalog_name: 'samir_raut_demo' },
-      { full_name: 'samir_raut_demo.lac_dna_portal.gold_vendors',          table_name: 'gold_vendors',          schema_name: 'lac_dna_portal', catalog_name: 'samir_raut_demo' },
-      { full_name: 'samir_raut_demo.lac_dna_portal.metadata_for_search',   table_name: 'metadata_for_search',   schema_name: 'lac_dna_portal', catalog_name: 'samir_raut_demo' },
+      { full_name: 'your_catalog.your_schema.sales_transactions',    table_name: 'sales_transactions',    schema_name: 'your_schema', catalog_name: 'your_catalog' },
+      { full_name: 'your_catalog.your_schema.customer_profiles',     table_name: 'customer_profiles',     schema_name: 'your_schema', catalog_name: 'your_catalog' },
+      { full_name: 'your_catalog.your_schema.product_inventory',     table_name: 'product_inventory',     schema_name: 'your_schema', catalog_name: 'your_catalog' },
+      { full_name: 'your_catalog.your_schema.employee_records',      table_name: 'employee_records',      schema_name: 'your_schema', catalog_name: 'your_catalog' },
+      { full_name: 'your_catalog.your_schema.financial_ledger',      table_name: 'financial_ledger',      schema_name: 'your_schema', catalog_name: 'your_catalog' },
     ];
-    res.json({ source: 'demo', tables: demoTables.filter(t => !registered.has(t.full_name)), registered: existing.map(r => r.uc_full_name) });
+    res.json({ source: 'demo_placeholder', tables: demoTables.filter(t => !registered.has(t.full_name)), registered: existing.map(r => r.uc_full_name) });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
