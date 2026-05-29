@@ -126,8 +126,10 @@ Once registered as a UC catalog, tables are queryable directly from Databricks S
 | `PUT` | `/api/portal/requests/:id/deny` | Deny with reason |
 | `GET` | `/api/portal/library?email=` | User's approved + pinned products |
 | `GET` | `/api/portal/audit` | Recent audit log entries |
-| `GET` | `/api/portal/admin/uc-tables` | Discover UC tables for import |
-| `POST` | `/api/portal/admin/import-uc` | Bulk import UC tables as data products |
+| `GET` | `/api/portal/admin/uc-catalogs` | List UC catalogs (no warehouse needed) |
+| `GET` | `/api/portal/admin/uc-schemas?catalog=` | List schemas in a catalog |
+| `GET` | `/api/portal/admin/uc-tables-browse?catalog=&schema=` | List tables in a schema |
+| `POST` | `/api/portal/admin/import-uc` | Bulk import selected UC tables as data products |
 | `POST` | `/api/portal/products` | Register a new data product |
 | `POST` | `/api/portal/demo-reset` | Clear all demo data (requests, audit, library) |
 
@@ -137,22 +139,37 @@ Once registered as a UC catalog, tables are queryable directly from Databricks S
 
 ### Option A — One-step script (recommended)
 
+**Prerequisites:** Databricks CLI, Node.js ≥ 18, npm. psql optional (for demo data seeding).
 ```bash
-git clone https://github.com/databricks-field-eng/datamarket.git
-cd datamarket
-./scripts/deploy.sh
+# Install CLI:  brew tap databricks/tap && brew install databricks
+# Install Node: brew install node
+# Install psql: brew install postgresql@16  (optional)
 ```
 
-The script walks you through everything interactively:
-1. Picks up your Databricks CLI profile and workspace URL
+```bash
+# 1. Clone
+git clone https://github.com/databricks-field-eng/datamarket.git
+cd datamarket
+
+# 2. Authenticate CLI against your workspace
+databricks auth login --host https://your-workspace.azuredatabricks.net --profile my-profile
+
+# 3. Deploy (interactive — will prompt for everything)
+./scripts/deploy.sh --profile my-profile
+```
+
+The script walks you through everything:
+1. Validates CLI auth and detects your workspace URL
 2. Creates or reuses a Lakebase instance
 3. Seeds the database with demo data (if `psql` is available)
 4. Builds the React frontend
-5. Uploads all files to your workspace
-6. Creates and deploys the Databricks App
-7. Prints the app URL when done
+5. Creates workspace directories and uploads all files
+6. Creates the Databricks App and waits for compute to be ready (~2 min)
+7. Deploys and prints the app URL
 
-Non-interactive (CI/CD) usage:
+> **Note:** The script pauses ~2 minutes while app compute provisions. This is normal — don't Ctrl+C.
+
+**Non-interactive (CI/CD) usage:**
 
 ```bash
 ./scripts/deploy.sh \
@@ -165,6 +182,16 @@ Non-interactive (CI/CD) usage:
 ```
 
 Run `./scripts/deploy.sh --help` for all flags.
+
+**Troubleshooting:** Every run writes a full log to `/tmp/datamarket-deploy-<timestamp>.log`. Run with `--verbose` to see all command output in real time.
+
+**If Discover shows empty after deploy (Azure workspaces):**
+
+Some Azure workspaces don't auto-inject `DATABRICKS_TOKEN` with sufficient permissions for the app's service principal to generate Lakebase credentials. Fix: generate a PAT in **User Settings → Developer → Access Tokens**, then redeploy with:
+
+```bash
+./scripts/deploy.sh --profile my-profile --pat dapi<your-token>
+```
 
 ---
 
@@ -240,7 +267,7 @@ env:
     value: "true"                          # true = persona switcher, false = real SSO
 ```
 
-`DATABRICKS_HOST` and `DATABRICKS_TOKEN` are **automatically injected** by Databricks Apps — you do not need to set them.
+`DATABRICKS_HOST` is set explicitly by the deploy script. `DATABRICKS_TOKEN` is auto-injected by Databricks Apps at runtime on most workspaces. On some Azure workspaces it may need to be set explicitly via `--pat` (see Option A troubleshooting above).
 
 ### Step 5 — Build the frontend
 
@@ -268,14 +295,11 @@ databricks workspace import --file app.yaml --format AUTO --overwrite $TARGET/ap
 
 ### Step 7 — Create and deploy the Databricks App
 
-In the Databricks UI: **Compute → Apps → Create App**
-- Set the source code path to your workspace folder from Step 6
-
-Or via CLI:
 ```bash
-databricks apps create datamarket --source-code-path $TARGET
+# Create the app (waits ~2 min for compute to provision)
+databricks apps create datamarket
 
-# If the app already exists, just deploy:
+# Then deploy the code
 databricks apps deploy datamarket --source-code-path $TARGET
 ```
 
@@ -284,7 +308,7 @@ databricks apps deploy datamarket --source-code-path $TARGET
 1. Open the app URL Databricks gives you
 2. Switch to the **Admin** persona
 3. Go to **Discover** — if no products exist, the onboarding banner will appear
-4. Click **"Import from Unity Catalog"** to bulk-import your existing UC tables as data products
+4. Click **"Import from Unity Catalog"** to browse your UC catalog in a nested explorer (catalog → schema → table) and bulk-register tables as data products — no SQL Warehouse needed
 5. Or click **"Register a Product"** to add them manually with descriptions, tags, and URLs
 
 ---
