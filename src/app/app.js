@@ -879,6 +879,76 @@ app.put('/api/portal/products/:ref', async (req, res) => {
 });
 
 // ─── Admin: UC Table Discovery ────────────────────────────────────────────────
+// ─── UC Catalog Browser (lazy, no SQL warehouse needed) ──────────────────────
+function ucApiRequest(host, token, path) {
+  return new Promise((resolve, reject) => {
+    const req = https.request({
+      hostname: host, path, method: 'GET',
+      headers: { 'Authorization': `Bearer ${token}` },
+    }, (res) => {
+      let body = '';
+      res.on('data', c => body += c);
+      res.on('end', () => { try { resolve(JSON.parse(body)); } catch (_) { reject(new Error('Bad UC API response')); } });
+    });
+    req.on('error', reject);
+    req.end();
+  });
+}
+
+function getUcAuth() {
+  const host = (process.env.DATABRICKS_HOST || '').replace(/^https?:\/\//, '');
+  const token = process.env.DATABRICKS_TOKEN || process.env.DATABRICKS_RUNTIME_TOKEN || '';
+  if (!host || !token) throw new Error('DATABRICKS_HOST and DATABRICKS_TOKEN are required');
+  return { host, token };
+}
+
+app.get('/api/portal/admin/uc-catalogs', async (req, res) => {
+  try {
+    const { host, token } = getUcAuth();
+    const data = await ucApiRequest(host, token, '/api/2.1/unity-catalog/catalogs');
+    const catalogs = (data.catalogs || []).map(c => ({ name: c.name, comment: c.comment }));
+    res.json({ catalogs });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get('/api/portal/admin/uc-schemas', async (req, res) => {
+  try {
+    const { catalog } = req.query;
+    if (!catalog) return res.status(400).json({ error: 'catalog param required' });
+    const { host, token } = getUcAuth();
+    const data = await ucApiRequest(host, token,
+      `/api/2.1/unity-catalog/schemas?catalog_name=${encodeURIComponent(catalog)}`);
+    const schemas = (data.schemas || []).map(s => ({ name: s.name, full_name: s.full_name, comment: s.comment }));
+    res.json({ schemas });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get('/api/portal/admin/uc-tables-browse', async (req, res) => {
+  try {
+    const { catalog, schema } = req.query;
+    if (!catalog || !schema) return res.status(400).json({ error: 'catalog and schema params required' });
+    const { host, token } = getUcAuth();
+    const { rows: existing } = await query(
+      `SELECT uc_full_name FROM data_products WHERE uc_full_name IS NOT NULL AND uc_full_name != ''`);
+    const registered = new Set(existing.map(r => r.uc_full_name));
+    const data = await ucApiRequest(host, token,
+      `/api/2.1/unity-catalog/tables?catalog_name=${encodeURIComponent(catalog)}&schema_name=${encodeURIComponent(schema)}&omit_columns=true`);
+    const tables = (data.tables || []).map(t => ({
+      full_name: t.full_name, table_name: t.name,
+      schema_name: schema, catalog_name: catalog,
+      table_type: t.table_type, comment: t.comment,
+      registered: registered.has(t.full_name),
+    }));
+    res.json({ tables });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.get('/api/portal/admin/uc-tables', async (req, res) => {
   try {
     // Get already-registered UC table names
