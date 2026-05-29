@@ -49,8 +49,13 @@ async function getPool() {
     // Provisioned instance: generate a short-lived DB credential via REST API
     console.log(`[Lakebase] Generating DB credential for provisioned instance "${LAKEBASE_INSTANCE_NAME}"...`);
     const host = (process.env.DATABRICKS_HOST || '').replace(/^https?:\/\//, '');
-    const pat  = process.env.DATABRICKS_TOKEN || '';
-    if (!host || !pat) throw new Error('DATABRICKS_HOST and DATABRICKS_TOKEN required for credential generation');
+    // DATABRICKS_TOKEN is auto-injected by Databricks Apps; DATABRICKS_RUNTIME_TOKEN is
+    // the fallback name used on some Azure workspaces.
+    const pat  = process.env.DATABRICKS_TOKEN || process.env.DATABRICKS_RUNTIME_TOKEN || '';
+    if (!host || !pat) {
+      console.error(`[Lakebase] Env check — DATABRICKS_HOST: "${process.env.DATABRICKS_HOST || '(unset)'}", DATABRICKS_TOKEN: ${pat ? '(set)' : '(unset)'}`);
+      throw new Error('DATABRICKS_HOST and DATABRICKS_TOKEN required for credential generation');
+    }
     const credResult = await new Promise((resolve, reject) => {
       const payload = JSON.stringify({ instance_names: [LAKEBASE_INSTANCE_NAME], request_id: `dm-${Date.now()}` });
       const req = https.request({

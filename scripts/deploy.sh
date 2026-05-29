@@ -30,6 +30,9 @@
 #   --workspace-path  Workspace folder (default: /Workspace/Users/<email>/<app-slug>)
 #   --seed            "demo" | "schema" | "skip" (default: demo)
 #   --demo-mode       "true" | "false" (default: true)
+#   --pat             Databricks PAT — required on some workspaces where auto-injected
+#                     DATABRICKS_TOKEN doesn't have permission to call generate-database-credential.
+#                     Generate one in workspace UI: User Settings → Access Tokens
 #   --verbose / -v    Show full output of every command (default: off)
 #   --log-file PATH   Where to write the full deployment log (default: /tmp/datamarket-deploy-<ts>.log)
 # =============================================================================
@@ -72,6 +75,7 @@ OPT_APP_SUBTITLE=""
 OPT_WORKSPACE_PATH=""
 OPT_SEED="demo"
 OPT_DEMO_MODE="true"
+OPT_PAT=""
 VERBOSE="false"
 LOG_FILE="/tmp/datamarket-deploy-$(date +%Y%m%d-%H%M%S).log"
 
@@ -95,6 +99,7 @@ while [[ $# -gt 0 ]]; do
     --workspace-path)    OPT_WORKSPACE_PATH="$2";     shift 2 ;;
     --seed)              OPT_SEED="$2";               shift 2 ;;
     --demo-mode)         OPT_DEMO_MODE="$2";          shift 2 ;;
+    --pat)               OPT_PAT="$2";                shift 2 ;;
     --verbose|-v)        VERBOSE="true";              shift ;;
     --log-file)          LOG_FILE="$2";               shift 2 ;;
     --help|-h)
@@ -555,7 +560,14 @@ command:
   - "app.js"
 env:
   # ── Databricks Identity ─────────────────────────────────────────────────────
-  # DATABRICKS_HOST and DATABRICKS_TOKEN are auto-injected by Databricks Apps.
+  # DATABRICKS_HOST is set explicitly so credential generation always works.
+  # DATABRICKS_TOKEN is auto-injected by Databricks Apps at runtime.
+  - name: DATABRICKS_HOST
+    value: "${OPT_HOST}"
+  # DATABRICKS_TOKEN is auto-injected by Databricks Apps at runtime.
+  # If auto-injection doesn't work on your workspace (provisioned Lakebase),
+  # pass --pat <your-pat> to the deploy script to set it explicitly.
+$(if [[ -n "$OPT_PAT" ]]; then echo "  - name: DATABRICKS_TOKEN"; echo "    value: \"${OPT_PAT}\""; fi)
   - name: DATABRICKS_USER
     value: "${OPT_EMAIL}"
   # ── Lakebase Connection ─────────────────────────────────────────────────────
@@ -690,6 +702,15 @@ echo "  2. Switch to the Admin persona (top-right dropdown)"
 echo "  3. Go to Discover → click 'Import from Unity Catalog' to populate"
 echo "     your catalog, or click 'Register a Product' to add manually"
 echo ""
+if [[ "$IS_PROVISIONED" == "true" ]] && [[ -z "$OPT_PAT" ]]; then
+  echo ""
+  warn "Using Provisioned Lakebase without --pat. If the app shows empty catalog,"
+  warn "the app's service principal may not have permission to generate DB credentials."
+  warn "Fix: generate a PAT in your workspace (User Settings → Access Tokens) and redeploy:"
+  warn "  ./scripts/deploy.sh ... --pat dapi<your-token>"
+  echo ""
+fi
+
 echo -e "  ${BOLD}Optional customizations (src/app/app.yaml):${RESET}"
 echo "  • SQL_WAREHOUSE_ID   → enable real UC GRANT/REVOKE"
 echo "  • RFA_ENABLED=true   → enable access request email/Slack notifications"
