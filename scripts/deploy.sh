@@ -66,14 +66,18 @@ OPT_LAKEBASE_INSTANCE=""
 OPT_LAKEBASE_TYPE="autoscaling"
 OPT_DB="databricks_postgres"
 OPT_SCHEMA="datamarket"
-OPT_APP_SLUG="datamarket"
-OPT_APP_NAME="DataMarket"
-OPT_APP_SUBTITLE="Data Discovery & Access"
+OPT_APP_SLUG=""
+OPT_APP_NAME=""
+OPT_APP_SUBTITLE=""
 OPT_WORKSPACE_PATH=""
 OPT_SEED="demo"
 OPT_DEMO_MODE="true"
 VERBOSE="false"
 LOG_FILE="/tmp/datamarket-deploy-$(date +%Y%m%d-%H%M%S).log"
+
+# Detect interactive mode (stdin is a real TTY)
+INTERACTIVE=false
+[[ -t 0 ]] && INTERACTIVE=true || true
 
 # ─── Arg parsing ──────────────────────────────────────────────────────────────
 while [[ $# -gt 0 ]]; do
@@ -220,13 +224,15 @@ echo ""
 
 # Profile
 if [[ -z "$OPT_PROFILE" ]]; then
-  PROFILES=$(grep '^\[' ~/.databrickscfg 2>/dev/null | tr -d '[]' | grep -v 'DEFAULT' || true)
-  if [[ -n "$PROFILES" ]]; then
-    echo -e "${BOLD}Available Databricks CLI profiles:${RESET}"
-    echo "$PROFILES" | nl -w2 -s'. '
-    echo ""
+  if [[ "$INTERACTIVE" == "true" ]]; then
+    PROFILES=$(grep '^\[' ~/.databrickscfg 2>/dev/null | tr -d '[]' | grep -v 'DEFAULT' || true)
+    if [[ -n "$PROFILES" ]]; then
+      echo -e "${BOLD}Available Databricks CLI profiles:${RESET}"
+      echo "$PROFILES" | nl -w2 -s'. '
+      echo ""
+    fi
+    read -rp "$(prompt 'Databricks CLI profile [DEFAULT]: ')" OPT_PROFILE
   fi
-  read -rp "$(prompt 'Databricks CLI profile [DEFAULT]: ')" OPT_PROFILE
   OPT_PROFILE="${OPT_PROFILE:-DEFAULT}"
 fi
 debug "Profile: $OPT_PROFILE"
@@ -250,7 +256,10 @@ if [[ -z "$OPT_HOST" ]]; then
   OPT_HOST=$(grep -A5 "^\[${OPT_PROFILE}\]" ~/.databrickscfg 2>/dev/null | grep '^host' | head -1 | awk '{print $3}' || true)
 fi
 if [[ -z "$OPT_HOST" ]]; then
-  read -rp "$(prompt 'Databricks workspace URL (e.g. https://adb-xxx.azuredatabricks.net): ')" OPT_HOST
+  if [[ "$INTERACTIVE" == "true" ]]; then
+    read -rp "$(prompt 'Databricks workspace URL (e.g. https://adb-xxx.azuredatabricks.net): ')" OPT_HOST
+  fi
+  [[ -z "$OPT_HOST" ]] && error "Could not detect workspace URL from profile '$OPT_PROFILE'. Pass --host explicitly."
 fi
 OPT_HOST="${OPT_HOST%/}"
 success "Workspace: $OPT_HOST"
@@ -265,34 +274,44 @@ if [[ -z "$OPT_EMAIL" ]]; then
     debug "SCIM /Me response: $SCIM_RESPONSE"
     DETECTED_EMAIL=$(echo "$SCIM_RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin).get('userName',''))" 2>/dev/null || true)
   fi
-  read -rp "$(prompt "Your Databricks email [${DETECTED_EMAIL:-you@company.com}]: ")" OPT_EMAIL
+  if [[ "$INTERACTIVE" == "true" ]]; then
+    read -rp "$(prompt "Your Databricks email [${DETECTED_EMAIL:-you@company.com}]: ")" OPT_EMAIL
+  fi
   OPT_EMAIL="${OPT_EMAIL:-$DETECTED_EMAIL}"
 fi
 [[ -z "$OPT_EMAIL" ]] && error "Email is required (used as Postgres username)."
 success "Email: $OPT_EMAIL"
 
 # App slug
-if [[ -z "$OPT_APP_SLUG" ]] || [[ "$OPT_APP_SLUG" == "datamarket" ]]; then
-  read -rp "$(prompt 'App name / slug (e.g. datamarket) [datamarket]: ')" INPUT_SLUG
+if [[ -z "$OPT_APP_SLUG" ]]; then
+  if [[ "$INTERACTIVE" == "true" ]]; then
+    read -rp "$(prompt 'App name / slug (e.g. datamarket) [datamarket]: ')" INPUT_SLUG
+  fi
   OPT_APP_SLUG="${INPUT_SLUG:-datamarket}"
 fi
 OPT_APP_SLUG=$(echo "$OPT_APP_SLUG" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]/-/g')
 success "App slug: $OPT_APP_SLUG"
 
 # Branding
-if [[ "$OPT_APP_NAME" == "DataMarket" ]]; then
-  read -rp "$(prompt 'Portal display name [DataMarket]: ')" INPUT_NAME
+if [[ -z "$OPT_APP_NAME" ]]; then
+  if [[ "$INTERACTIVE" == "true" ]]; then
+    read -rp "$(prompt 'Portal display name [DataMarket]: ')" INPUT_NAME
+  fi
   OPT_APP_NAME="${INPUT_NAME:-DataMarket}"
 fi
-if [[ "$OPT_APP_SUBTITLE" == "Data Discovery & Access" ]]; then
-  read -rp "$(prompt 'Portal tagline [Data Discovery & Access]: ')" INPUT_SUB
+if [[ -z "$OPT_APP_SUBTITLE" ]]; then
+  if [[ "$INTERACTIVE" == "true" ]]; then
+    read -rp "$(prompt 'Portal tagline [Data Discovery & Access]: ')" INPUT_SUB
+  fi
   OPT_APP_SUBTITLE="${INPUT_SUB:-Data Discovery & Access}"
 fi
 
 # Workspace path
 if [[ -z "$OPT_WORKSPACE_PATH" ]]; then
   DEFAULT_PATH="/Workspace/Users/${OPT_EMAIL}/${OPT_APP_SLUG}"
-  read -rp "$(prompt "Workspace upload path [${DEFAULT_PATH}]: ")" INPUT_PATH
+  if [[ "$INTERACTIVE" == "true" ]]; then
+    read -rp "$(prompt "Workspace upload path [${DEFAULT_PATH}]: ")" INPUT_PATH
+  fi
   OPT_WORKSPACE_PATH="${INPUT_PATH:-$DEFAULT_PATH}"
 fi
 success "Workspace path: $OPT_WORKSPACE_PATH"
@@ -314,13 +333,15 @@ if isinstance(items, list):
 " 2>/dev/null || true)
 
 if [[ -z "$OPT_LAKEBASE_INSTANCE" ]]; then
-  if [[ -n "$INSTANCE_NAMES" ]]; then
-    echo -e "${BOLD}Existing Lakebase instances:${RESET}"
-    echo "$INSTANCE_NAMES" | nl -w2 -s'. '
-    echo ""
-    echo "  Enter a name from the list above, or a new name to create one."
+  if [[ "$INTERACTIVE" == "true" ]]; then
+    if [[ -n "$INSTANCE_NAMES" ]]; then
+      echo -e "${BOLD}Existing Lakebase instances:${RESET}"
+      echo "$INSTANCE_NAMES" | nl -w2 -s'. '
+      echo ""
+      echo "  Enter a name from the list above, or a new name to create one."
+    fi
+    read -rp "$(prompt 'Lakebase instance name [datamarket-lakebase]: ')" OPT_LAKEBASE_INSTANCE
   fi
-  read -rp "$(prompt 'Lakebase instance name [datamarket-lakebase]: ')" OPT_LAKEBASE_INSTANCE
   OPT_LAKEBASE_INSTANCE="${OPT_LAKEBASE_INSTANCE:-datamarket-lakebase}"
 fi
 debug "Target instance: $OPT_LAKEBASE_INSTANCE"
@@ -356,9 +377,12 @@ if [[ -n "$INSTANCE_INFO" ]]; then
 else
   debug "Instance '$OPT_LAKEBASE_INSTANCE' not found in list"
   echo ""
-  warn "Instance '$OPT_LAKEBASE_INSTANCE' not found."
-  read -rp "$(prompt "Create it? [Y/n]: ")" CREATE_CONFIRM
-  CREATE_CONFIRM="${CREATE_CONFIRM:-Y}"
+  warn "Instance '$OPT_LAKEBASE_INSTANCE' not found — will create it."
+  CREATE_CONFIRM="Y"
+  if [[ "$INTERACTIVE" == "true" ]]; then
+    read -rp "$(prompt "Create it? [Y/n]: ")" CREATE_CONFIRM
+    CREATE_CONFIRM="${CREATE_CONFIRM:-Y}"
+  fi
   if [[ "$CREATE_CONFIRM" =~ ^[Yy] ]]; then
     info "Creating Lakebase instance '$OPT_LAKEBASE_INSTANCE' (CU_1 provisioned)..."
     debug "Trying: databricks database create-database-instance $OPT_LAKEBASE_INSTANCE --json {capacity:CU_1}"
@@ -404,8 +428,10 @@ for i in items:
   else
     echo ""
     warn "Provide the Lakebase hostname from your Databricks UI (Compute → Lakebase)."
-    read -rp "$(prompt 'Lakebase hostname: ')" LAKEBASE_HOST
-    [[ -z "$LAKEBASE_HOST" ]] && error "Lakebase hostname is required."
+    if [[ "$INTERACTIVE" == "true" ]]; then
+      read -rp "$(prompt 'Lakebase hostname: ')" LAKEBASE_HOST
+    fi
+    [[ -z "$LAKEBASE_HOST" ]] && error "Lakebase hostname is required. Pass --host or create an instance."
     IS_PROVISIONED="false"
   fi
 fi
@@ -568,6 +594,11 @@ echo ""
 # ─── STEP 6: Upload to workspace ─────────────────────────────────────────────
 info "Uploading to workspace: $OPT_WORKSPACE_PATH ..."
 
+debug "Ensuring workspace directory exists..."
+run_cmd "mkdirs" databricks workspace mkdirs "$OPT_WORKSPACE_PATH" --profile "$OPT_PROFILE"
+run_cmd "mkdirs dist" databricks workspace mkdirs "${OPT_WORKSPACE_PATH}/dist" --profile "$OPT_PROFILE"
+run_cmd "mkdirs assets" databricks workspace mkdirs "${OPT_WORKSPACE_PATH}/dist/assets" --profile "$OPT_PROFILE"
+
 for f in app.js app.yaml package.json; do
   [[ -f "$f" ]] || continue
   debug "Uploading $f..."
@@ -606,16 +637,34 @@ APP_EXISTS=$(databricks apps get "$OPT_APP_SLUG" --profile "$OPT_PROFILE" 2>/dev
 debug "App exists: '${APP_EXISTS}'"
 
 if [[ -z "$APP_EXISTS" ]]; then
-  info "App does not exist yet — creating..."
-  run_cmd_tolerant "Create app" databricks apps create "$OPT_APP_SLUG" \
-    --source-code-path "$OPT_WORKSPACE_PATH" \
+  info "App does not exist yet — creating (waits for compute, ~2 min)..."
+  run_cmd "Create app" databricks apps create "$OPT_APP_SLUG" \
     --profile "$OPT_PROFILE"
+  success "App created and compute ready"
 fi
 
-info "Running apps deploy (this takes ~30s)..."
-databricks apps deploy "$OPT_APP_SLUG" \
+# Ensure compute is in a deployable state before deploying
+info "Checking app compute state..."
+for i in $(seq 1 36); do
+  COMPUTE_STATE=$(databricks apps get "$OPT_APP_SLUG" --profile "$OPT_PROFILE" 2>/dev/null | \
+    python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('compute_status',{}).get('state',''))" 2>/dev/null || true)
+  debug "Compute state poll $i/36: $COMPUTE_STATE"
+  if [[ "$COMPUTE_STATE" == "ACTIVE" ]]; then
+    success "App compute is ready (state: $COMPUTE_STATE)"
+    break
+  fi
+  if [[ $i -eq 36 ]]; then
+    warn "Compute state is '$COMPUTE_STATE' after 3 min. Attempting deploy anyway..."
+  fi
+  echo -n "."
+  sleep 5
+done
+echo ""
+
+info "Running apps deploy (this takes ~30–60s)..."
+run_cmd "Deploy app" databricks apps deploy "$OPT_APP_SLUG" \
   --source-code-path "$OPT_WORKSPACE_PATH" \
-  --profile "$OPT_PROFILE" 2>&1 | tee -a "$LOG_FILE"
+  --profile "$OPT_PROFILE"
 
 echo ""
 
