@@ -488,10 +488,14 @@ info "Building frontend..."
 cd "$APP_DIR"
 debug "App dir: $APP_DIR"
 
-if [[ ! -d dist ]]; then
-  info "Running npm install..."
+# Always install deps if vite binary is missing (covers fresh clone + wiped node_modules)
+if [[ ! -x node_modules/.bin/vite ]]; then
+  info "Installing npm dependencies..."
   run_cmd "npm install" npm install --silent
-  info "Running vite build..."
+fi
+
+if [[ ! -d dist ]]; then
+  info "Building frontend..."
   run_cmd "npm build" npm run build:local
   success "Frontend built"
 else
