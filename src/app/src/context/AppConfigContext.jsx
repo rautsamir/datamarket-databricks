@@ -1,26 +1,32 @@
-import { createContext, useContext, useEffect, useState } from 'react'
+import { createContext, useContext, useEffect, useState, useCallback } from 'react'
 
 const defaults = {
-  appName:    'DataMarket',
-  appSubtitle: 'Data Discovery & Access',
-  appLogoUrl: '/la-county-seal.png',
-  demoMode:   true,
+  appName:       'DataMarket',
+  appSubtitle:   'Data Discovery & Access',
+  appLogoUrl:    '',
+  demoMode:      true,
+  genieSpaceId:  '',
+  sqlWarehouseId:'',
+  rfaEnabled:    false,
+  setupComplete: false,
 }
 
-const AppConfigContext = createContext(defaults)
+const AppConfigContext = createContext({ ...defaults, refreshConfig: () => {} })
 
 export function AppConfigProvider({ children }) {
   const [config, setConfig] = useState(defaults)
 
-  useEffect(() => {
+  const refreshConfig = useCallback(() => {
     fetch('/api/portal/config')
       .then(r => r.json())
       .then(data => setConfig({ ...defaults, ...data }))
       .catch(() => { /* keep defaults */ })
   }, [])
 
+  useEffect(() => { refreshConfig() }, [refreshConfig])
+
   return (
-    <AppConfigContext.Provider value={config}>
+    <AppConfigContext.Provider value={{ ...config, refreshConfig }}>
       {children}
     </AppConfigContext.Provider>
   )

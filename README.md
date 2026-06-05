@@ -177,21 +177,14 @@ The script walks you through everything:
   --email you@company.com \
   --lakebase-instance my-lakebase \
   --app-slug datamarket \
-  --app-name "Acme DataMarket" \
   --seed demo
 ```
 
 Run `./scripts/deploy.sh --help` for all flags.
 
+> **Branding** (portal name, tagline, logo, Genie Space ID) is configured via **Admin → Settings** in the app itself — no flags needed and no redeploy required when you change them.
+
 **Troubleshooting:** Every run writes a full log to `/tmp/datamarket-deploy-<timestamp>.log`. Run with `--verbose` to see all command output in real time.
-
-**If Discover shows empty after deploy (Azure workspaces):**
-
-Some Azure workspaces don't auto-inject `DATABRICKS_TOKEN` with sufficient permissions for the app's service principal to generate Lakebase credentials. Fix: generate a PAT in **User Settings → Developer → Access Tokens**, then redeploy with:
-
-```bash
-./scripts/deploy.sh --profile my-profile --pat dapi<your-token>
-```
 
 ---
 
@@ -306,10 +299,11 @@ databricks apps deploy datamarket --source-code-path $TARGET
 ### Step 8 — Open the app and add your data
 
 1. Open the app URL Databricks gives you
-2. Switch to the **Admin** persona
-3. Go to **Discover** — if no products exist, the onboarding banner will appear
-4. Click **"Import from Unity Catalog"** to browse your UC catalog in a nested explorer (catalog → schema → table) and bulk-register tables as data products — no SQL Warehouse needed
-5. Or click **"Register a Product"** to add them manually with descriptions, tags, and URLs
+2. Switch to the **Admin** persona (top-right dropdown)
+3. Go to **Manage → Settings** to configure portal name, logo, and Genie Space ID
+4. Go to **Discover** — if no products exist, the onboarding banner will appear
+5. Click **"Import from Unity Catalog"** to browse your UC catalog in a nested explorer (catalog → schema → table) and bulk-register tables as data products — no SQL Warehouse needed
+6. Or click **"Register a Product"** to add them manually with descriptions, tags, and URLs
 
 ---
 
@@ -369,19 +363,18 @@ After this, `SELECT * FROM datamarket_lakebase.datamarket.access_requests` works
 
 ## Customizing for Your Customer
 
-Everything that needs to change per customer is in `app.yaml` — no code changes needed for a basic deployment:
+Most customization is done through the **Admin → Settings** tab — no code changes or redeployment needed:
 
 | What to change | Where |
 |---|---|
-| Portal name | `app.yaml` → `APP_NAME` |
-| Tagline | `app.yaml` → `APP_SUBTITLE` |
-| Logo | `app.yaml` → `APP_LOGO_URL` (path or URL) |
-| Persona names / departments | `src/context/PersonaContext.jsx` |
-| Genie Space ID | `src/pages/AIExplorerPage.jsx` |
-| Default data products | Import from UC via the app UI, or edit `schema/seed.sql` |
-| Demo mode vs. production | `app.yaml` → `DEMO_MODE` |
-| UC grant execution | `app.yaml` → `SQL_WAREHOUSE_ID` |
-| RFA notifications | `app.yaml` → `RFA_ENABLED` + configure destinations via CLI |
+| Portal name & tagline | Admin → Settings (in-app) |
+| Logo | Admin → Settings → Logo URL (path or full URL) |
+| Genie Space ID | Admin → Settings → Genie Space ID |
+| UC grant execution | Admin → Settings → SQL Warehouse ID |
+| RFA notifications | Admin → Settings → RFA toggle |
+| Default data products | Discover → Import from Unity Catalog (in-app) |
+| Demo mode vs. production | `app.yaml` → `DEMO_MODE` (requires redeploy) |
+| Persona names / departments | `src/context/PersonaContext.jsx` (requires code change) |
 
 ---
 

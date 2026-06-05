@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { ShieldCheck, CheckCircle2, XCircle, Clock, Terminal, ChevronDown, ChevronUp, User, Calendar, Database, Package, Eye, RotateCcw, AlertTriangle } from 'lucide-react'
+import { ShieldCheck, CheckCircle2, XCircle, Clock, Terminal, ChevronDown, ChevronUp, User, Calendar, Database, Package, Eye, RotateCcw, AlertTriangle, Settings, Save, Sparkles } from 'lucide-react'
 import { usePersona } from '../context/PersonaContext'
 import { useAppConfig } from '../context/AppConfigContext'
 
@@ -66,11 +66,145 @@ function norm(r) {
   }
 }
 
+// ─── Settings Panel ───────────────────────────────────────────────────────────
+function SettingsPanel() {
+  const { appName, appSubtitle, appLogoUrl, genieSpaceId, sqlWarehouseId, rfaEnabled, setupComplete, demoMode, refreshConfig } = useAppConfig()
+
+  const [form, setForm] = useState({
+    app_name:        appName,
+    app_subtitle:    appSubtitle,
+    app_logo_url:    appLogoUrl || '',
+    genie_space_id:  genieSpaceId || '',
+    sql_warehouse_id:sqlWarehouseId || '',
+    rfa_enabled:     String(rfaEnabled),
+  })
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved]   = useState(false)
+  const [error, setError]   = useState('')
+
+  // Sync form when config loads from backend
+  useEffect(() => {
+    setForm({
+      app_name:        appName,
+      app_subtitle:    appSubtitle,
+      app_logo_url:    appLogoUrl || '',
+      genie_space_id:  genieSpaceId || '',
+      sql_warehouse_id:sqlWarehouseId || '',
+      rfa_enabled:     String(rfaEnabled),
+    })
+  }, [appName, appSubtitle, appLogoUrl, genieSpaceId, sqlWarehouseId, rfaEnabled])
+
+  const handleSave = async () => {
+    setSaving(true); setSaved(false); setError('')
+    try {
+      const payload = { ...form, setup_complete: 'true' }
+      const r = await fetch('/api/portal/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      if (!r.ok) throw new Error(await r.text())
+      setSaved(true)
+      refreshConfig()
+      setTimeout(() => setSaved(false), 3000)
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const field = (label, key, placeholder = '', hint = '') => (
+    <div>
+      <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
+      <input
+        type="text"
+        value={form[key]}
+        onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
+        placeholder={placeholder}
+        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+      />
+      {hint && <p className="text-xs text-gray-400 mt-1">{hint}</p>}
+    </div>
+  )
+
+  return (
+    <div className="max-w-2xl space-y-8">
+      {/* Onboarding banner — shown until setup_complete is set */}
+      {!setupComplete && (
+        <div className="rounded-xl border border-blue-200 bg-blue-50 p-5 flex gap-4">
+          <Sparkles className="h-6 w-6 text-blue-500 shrink-0 mt-0.5" />
+          <div>
+            <p className="font-semibold text-blue-900 text-sm">Finish setting up your portal</p>
+            <p className="text-blue-700 text-sm mt-1">
+              Set your portal name, connect a Genie Space for Ask AI, and optionally enable real Unity Catalog access grants.
+              Click <strong>Save Settings</strong> when done — changes take effect immediately, no redeploy needed.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Branding */}
+      <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-4">
+        <h3 className="font-semibold text-gray-900 text-sm uppercase tracking-wide">Branding</h3>
+        {field('Portal Name', 'app_name', 'DataMarket', 'Displayed in the top navigation bar')}
+        {field('Tagline', 'app_subtitle', 'Data Discovery & Access', 'Subtitle shown under the portal name')}
+        {field('Logo URL', 'app_logo_url', '/your-logo.png', 'Path or full URL. Leave empty to hide.')}
+      </div>
+
+      {/* Integrations */}
+      <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-4">
+        <h3 className="font-semibold text-gray-900 text-sm uppercase tracking-wide">Integrations</h3>
+        {field('Genie Space ID', 'genie_space_id', '01f3a...', 'Powers the Ask AI page. Find it in your Databricks workspace under AI/BI → Genie.')}
+        {field('SQL Warehouse ID', 'sql_warehouse_id', 'abc123...', 'Required to execute real UC GRANT/REVOKE statements on approval. Leave empty to generate SQL without executing.')}
+      </div>
+
+      {/* Mode */}
+      <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-4">
+        <h3 className="font-semibold text-gray-900 text-sm uppercase tracking-wide">Mode</h3>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-sm font-medium text-gray-700">RFA Notifications</p>
+            <p className="text-xs text-gray-400 mt-0.5">Send Databricks RFA access-request notifications when a user requests access.</p>
+          </div>
+          <button
+            onClick={() => setForm(f => ({ ...f, rfa_enabled: f.rfa_enabled === 'true' ? 'false' : 'true' }))}
+            className={`relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors ${form.rfa_enabled === 'true' ? 'bg-blue-600' : 'bg-gray-200'}`}
+          >
+            <span className={`pointer-events-none block h-5 w-5 rounded-full bg-white shadow transition-transform ${form.rfa_enabled === 'true' ? 'translate-x-5' : 'translate-x-0'}`} />
+          </button>
+        </div>
+        {demoMode && (
+          <div className="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 text-xs text-amber-800">
+            <strong>Demo Mode is active</strong> (set via DEMO_MODE env var). SSO identity and real UC grants are disabled.
+            To enable production mode, set <code className="font-mono bg-amber-100 px-1 rounded">DEMO_MODE=false</code> in your app.yaml and redeploy.
+          </div>
+        )}
+      </div>
+
+      {/* Save */}
+      <div className="flex items-center gap-3">
+        <button
+          onClick={handleSave}
+          disabled={saving}
+          className="flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium text-white transition-colors disabled:opacity-50"
+          style={{ backgroundColor: DataMarket_BLUE }}
+        >
+          <Save className="h-4 w-4" />
+          {saving ? 'Saving…' : 'Save Settings'}
+        </button>
+        {saved && <span className="text-sm text-green-600 flex items-center gap-1"><CheckCircle2 className="h-4 w-4" /> Saved — changes are live</span>}
+        {error && <span className="text-sm text-red-600">{error}</span>}
+      </div>
+    </div>
+  )
+}
+
 export function DataMarketAdminPage({ embedded = false }) {
   const { requests, approveRequest, denyRequest, revokeRequest, currentPersona } = usePersona()
   const { demoMode } = useAppConfig()
   const [filter, setFilter] = useState('Pending')
-  const [activeView, setActiveView] = useState('access') // 'access' | 'products'
+  const [activeView, setActiveView] = useState('access') // 'access' | 'products' | 'settings'
   const [denyModal, setDenyModal] = useState(null)
   const [denyReason, setDenyReason] = useState('')
   const [revokeModal, setRevokeModal] = useState(null)
@@ -170,13 +304,17 @@ export function DataMarketAdminPage({ embedded = false }) {
       {!embedded && <div className="mb-6 flex items-start justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-            <ShieldCheck className="h-6 w-6" style={{ color: DataMarket_BLUE }} />
-            {activeView === 'access' ? 'Approval Queue' : 'Product Registration Queue'}
+            {activeView === 'settings'
+              ? <Settings className="h-6 w-6" style={{ color: DataMarket_BLUE }} />
+              : <ShieldCheck className="h-6 w-6" style={{ color: DataMarket_BLUE }} />}
+            {activeView === 'access' ? 'Approval Queue' : activeView === 'products' ? 'Product Registration Queue' : 'Portal Settings'}
           </h1>
           <p className="text-sm text-gray-500 mt-1">
             {activeView === 'access'
               ? 'Review and action data access requests — approvals automatically issue Unity Catalog grants'
-              : 'Review and publish new data products submitted by producers'}
+              : activeView === 'products'
+              ? 'Review and publish new data products submitted by producers'
+              : 'Configure portal branding, integrations, and mode — changes take effect immediately'}
           </p>
         </div>
         {/* View toggle + Demo Reset */}
@@ -204,6 +342,13 @@ export function DataMarketAdminPage({ embedded = false }) {
                 {pendingProducts.length}
               </span>
             )}
+          </button>
+          <button
+            onClick={() => setActiveView('settings')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium border transition-colors ${activeView === 'settings' ? 'text-white border-transparent' : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'}`}
+            style={activeView === 'settings' ? { backgroundColor: DataMarket_BLUE } : {}}
+          >
+            <Settings className="h-4 w-4" /> Settings
           </button>
 
           {/* Demo Reset — only shown when DEMO_MODE=true */}
@@ -280,8 +425,18 @@ export function DataMarketAdminPage({ embedded = false }) {
               </span>
             )}
           </button>
+          <button
+            onClick={() => setActiveView('settings')}
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors ${activeView === 'settings' ? 'text-white border-transparent' : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'}`}
+            style={activeView === 'settings' ? { backgroundColor: DataMarket_BLUE } : {}}
+          >
+            <Settings className="h-4 w-4" /> Settings
+          </button>
         </div>
       )}
+
+      {/* ── Settings ──────────────────────────────────────────────────────────── */}
+      {activeView === 'settings' && <SettingsPanel />}
 
       {/* ── Product Registration Queue ─────────────────────────────────────────── */}
       {activeView === 'products' && (

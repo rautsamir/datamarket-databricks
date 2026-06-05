@@ -1,0 +1,30 @@
+command:
+  - "node"
+  - "app.js"
+env:
+  # ── Databricks Identity ──────────────────────────────────────────────────────
+  # DATABRICKS_TOKEN is auto-injected by Databricks Apps at runtime.
+  # Set DATABRICKS_HOST to your workspace URL.
+  - name: DATABRICKS_HOST
+    value: "https://your-workspace.azuredatabricks.net"
+  - name: DATABRICKS_USER
+    value: "your-email@company.com"
+
+  # ── Lakebase Connection (Autoscaling) ────────────────────────────────────────
+  # Get the hostname from: Compute → Lakebase → your project → hostname
+  - name: LAKEBASE_HOST
+    value: "ep-your-project.database.region.azuredatabricks.net"
+  - name: LAKEBASE_DB
+    value: "databricks_postgres"
+  - name: LAKEBASE_SCHEMA
+    value: "datamarket"
+
+  # ── Mode ────────────────────────────────────────────────────────────────────
+  # "true"  = persona switcher (for demos and POCs)
+  # "false" = real SSO identity (production deployments)
+  - name: DEMO_MODE
+    value: "true"
+
+  # ── Branding & integrations are configured via Admin → Settings in the app ──
+  # (portal name, tagline, logo URL, Genie Space ID, SQL Warehouse ID, RFA toggle)
+  # No need to set them here — configure in the UI after first deploy.
