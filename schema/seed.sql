@@ -87,6 +87,13 @@ CREATE TABLE IF NOT EXISTS user_library (
     UNIQUE(user_id, product_id)
 );
 
+-- ─── Settings ────────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS settings (
+    key        VARCHAR(100) PRIMARY KEY,
+    value      TEXT,
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- ─── Demo Users ─────────────────────────────────────────────────────────────────
 INSERT INTO users (email, display_name, role, department) VALUES
     ('analyst@example.org',      'Alex Analyst',     'analyst',       'Finance'),
