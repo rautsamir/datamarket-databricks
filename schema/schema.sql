@@ -87,4 +87,13 @@ CREATE TABLE IF NOT EXISTS user_library (
     UNIQUE(user_id, product_id)
 );
 
+-- ─── Settings ────────────────────────────────────────────────────────────────────
+-- Key-value store for portal configuration. Managed via the Admin → Settings UI.
+-- Values here override env vars; env vars are the fallback when no DB value exists.
+CREATE TABLE IF NOT EXISTS settings (
+    key        VARCHAR(100) PRIMARY KEY,
+    value      TEXT,
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 SELECT 'DataMarket schema initialized (no demo data).' AS status;

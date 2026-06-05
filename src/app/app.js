@@ -306,9 +306,70 @@ app.get('/api/health', async (req, res) => {
   });
 });
 
+// ─── Settings helpers ─────────────────────────────────────────────────────────
+// In-memory cache so /api/portal/config stays fast (refreshed on PUT).
+let settingsCache = null;
+
+async function loadSettings() {
+  try {
+    const { rows } = await query('SELECT key, value FROM settings');
+    settingsCache = Object.fromEntries(rows.map(r => [r.key, r.value]));
+  } catch (_) {
+    // Settings table may not exist yet on first boot — that's fine.
+    settingsCache = {};
+  }
+  return settingsCache;
+}
+
+function getSetting(key, envFallback) {
+  if (settingsCache && settingsCache[key] !== undefined && settingsCache[key] !== '') {
+    return settingsCache[key];
+  }
+  return envFallback;
+}
+
 // ─── App Config (branding + mode) ────────────────────────────────────────────
-app.get('/api/portal/config', (req, res) => {
-  res.json({ appName: APP_NAME, appSubtitle: APP_SUBTITLE, appLogoUrl: APP_LOGO_URL, demoMode: DEMO_MODE });
+app.get('/api/portal/config', async (req, res) => {
+  if (!settingsCache) await loadSettings();
+  res.json({
+    appName:    getSetting('app_name',    APP_NAME),
+    appSubtitle:getSetting('app_subtitle', APP_SUBTITLE),
+    appLogoUrl: getSetting('app_logo_url', APP_LOGO_URL),
+    demoMode:   DEMO_MODE,
+    genieSpaceId:     getSetting('genie_space_id', ''),
+    sqlWarehouseId:   getSetting('sql_warehouse_id', SQL_WAREHOUSE_ID),
+    rfaEnabled:       getSetting('rfa_enabled', String(RFA_ENABLED)) === 'true',
+    setupComplete:    getSetting('setup_complete', '') === 'true',
+  });
+});
+
+// ─── Portal Settings (admin CRUD) ────────────────────────────────────────────
+app.get('/api/portal/settings', async (req, res) => {
+  try {
+    const s = settingsCache || await loadSettings();
+    res.json(s);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.put('/api/portal/settings', async (req, res) => {
+  try {
+    const updates = req.body; // { key: value, ... }
+    if (!updates || typeof updates !== 'object') return res.status(400).json({ error: 'Body must be a JSON object of {key: value}' });
+    for (const [key, value] of Object.entries(updates)) {
+      await query(
+        `INSERT INTO settings (key, value, updated_at) VALUES ($1, $2, NOW())
+         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
+        [key, value ?? '']
+      );
+    }
+    settingsCache = null; // bust cache
+    await loadSettings();
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // ─── Data Products ────────────────────────────────────────────────────────────

@@ -2,8 +2,7 @@
 # =============================================================================
 # DataMarket — One-Step Deployment Script
 # =============================================================================
-# Deploys the DataMarket portal to any Databricks workspace.
-# Handles Lakebase setup, database seeding, frontend build, and app deploy.
+# Deploys the DataMarket portal to any Databricks workspace (Lakebase Autoscaling).
 #
 # Usage (interactive):
 #   ./scripts/deploy.sh
@@ -16,27 +15,27 @@
 #     --app-slug datamarket \
 #     --seed demo
 #
-# All flags (every flag has an interactive fallback if omitted):
+# Flags:
 #   --profile         Databricks CLI profile (from ~/.databrickscfg)
-#   --host            Databricks workspace URL (auto-detected from profile)
+#   --host            Workspace URL (auto-detected from profile)
 #   --email           Your Databricks login email (Postgres username)
-#   --lakebase-instance  Lakebase instance name (will be created if missing)
-#   --lakebase-type   "autoscaling" or "provisioned" (default: autoscaling)
+#   --lakebase-instance  Lakebase Autoscaling instance name (created if missing)
 #   --db              Postgres database name (default: databricks_postgres)
 #   --schema          Postgres schema name (default: datamarket)
 #   --app-slug        App name / workspace folder (default: datamarket)
-#   --app-name        Portal display name (default: DataMarket)
-#   --app-subtitle    Portal tagline (default: "Data Discovery & Access")
 #   --workspace-path  Workspace folder (default: /Workspace/Users/<email>/<app-slug>)
 #   --seed            "demo" | "schema" | "skip" (default: demo)
 #   --demo-mode       "true" | "false" (default: true)
-#   --pat             Databricks PAT — required on some workspaces where auto-injected
-#                     DATABRICKS_TOKEN doesn't have permission to call generate-database-credential.
-#                     Generate one in workspace UI: User Settings → Access Tokens
 #   --verbose / -v    Show full output of every command (default: off)
 #   --log-file PATH   Where to write the full deployment log (default: /tmp/datamarket-deploy-<ts>.log)
+#
+# Branding (portal name, tagline, logo) is configured via Admin → Settings in the
+# app itself — no flags needed here and no redeploy required when you change them.
 # =============================================================================
 set -euo pipefail
+
+# Strip Windows-style carriage returns from any variable value
+strip_cr() { echo "${1//$'\r'/}"; }
 
 # ─── Colours ──────────────────────────────────────────────────────────────────
 BOLD="\033[1m"; RESET="\033[0m"; DIM="\033[2m"
@@ -66,16 +65,12 @@ OPT_PROFILE=""
 OPT_HOST=""
 OPT_EMAIL=""
 OPT_LAKEBASE_INSTANCE=""
-OPT_LAKEBASE_TYPE="autoscaling"
 OPT_DB="databricks_postgres"
 OPT_SCHEMA="datamarket"
 OPT_APP_SLUG=""
-OPT_APP_NAME=""
-OPT_APP_SUBTITLE=""
 OPT_WORKSPACE_PATH=""
 OPT_SEED="demo"
 OPT_DEMO_MODE="true"
-OPT_PAT=""
 VERBOSE="false"
 LOG_FILE="/tmp/datamarket-deploy-$(date +%Y%m%d-%H%M%S).log"
 
@@ -90,30 +85,24 @@ while [[ $# -gt 0 ]]; do
     --host)              OPT_HOST="$2";               shift 2 ;;
     --email)             OPT_EMAIL="$2";              shift 2 ;;
     --lakebase-instance) OPT_LAKEBASE_INSTANCE="$2"; shift 2 ;;
-    --lakebase-type)     OPT_LAKEBASE_TYPE="$2";     shift 2 ;;
     --db)                OPT_DB="$2";                 shift 2 ;;
     --schema)            OPT_SCHEMA="$2";             shift 2 ;;
     --app-slug)          OPT_APP_SLUG="$2";           shift 2 ;;
-    --app-name)          OPT_APP_NAME="$2";           shift 2 ;;
-    --app-subtitle)      OPT_APP_SUBTITLE="$2";       shift 2 ;;
     --workspace-path)    OPT_WORKSPACE_PATH="$2";     shift 2 ;;
     --seed)              OPT_SEED="$2";               shift 2 ;;
     --demo-mode)         OPT_DEMO_MODE="$2";          shift 2 ;;
-    --pat)               OPT_PAT="$2";                shift 2 ;;
     --verbose|-v)        VERBOSE="true";              shift ;;
     --log-file)          LOG_FILE="$2";               shift 2 ;;
     --help|-h)
-      sed -n '/^# Usage/,/^# ===/p' "$0" | head -45
+      sed -n '/^# Usage/,/^# Branding/p' "$0" | head -30
       exit 0 ;;
+    # Compatibility shims — silently ignore deprecated flags
+    --lakebase-type|--app-name|--app-subtitle|--pat) shift 2 ;;
     *) error "Unknown flag: $1. Run with --help for usage." ;;
   esac
 done
 
 # ─── Logging helper ──────────────────────────────────────────────────────────
-# run_cmd CMD [ARGS...]
-#   Normal mode  — runs CMD, captures output to log, shows nothing on success,
-#                  shows captured output only on failure.
-#   Verbose mode — runs CMD, tees output to both terminal and log in real time.
 run_cmd() {
   local label="${1}"; shift
   debug "Running: $*"
@@ -139,7 +128,6 @@ run_cmd() {
   fi
 }
 
-# run_cmd_tolerant — like run_cmd but non-fatal on failure (returns exit code)
 run_cmd_tolerant() {
   local label="${1}"; shift
   debug "Running (tolerant): $*"
@@ -158,7 +146,6 @@ mkdir -p "$(dirname "$LOG_FILE")"
 {
   echo "DataMarket deploy log — $(date)"
   echo "Script: $0"
-  echo "Args: $*"
   echo "Verbose: $VERBOSE"
   echo "─────────────────────────────────────────"
 } > "$LOG_FILE"
@@ -178,25 +165,20 @@ echo ""
 info "Checking prerequisites..."
 
 if ! command -v databricks &>/dev/null; then
-  error "Databricks CLI not found. Install from https://docs.databricks.com/en/dev-tools/cli/install.html"
+  error "Databricks CLI not found. Install: brew tap databricks/tap && brew install databricks"
 fi
 CLI_VERSION=$(databricks version 2>/dev/null | head -1)
 success "Databricks CLI: $CLI_VERSION"
-debug "CLI path: $(command -v databricks)"
 
 if ! command -v node &>/dev/null; then
-  error "Node.js not found. Install from https://nodejs.org (>=18)"
+  error "Node.js not found. Install: brew install node"
 fi
-NODE_VERSION=$(node --version)
-success "Node.js: $NODE_VERSION"
-debug "Node path: $(command -v node)"
+success "Node.js: $(node --version)"
 
 if ! command -v npm &>/dev/null; then
-  error "npm not found. Install Node.js from https://nodejs.org"
+  error "npm not found. Install Node.js: brew install node"
 fi
-debug "npm: $(npm --version)"
 
-# Find psql (optional — needed only for seeding)
 PSQL=""
 for candidate in \
     "$(command -v psql 2>/dev/null)" \
@@ -213,12 +195,10 @@ for candidate in \
 done
 
 if [[ -z "$PSQL" ]]; then
-  warn "psql not found — database seeding will be skipped (tables auto-created on app start)."
-  warn "Install with: brew install postgresql@16"
+  warn "psql not found — database seeding will be skipped. Install: brew install postgresql@16"
   OPT_SEED="skip"
 else
   success "psql: $PSQL"
-  debug "psql version: $("$PSQL" --version 2>/dev/null)"
 fi
 
 echo ""
@@ -237,6 +217,7 @@ if [[ -z "$OPT_PROFILE" ]]; then
       echo ""
     fi
     read -rp "$(prompt 'Databricks CLI profile [DEFAULT]: ')" OPT_PROFILE
+    OPT_PROFILE="$(strip_cr "$OPT_PROFILE")"
   fi
   OPT_PROFILE="${OPT_PROFILE:-DEFAULT}"
 fi
@@ -247,14 +228,10 @@ info "Validating authentication (profile: $OPT_PROFILE)..."
 TOKEN_JSON=$(databricks auth token --profile "$OPT_PROFILE" 2>&1) || {
   error "Could not get token for profile '$OPT_PROFILE'. Run: databricks auth login --profile $OPT_PROFILE"
 }
-debug "Token response length: ${#TOKEN_JSON} chars"
 DATABRICKS_TOKEN=$(echo "$TOKEN_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])" 2>/dev/null) || {
-  debug "Raw token response: $TOKEN_JSON"
   error "Failed to parse token. Re-authenticate: databricks auth login --profile $OPT_PROFILE"
 }
-TOKEN_EXPIRY=$(echo "$TOKEN_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin).get('expiry','unknown'))" 2>/dev/null || true)
 success "Auth OK (profile: $OPT_PROFILE)"
-debug "Token expires: $TOKEN_EXPIRY"
 
 # Host
 if [[ -z "$OPT_HOST" ]]; then
@@ -263,24 +240,24 @@ fi
 if [[ -z "$OPT_HOST" ]]; then
   if [[ "$INTERACTIVE" == "true" ]]; then
     read -rp "$(prompt 'Databricks workspace URL (e.g. https://adb-xxx.azuredatabricks.net): ')" OPT_HOST
+    OPT_HOST="$(strip_cr "$OPT_HOST")"
   fi
-  [[ -z "$OPT_HOST" ]] && error "Could not detect workspace URL from profile '$OPT_PROFILE'. Pass --host explicitly."
+  [[ -z "$OPT_HOST" ]] && error "Could not detect workspace URL. Pass --host explicitly."
 fi
 OPT_HOST="${OPT_HOST%/}"
 success "Workspace: $OPT_HOST"
 
-# Email (auto-detect via SCIM /Me)
+# Email (auto-detect)
 if [[ -z "$OPT_EMAIL" ]]; then
-  debug "Detecting email via SCIM /Me..."
   DETECTED_EMAIL=$(databricks auth env --profile "$OPT_PROFILE" 2>/dev/null | grep 'DATABRICKS_USERNAME' | cut -d= -f2 | tr -d '"' || true)
   if [[ -z "$DETECTED_EMAIL" ]]; then
     SCIM_RESPONSE=$(curl -s -H "Authorization: Bearer $DATABRICKS_TOKEN" \
       "$OPT_HOST/api/2.0/preview/scim/v2/Me" 2>/dev/null || true)
-    debug "SCIM /Me response: $SCIM_RESPONSE"
     DETECTED_EMAIL=$(echo "$SCIM_RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin).get('userName',''))" 2>/dev/null || true)
   fi
   if [[ "$INTERACTIVE" == "true" ]]; then
     read -rp "$(prompt "Your Databricks email [${DETECTED_EMAIL:-you@company.com}]: ")" OPT_EMAIL
+    OPT_EMAIL="$(strip_cr "$OPT_EMAIL")"
   fi
   OPT_EMAIL="${OPT_EMAIL:-$DETECTED_EMAIL}"
 fi
@@ -291,31 +268,19 @@ success "Email: $OPT_EMAIL"
 if [[ -z "$OPT_APP_SLUG" ]]; then
   if [[ "$INTERACTIVE" == "true" ]]; then
     read -rp "$(prompt 'App name / slug (e.g. datamarket) [datamarket]: ')" INPUT_SLUG
+    INPUT_SLUG="$(strip_cr "$INPUT_SLUG")"
   fi
   OPT_APP_SLUG="${INPUT_SLUG:-datamarket}"
 fi
 OPT_APP_SLUG=$(echo "$OPT_APP_SLUG" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]/-/g')
 success "App slug: $OPT_APP_SLUG"
 
-# Branding
-if [[ -z "$OPT_APP_NAME" ]]; then
-  if [[ "$INTERACTIVE" == "true" ]]; then
-    read -rp "$(prompt 'Portal display name [DataMarket]: ')" INPUT_NAME
-  fi
-  OPT_APP_NAME="${INPUT_NAME:-DataMarket}"
-fi
-if [[ -z "$OPT_APP_SUBTITLE" ]]; then
-  if [[ "$INTERACTIVE" == "true" ]]; then
-    read -rp "$(prompt 'Portal tagline [Data Discovery & Access]: ')" INPUT_SUB
-  fi
-  OPT_APP_SUBTITLE="${INPUT_SUB:-Data Discovery & Access}"
-fi
-
 # Workspace path
 if [[ -z "$OPT_WORKSPACE_PATH" ]]; then
   DEFAULT_PATH="/Workspace/Users/${OPT_EMAIL}/${OPT_APP_SLUG}"
   if [[ "$INTERACTIVE" == "true" ]]; then
     read -rp "$(prompt "Workspace upload path [${DEFAULT_PATH}]: ")" INPUT_PATH
+    INPUT_PATH="$(strip_cr "$INPUT_PATH")"
   fi
   OPT_WORKSPACE_PATH="${INPUT_PATH:-$DEFAULT_PATH}"
 fi
@@ -324,11 +289,10 @@ success "Workspace path: $OPT_WORKSPACE_PATH"
 echo ""
 
 # ─── STEP 2: Lakebase setup ───────────────────────────────────────────────────
-info "Setting up Lakebase..."
+info "Setting up Lakebase (Autoscaling)..."
 
 debug "Listing database instances..."
 INSTANCES_JSON=$(databricks database list-database-instances --profile "$OPT_PROFILE" 2>/dev/null || echo "[]")
-debug "Instances response: $INSTANCES_JSON"
 
 INSTANCE_NAMES=$(echo "$INSTANCES_JSON" | python3 -c "
 import sys,json
@@ -346,6 +310,7 @@ if [[ -z "$OPT_LAKEBASE_INSTANCE" ]]; then
       echo "  Enter a name from the list above, or a new name to create one."
     fi
     read -rp "$(prompt 'Lakebase instance name [datamarket-lakebase]: ')" OPT_LAKEBASE_INSTANCE
+    OPT_LAKEBASE_INSTANCE="$(strip_cr "$OPT_LAKEBASE_INSTANCE")"
   fi
   OPT_LAKEBASE_INSTANCE="${OPT_LAKEBASE_INSTANCE:-datamarket-lakebase}"
 fi
@@ -354,54 +319,46 @@ debug "Target instance: $OPT_LAKEBASE_INSTANCE"
 # Find instance in list
 INSTANCE_INFO=$(echo "$INSTANCES_JSON" | python3 -c "
 import sys,json
-data=sys.stdin.read()
-items=json.loads(data) if data.strip().startswith('[') else []
+items=json.load(sys.stdin)
+if not isinstance(items, list): items=[]
 for i in items:
     if i.get('name') == '${OPT_LAKEBASE_INSTANCE}':
         print(json.dumps(i))
 " 2>/dev/null || true)
 
 LAKEBASE_HOST=""
-IS_PROVISIONED="false"
 
 if [[ -n "$INSTANCE_INFO" ]]; then
-  debug "Instance found: $INSTANCE_INFO"
   LAKEBASE_HOST=$(echo "$INSTANCE_INFO" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('read_write_dns',''))" 2>/dev/null || true)
-  IS_STOPPED=$(echo "$INSTANCE_INFO" | python3 -c "import sys,json; d=json.load(sys.stdin); print(str(d.get('effective_stopped',False)).lower())" 2>/dev/null || true)
   INSTANCE_STATE=$(echo "$INSTANCE_INFO" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('state','unknown'))" 2>/dev/null || true)
-  IS_PROVISIONED="true"
-  debug "Instance state: $INSTANCE_STATE | stopped: $IS_STOPPED | host: $LAKEBASE_HOST"
+  IS_STOPPED=$(echo "$INSTANCE_INFO" | python3 -c "import sys,json; d=json.load(sys.stdin); print(str(d.get('effective_stopped',False)).lower())" 2>/dev/null || true)
+  debug "Instance state: $INSTANCE_STATE | stopped: $IS_STOPPED"
   if [[ "$IS_STOPPED" == "true" ]]; then
     warn "Instance '$OPT_LAKEBASE_INSTANCE' is stopped. Attempting to start..."
     run_cmd_tolerant "Start instance" databricks database update-database-instance \
       "$OPT_LAKEBASE_INSTANCE" --json '{"stopped": false}' --profile "$OPT_PROFILE"
     sleep 10
   fi
-  success "Using existing instance: $OPT_LAKEBASE_INSTANCE"
-  debug "Lakebase host: $LAKEBASE_HOST"
+  success "Using existing instance: $OPT_LAKEBASE_INSTANCE ($LAKEBASE_HOST)"
 else
-  debug "Instance '$OPT_LAKEBASE_INSTANCE' not found in list"
-  echo ""
-  warn "Instance '$OPT_LAKEBASE_INSTANCE' not found — will create it."
+  warn "Instance '$OPT_LAKEBASE_INSTANCE' not found — creating it..."
   CREATE_CONFIRM="Y"
   if [[ "$INTERACTIVE" == "true" ]]; then
     read -rp "$(prompt "Create it? [Y/n]: ")" CREATE_CONFIRM
-    CREATE_CONFIRM="${CREATE_CONFIRM:-Y}"
+    CREATE_CONFIRM="$(strip_cr "${CREATE_CONFIRM:-Y}")"
   fi
   if [[ "$CREATE_CONFIRM" =~ ^[Yy] ]]; then
-    info "Creating Lakebase instance '$OPT_LAKEBASE_INSTANCE' (CU_1 provisioned)..."
-    debug "Trying: databricks database create-database-instance $OPT_LAKEBASE_INSTANCE --json {capacity:CU_1}"
-    run_cmd_tolerant "Create instance (form 1)" \
+    info "Creating Lakebase Autoscaling instance '$OPT_LAKEBASE_INSTANCE'..."
+    run_cmd_tolerant "Create instance (positional)" \
       databricks database create-database-instance "$OPT_LAKEBASE_INSTANCE" \
-        --json '{"capacity": "CU_1"}' --profile "$OPT_PROFILE"
-    # Fallback form if CLI expects name in JSON
-    run_cmd_tolerant "Create instance (form 2)" \
+        --json '{}' --profile "$OPT_PROFILE"
+    run_cmd_tolerant "Create instance (JSON body)" \
       databricks database create-database-instance \
-        --json "{\"name\": \"${OPT_LAKEBASE_INSTANCE}\", \"capacity\": \"CU_1\"}" \
+        --json "{\"name\": \"${OPT_LAKEBASE_INSTANCE}\"}" \
         --profile "$OPT_PROFILE"
 
-    info "Waiting for instance to become available (up to 2 minutes)..."
-    for i in $(seq 1 24); do
+    info "Waiting for instance to become available (up to 3 minutes)..."
+    for i in $(seq 1 36); do
       sleep 5
       POLL_JSON=$(databricks database list-database-instances --profile "$OPT_PROFILE" 2>/dev/null || echo "[]")
       STATE=$(echo "$POLL_JSON" | python3 -c "
@@ -412,7 +369,7 @@ for i in items:
         print(i.get('state',''))
         break
 " 2>/dev/null || true)
-      debug "Poll $i/24: state=$STATE"
+      debug "Poll $i/36: state=$STATE"
       if [[ "$STATE" == "AVAILABLE" ]]; then
         LAKEBASE_HOST=$(echo "$POLL_JSON" | python3 -c "
 import sys,json
@@ -422,7 +379,6 @@ for i in items:
         print(i.get('read_write_dns',''))
         break
 " 2>/dev/null || true)
-        IS_PROVISIONED="true"
         break
       fi
       echo -n "."
@@ -431,48 +387,30 @@ for i in items:
     [[ -z "$LAKEBASE_HOST" ]] && error "Instance did not become available. Check the Databricks UI and re-run."
     success "Instance created: $LAKEBASE_HOST"
   else
-    echo ""
-    warn "Provide the Lakebase hostname from your Databricks UI (Compute → Lakebase)."
     if [[ "$INTERACTIVE" == "true" ]]; then
       read -rp "$(prompt 'Lakebase hostname: ')" LAKEBASE_HOST
+      LAKEBASE_HOST="$(strip_cr "$LAKEBASE_HOST")"
     fi
-    [[ -z "$LAKEBASE_HOST" ]] && error "Lakebase hostname is required. Pass --host or create an instance."
-    IS_PROVISIONED="false"
+    [[ -z "$LAKEBASE_HOST" ]] && error "Lakebase hostname required. Pass an existing --lakebase-instance name or create one."
   fi
 fi
 
-debug "Final Lakebase: host=$LAKEBASE_HOST db=$OPT_DB schema=$OPT_SCHEMA provisioned=$IS_PROVISIONED"
+debug "Final Lakebase: host=$LAKEBASE_HOST db=$OPT_DB schema=$OPT_SCHEMA"
 echo ""
 
 # ─── STEP 3: Database schema + seed ──────────────────────────────────────────
 if [[ "$OPT_SEED" != "skip" ]] && [[ -n "$PSQL" ]]; then
   info "Seeding database (mode: $OPT_SEED)..."
 
-  PG_PASSWORD=""
-  if [[ "$IS_PROVISIONED" == "true" ]]; then
-    info "Generating database credential for provisioned instance..."
-    CRED_JSON=$(databricks database generate-database-credential \
-      --profile "$OPT_PROFILE" \
-      --json "{\"instance_names\": [\"${OPT_LAKEBASE_INSTANCE}\"], \"request_id\": \"deploy-$(date +%s)\"}" \
-      2>&1 || true)
-    debug "Credential response length: ${#CRED_JSON} chars"
-    PG_PASSWORD=$(echo "$CRED_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['token'])" 2>/dev/null || true)
-    if [[ -z "$PG_PASSWORD" ]]; then
-      debug "Credential generation failed: $CRED_JSON"
-      warn "Could not generate DB credential — falling back to OAuth token"
-    else
-      debug "DB credential obtained (length: ${#PG_PASSWORD})"
-    fi
-  fi
-  [[ -z "$PG_PASSWORD" ]] && PG_PASSWORD="$DATABRICKS_TOKEN"
+  # Autoscaling: use token directly as Postgres password
+  PG_PASSWORD="$DATABRICKS_TOKEN"
 
   CONN="host=$LAKEBASE_HOST port=5432 dbname=$OPT_DB user=$OPT_EMAIL sslmode=require"
-  debug "Postgres connection: $CONN"
 
   info "Creating schema '$OPT_SCHEMA'..."
   SCHEMA_OUT=$(PGPASSWORD="$PG_PASSWORD" "$PSQL" "$CONN" -c "CREATE SCHEMA IF NOT EXISTS ${OPT_SCHEMA};" 2>&1 || true)
-  debug "Schema create output: $SCHEMA_OUT"
   echo "$SCHEMA_OUT" >> "$LOG_FILE"
+  debug "Schema create: $SCHEMA_OUT"
 
   if [[ "$OPT_SEED" == "demo" ]]; then
     SQL_FILE="$SCHEMA_DIR/seed.sql"
@@ -481,14 +419,12 @@ if [[ "$OPT_SEED" != "skip" ]] && [[ -n "$PSQL" ]]; then
     SQL_FILE="$SCHEMA_DIR/schema.sql"
     info "Running schema.sql (empty tables)..."
   fi
-  debug "SQL file: $SQL_FILE"
 
   if [[ "$OPT_SCHEMA" != "datamarket" ]]; then
     TEMP_SQL=$(mktemp /tmp/datamarket_deploy_XXXXXX.sql)
     sed "s/SET search_path TO datamarket/SET search_path TO ${OPT_SCHEMA}/g" "$SQL_FILE" > "$TEMP_SQL"
     SQL_FILE="$TEMP_SQL"
     trap "rm -f $TEMP_SQL" EXIT
-    debug "Rewrote search_path to $OPT_SCHEMA in temp file: $TEMP_SQL"
   fi
 
   if [[ "$VERBOSE" == "true" ]]; then
@@ -498,18 +434,14 @@ if [[ "$OPT_SEED" != "skip" ]] && [[ -n "$PSQL" ]]; then
   else
     SEED_OUT=$(PGPASSWORD="$PG_PASSWORD" "$PSQL" "$CONN" -f "$SQL_FILE" 2>&1 || true)
     echo "$SEED_OUT" >> "$LOG_FILE"
-    debug "Seed output: $SEED_OUT"
     if echo "$SEED_OUT" | grep -qi "error"; then
       warn "Seed script had errors (see log). App migrations will attempt on first start."
-      warn "Log: $LOG_FILE"
     else
       success "Database seeded"
     fi
   fi
 else
-  if [[ "$OPT_SEED" == "skip" ]]; then
-    warn "Skipping database seed. Tables will be auto-created when the app first starts."
-  fi
+  [[ "$OPT_SEED" == "skip" ]] && warn "Skipping database seed. Tables auto-created when app first starts."
 fi
 
 echo ""
@@ -517,9 +449,7 @@ echo ""
 # ─── STEP 4: Build frontend ───────────────────────────────────────────────────
 info "Building frontend..."
 cd "$APP_DIR"
-debug "App dir: $APP_DIR"
 
-# Always install deps if vite binary is missing (covers fresh clone + wiped node_modules)
 if [[ ! -x node_modules/.bin/vite ]]; then
   info "Installing npm dependencies..."
   run_cmd "npm install" npm install --silent
@@ -539,7 +469,6 @@ else
     success "Frontend rebuilt"
   else
     success "Frontend dist is up to date (skipping rebuild)"
-    debug "dist/ is newer than all src/ files"
   fi
 fi
 
@@ -548,66 +477,41 @@ echo ""
 # ─── STEP 5: Generate app.yaml ────────────────────────────────────────────────
 info "Generating app.yaml..."
 
-LAKEBASE_INSTANCE_LINE=""
-if [[ "$IS_PROVISIONED" == "true" ]]; then
-  LAKEBASE_INSTANCE_LINE="  - name: LAKEBASE_INSTANCE_NAME
-    value: \"${OPT_LAKEBASE_INSTANCE}\""
-fi
-
 cat > "$APP_DIR/app.yaml" <<YAML
 command:
   - "node"
   - "app.js"
 env:
-  # ── Databricks Identity ─────────────────────────────────────────────────────
-  # DATABRICKS_HOST is set explicitly so credential generation always works.
+  # ── Databricks Identity ──────────────────────────────────────────────────────
   # DATABRICKS_TOKEN is auto-injected by Databricks Apps at runtime.
   - name: DATABRICKS_HOST
     value: "${OPT_HOST}"
-  # DATABRICKS_TOKEN is auto-injected by Databricks Apps at runtime.
-  # If auto-injection doesn't work on your workspace (provisioned Lakebase),
-  # pass --pat <your-pat> to the deploy script to set it explicitly.
-$(if [[ -n "$OPT_PAT" ]]; then echo "  - name: DATABRICKS_TOKEN"; echo "    value: \"${OPT_PAT}\""; fi)
   - name: DATABRICKS_USER
     value: "${OPT_EMAIL}"
-  # ── Lakebase Connection ─────────────────────────────────────────────────────
+  # ── Lakebase Connection (Autoscaling) ────────────────────────────────────────
   - name: LAKEBASE_HOST
     value: "${LAKEBASE_HOST}"
   - name: LAKEBASE_DB
     value: "${OPT_DB}"
   - name: LAKEBASE_SCHEMA
     value: "${OPT_SCHEMA}"
-${LAKEBASE_INSTANCE_LINE}
-  # ── Branding ────────────────────────────────────────────────────────────────
-  - name: APP_NAME
-    value: "${OPT_APP_NAME}"
-  - name: APP_SUBTITLE
-    value: "${OPT_APP_SUBTITLE}"
-  - name: APP_LOGO_URL
-    value: ""
-  # ── Deployment Mode ─────────────────────────────────────────────────────────
+  # ── Mode ────────────────────────────────────────────────────────────────────
   # "true"  = persona switcher (demo/POC)
   # "false" = real SSO identity + UC GRANT execution
   - name: DEMO_MODE
     value: "${OPT_DEMO_MODE}"
-  # ── Optional: enable real UC GRANT/REVOKE ───────────────────────────────────
-  # - name: SQL_WAREHOUSE_ID
-  #   value: "your-warehouse-id"
-  # ── Optional: enable RFA email/Slack notifications ──────────────────────────
-  # - name: RFA_ENABLED
-  #   value: "true"
+  # ── Branding & integrations are configured via Admin → Settings in the app ──
+  # (portal name, tagline, logo, Genie Space ID, SQL Warehouse ID, RFA toggle)
 YAML
 
-debug "Generated app.yaml:"
-cat "$APP_DIR/app.yaml" >> "$LOG_FILE"
+debug "Generated app.yaml"
 success "app.yaml generated"
 echo ""
 
 # ─── STEP 6: Upload to workspace ─────────────────────────────────────────────
 info "Uploading to workspace: $OPT_WORKSPACE_PATH ..."
 
-debug "Ensuring workspace directory exists..."
-run_cmd "mkdirs" databricks workspace mkdirs "$OPT_WORKSPACE_PATH" --profile "$OPT_PROFILE"
+run_cmd "mkdirs root" databricks workspace mkdirs "$OPT_WORKSPACE_PATH" --profile "$OPT_PROFILE"
 run_cmd "mkdirs dist" databricks workspace mkdirs "${OPT_WORKSPACE_PATH}/dist" --profile "$OPT_PROFILE"
 run_cmd "mkdirs assets" databricks workspace mkdirs "${OPT_WORKSPACE_PATH}/dist/assets" --profile "$OPT_PROFILE"
 
@@ -643,37 +547,33 @@ echo ""
 # ─── STEP 7: Create or update the Databricks App ─────────────────────────────
 info "Deploying Databricks App '$OPT_APP_SLUG'..."
 
-debug "Checking if app '$OPT_APP_SLUG' already exists..."
 APP_EXISTS=$(databricks apps get "$OPT_APP_SLUG" --profile "$OPT_PROFILE" 2>/dev/null | \
   python3 -c "import sys,json; print(json.load(sys.stdin).get('name',''))" 2>/dev/null || true)
-debug "App exists: '${APP_EXISTS}'"
 
 if [[ -z "$APP_EXISTS" ]]; then
-  info "App does not exist yet — creating (waits for compute, ~2 min)..."
-  run_cmd "Create app" databricks apps create "$OPT_APP_SLUG" \
-    --profile "$OPT_PROFILE"
-  success "App created and compute ready"
+  info "App does not exist yet — creating (waits ~2 min for compute)..."
+  run_cmd "Create app" databricks apps create "$OPT_APP_SLUG" --profile "$OPT_PROFILE"
+  success "App created"
 fi
 
-# Ensure compute is in a deployable state before deploying
-info "Checking app compute state..."
+info "Waiting for app compute to be ready..."
 for i in $(seq 1 36); do
   COMPUTE_STATE=$(databricks apps get "$OPT_APP_SLUG" --profile "$OPT_PROFILE" 2>/dev/null | \
     python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('compute_status',{}).get('state',''))" 2>/dev/null || true)
-  debug "Compute state poll $i/36: $COMPUTE_STATE"
+  debug "Compute poll $i/36: $COMPUTE_STATE"
   if [[ "$COMPUTE_STATE" == "ACTIVE" ]]; then
-    success "App compute is ready (state: $COMPUTE_STATE)"
+    success "Compute ready"
     break
   fi
   if [[ $i -eq 36 ]]; then
-    warn "Compute state is '$COMPUTE_STATE' after 3 min. Attempting deploy anyway..."
+    warn "Compute still '$COMPUTE_STATE' after 3 min — attempting deploy anyway..."
   fi
   echo -n "."
   sleep 5
 done
 echo ""
 
-info "Running apps deploy (this takes ~30–60s)..."
+info "Deploying (this takes ~30–60s)..."
 run_cmd "Deploy app" databricks apps deploy "$OPT_APP_SLUG" \
   --source-code-path "$OPT_WORKSPACE_PATH" \
   --profile "$OPT_PROFILE"
@@ -684,35 +584,18 @@ echo ""
 APP_JSON=$(databricks apps get "$OPT_APP_SLUG" --profile "$OPT_PROFILE" 2>/dev/null || true)
 APP_URL=$(echo "$APP_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin).get('url',''))" 2>/dev/null || true)
 APP_STATE=$(echo "$APP_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin).get('app_status',{}).get('state','unknown'))" 2>/dev/null || true)
-debug "App final state: $APP_STATE | url: $APP_URL"
 
 echo -e "${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
 echo -e "${GREEN}${BOLD}  ✅  DataMarket deployed successfully!${RESET}"
 echo -e "${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
 echo ""
-if [[ -n "$APP_URL" ]]; then
-  echo -e "  ${BOLD}App URL:${RESET}      $APP_URL"
-fi
-echo -e "  ${BOLD}App status:${RESET}   $APP_STATE"
-echo -e "  ${DIM}Full log:${RESET}     $LOG_FILE"
+[[ -n "$APP_URL" ]] && echo -e "  ${BOLD}App URL:${RESET}    $APP_URL"
+echo -e "  ${BOLD}Status:${RESET}     $APP_STATE"
+echo -e "  ${DIM}Full log:${RESET}   $LOG_FILE"
 echo ""
 echo -e "  ${BOLD}Next steps:${RESET}"
-echo "  1. Open the app URL above and log in"
+echo "  1. Open the app URL and log in"
 echo "  2. Switch to the Admin persona (top-right dropdown)"
-echo "  3. Go to Discover → click 'Import from Unity Catalog' to populate"
-echo "     your catalog, or click 'Register a Product' to add manually"
-echo ""
-if [[ "$IS_PROVISIONED" == "true" ]] && [[ -z "$OPT_PAT" ]]; then
-  echo ""
-  warn "Using Provisioned Lakebase without --pat. If the app shows empty catalog,"
-  warn "the app's service principal may not have permission to generate DB credentials."
-  warn "Fix: generate a PAT in your workspace (User Settings → Access Tokens) and redeploy:"
-  warn "  ./scripts/deploy.sh ... --pat dapi<your-token>"
-  echo ""
-fi
-
-echo -e "  ${BOLD}Optional customizations (src/app/app.yaml):${RESET}"
-echo "  • SQL_WAREHOUSE_ID   → enable real UC GRANT/REVOKE"
-echo "  • RFA_ENABLED=true   → enable access request email/Slack notifications"
-echo "  • DEMO_MODE=false    → use real SSO identity instead of persona switcher"
+echo "  3. Go to Manage → Settings to set your portal name, logo, and Genie Space"
+echo "  4. Go to Discover → 'Import from Unity Catalog' to populate your catalog"
 echo ""

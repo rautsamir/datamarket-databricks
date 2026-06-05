@@ -11,6 +11,13 @@ build/
 .env.local
 .env.*.local
 
+# Generated app config (contains workspace-specific values — use app.yaml.example as template)
+src/app/app.yaml
+
+# Backup files
+*.bak
+.backup-pre-rfa/
+
 # Databricks CLI / SDK
 .databricks/
 
