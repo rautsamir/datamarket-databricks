@@ -499,6 +499,11 @@ $(if [[ -n "$OPT_PAT" ]]; then printf "  - name: DATABRICKS_TOKEN\n    value: \"
     value: "${OPT_DB}"
   - name: LAKEBASE_SCHEMA
     value: "${OPT_SCHEMA}"
+  # Set when using a Provisioned Lakebase instance (hostname starts with "instance-").
+  # The app uses generate-database-credential instead of the token directly.
+  # Leave blank (or omit) for Autoscaling instances (hostname starts with "ep-").
+  - name: LAKEBASE_INSTANCE_NAME
+    value: "${OPT_LAKEBASE_INSTANCE}"
   # ── Mode ────────────────────────────────────────────────────────────────────
   # "true"  = persona switcher (demo/POC)
   # "false" = real SSO identity + UC GRANT execution
