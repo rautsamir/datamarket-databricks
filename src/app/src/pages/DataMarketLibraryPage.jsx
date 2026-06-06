@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { Search, Plus, BarChart3, FileText, Database, BookmarkCheck, Edit3, Check, X, Upload, Users, ExternalLink, Link2, Shield, Clock, Package, ClipboardList, FolderOpen, ShieldCheck } from 'lucide-react'
+import { Search, Plus, BarChart3, FileText, Database, BookmarkCheck, Edit3, Check, X, Upload, Users, ExternalLink, Link2, Shield, Clock, Package, ClipboardList, FolderOpen, ShieldCheck, Settings, Save, Sparkles } from 'lucide-react'
 import { usePersona } from '../context/PersonaContext'
 import { ImportUCModal } from '../components/ImportUCModal'
 import { DataMarketAdminPage } from './DataMarketAdminPage'
+import { useAppConfig } from '../context/AppConfigContext'
 
 const DataMarket_BLUE = '#003865'
 
@@ -93,6 +94,126 @@ function ProductEditRow({ product, onSave, onCancel }) {
         </div>
       </td>
     </tr>
+  )
+}
+
+// ─── Settings Panel (Steward Only) ────────────────────────────────────────────
+function SettingsPanel() {
+  const { appName, appSubtitle, appLogoUrl, genieSpaceId, sqlWarehouseId, rfaEnabled, setupComplete, demoMode, refreshConfig } = useAppConfig()
+
+  const [form, setForm] = useState({
+    app_name:        appName,
+    app_subtitle:    appSubtitle,
+    app_logo_url:    appLogoUrl || '',
+    genie_space_id:  genieSpaceId || '',
+    sql_warehouse_id:sqlWarehouseId || '',
+    rfa_enabled:     String(rfaEnabled),
+  })
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved]   = useState(false)
+  const [error, setError]   = useState('')
+
+  useEffect(() => {
+    setForm({
+      app_name:        appName,
+      app_subtitle:    appSubtitle,
+      app_logo_url:    appLogoUrl || '',
+      genie_space_id:  genieSpaceId || '',
+      sql_warehouse_id:sqlWarehouseId || '',
+      rfa_enabled:     String(rfaEnabled),
+    })
+  }, [appName, appSubtitle, appLogoUrl, genieSpaceId, sqlWarehouseId, rfaEnabled])
+
+  const handleSave = async () => {
+    setSaving(true); setSaved(false); setError('')
+    try {
+      const r = await fetch('/api/portal/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...form, setup_complete: 'true' }),
+      })
+      if (!r.ok) throw new Error(await r.text())
+      setSaved(true)
+      refreshConfig()
+      setTimeout(() => setSaved(false), 3000)
+    } catch (e) { setError(e.message) }
+    finally { setSaving(false) }
+  }
+
+  const field = (label, key, placeholder = '', hint = '') => (
+    <div>
+      <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
+      <input
+        type="text"
+        value={form[key]}
+        onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
+        placeholder={placeholder}
+        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+      />
+      {hint && <p className="text-xs text-gray-400 mt-1">{hint}</p>}
+    </div>
+  )
+
+  return (
+    <div className="max-w-2xl space-y-8 mt-4">
+      {!setupComplete && (
+        <div className="rounded-xl border border-blue-200 bg-blue-50 p-5 flex gap-4">
+          <Sparkles className="h-6 w-6 text-blue-500 shrink-0 mt-0.5" />
+          <div>
+            <p className="font-semibold text-blue-900 text-sm">Finish setting up your portal</p>
+            <p className="text-blue-700 text-sm mt-1">
+              Set your portal name, connect a Genie Space for Ask AI, and optionally enable real Unity Catalog grants.
+              Click <strong>Save Settings</strong> — changes take effect immediately, no redeploy needed.
+            </p>
+          </div>
+        </div>
+      )}
+      <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-4">
+        <h3 className="font-semibold text-gray-900 text-sm uppercase tracking-wide">Branding</h3>
+        {field('Portal Name', 'app_name', 'DataMarket', 'Displayed in the top navigation bar')}
+        {field('Tagline', 'app_subtitle', 'Data Discovery & Access', 'Subtitle shown under the portal name')}
+        {field('Logo URL', 'app_logo_url', '/your-logo.png', 'Path or full URL. Leave empty to hide.')}
+      </div>
+      <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-4">
+        <h3 className="font-semibold text-gray-900 text-sm uppercase tracking-wide">Integrations</h3>
+        {field('Genie Space ID', 'genie_space_id', '01f3a...', 'Powers the Ask AI page. Find it in Databricks → AI/BI → Genie.')}
+        {field('SQL Warehouse ID', 'sql_warehouse_id', 'abc123...', 'Required to execute real UC GRANT/REVOKE on approval. Leave empty to show SQL without executing.')}
+      </div>
+      <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-4">
+        <h3 className="font-semibold text-gray-900 text-sm uppercase tracking-wide">Mode</h3>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-sm font-medium text-gray-700">RFA Notifications</p>
+            <p className="text-xs text-gray-400 mt-0.5">Send Databricks RFA access-request notifications when a user requests access.</p>
+          </div>
+          <button
+            onClick={() => setForm(f => ({ ...f, rfa_enabled: f.rfa_enabled === 'true' ? 'false' : 'true' }))}
+            className={`relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors ${form.rfa_enabled === 'true' ? 'bg-blue-600' : 'bg-gray-200'}`}
+          >
+            <span className={`pointer-events-none block h-5 w-5 rounded-full bg-white shadow transition-transform ${form.rfa_enabled === 'true' ? 'translate-x-5' : 'translate-x-0'}`} />
+          </button>
+        </div>
+        {demoMode && (
+          <div className="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 text-xs text-amber-800">
+            <strong>Demo Mode is active</strong> (set via DEMO_MODE env var). SSO identity and real UC grants are disabled.
+            To enable production mode, set <code className="font-mono bg-amber-100 px-1 rounded">DEMO_MODE=false</code> in app.yaml and redeploy.
+          </div>
+        )}
+      </div>
+      <div className="flex items-center gap-3">
+        <button
+          onClick={handleSave}
+          disabled={saving}
+          className="flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium text-white transition-colors disabled:opacity-50"
+          style={{ backgroundColor: DataMarket_BLUE }}
+        >
+          <Save className="h-4 w-4" />
+          {saving ? 'Saving…' : 'Save Settings'}
+        </button>
+        {saved && <span className="text-sm text-green-600 flex items-center gap-1"><Check className="h-4 w-4" /> Saved — changes are live</span>}
+        {error && <span className="text-sm text-red-600">{error}</span>}
+      </div>
+    </div>
   )
 }
 
@@ -362,15 +483,15 @@ export function DataMarketLibraryPage({ onNavigate, onOpenProduct, initialTab })
   const pendingApprovalCount = pendingRequests?.length || 0
 
   const tabCounts = isSteward
-    ? { 'Data Products': allProducts.length, 'Manage Approvals': pendingApprovalCount || null, 'Users': null }
+    ? { 'Data Products': allProducts.length, 'Manage Approvals': pendingApprovalCount || null, 'Users': null, 'Settings': null }
     : { 'Data Product': analystItems.filter(i => i.status === 'Approved').length, 'Request': fromRequests.length }
 
-  // Tab config: icon, label, colors per persona
   const tabConfig = isSteward
     ? [
         { id: 'Data Products',    icon: Package,       label: 'Data Products',    desc: 'All registered products',     activeColor: 'bg-blue-600 text-white border-blue-600',    countColor: 'bg-blue-500 text-white' },
         { id: 'Manage Approvals', icon: ShieldCheck,   label: 'Manage Approvals', desc: 'Review access requests',      activeColor: 'bg-amber-500 text-white border-amber-500',  countColor: 'bg-red-500 text-white' },
         { id: 'Users',            icon: Users,         label: 'Users',            desc: 'Manage user roles',           activeColor: 'bg-purple-600 text-white border-purple-600',countColor: 'bg-purple-500 text-white' },
+        { id: 'Settings',         icon: Settings,      label: 'Settings',         desc: 'Configure portal',            activeColor: 'bg-gray-700 text-white border-gray-700',    countColor: 'bg-gray-500 text-white' },
       ]
     : [
         { id: 'Data Product',     icon: FolderOpen,    label: 'My Products',      desc: 'Data you have access to',     activeColor: 'bg-emerald-600 text-white border-emerald-600', countColor: 'bg-emerald-500 text-white' },
@@ -439,6 +560,9 @@ export function DataMarketLibraryPage({ onNavigate, onOpenProduct, initialTab })
 
       {/* ── Users Tab (Steward) ───────────────────────────────────────────────── */}
       {activeTab === 'Users' && isSteward && <UsersPanel />}
+
+      {/* ── Settings Tab (Steward) ────────────────────────────────────────────── */}
+      {activeTab === 'Settings' && isSteward && <SettingsPanel />}
 
       {/* ── Manage Approvals Tab (Steward) — embeds the full admin approval UI ── */}
       {activeTab === 'Manage Approvals' && isSteward && <DataMarketAdminPage embedded />}
