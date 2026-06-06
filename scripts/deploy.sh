@@ -19,7 +19,9 @@
 #   --profile         Databricks CLI profile (from ~/.databrickscfg)
 #   --host            Workspace URL (auto-detected from profile)
 #   --email           Your Databricks login email (Postgres username)
-#   --lakebase-instance  Lakebase Autoscaling instance name (created if missing)
+#   --lakebase-instance  Lakebase instance name to look up or create (Provisioned)
+#   --lakebase-host      Direct hostname override, e.g. ep-foo.database.eastus2.azuredatabricks.net
+#                        Use this for Autoscaling instances — skips instance lookup entirely
 #   --db              Postgres database name (default: databricks_postgres)
 #   --schema          Postgres schema name (default: datamarket)
 #   --app-slug        App name / workspace folder (default: datamarket)
@@ -65,6 +67,7 @@ OPT_PROFILE=""
 OPT_HOST=""
 OPT_EMAIL=""
 OPT_LAKEBASE_INSTANCE=""
+OPT_LAKEBASE_HOST=""    # Direct hostname override — skips instance lookup entirely
 OPT_DB="databricks_postgres"
 OPT_SCHEMA="datamarket"
 OPT_APP_SLUG=""
@@ -86,6 +89,7 @@ while [[ $# -gt 0 ]]; do
     --host)              OPT_HOST="$2";               shift 2 ;;
     --email)             OPT_EMAIL="$2";              shift 2 ;;
     --lakebase-instance) OPT_LAKEBASE_INSTANCE="$2"; shift 2 ;;
+    --lakebase-host)     OPT_LAKEBASE_HOST="$2";     shift 2 ;;
     --db)                OPT_DB="$2";                 shift 2 ;;
     --schema)            OPT_SCHEMA="$2";             shift 2 ;;
     --app-slug)          OPT_APP_SLUG="$2";           shift 2 ;;
@@ -291,35 +295,44 @@ success "Workspace path: $OPT_WORKSPACE_PATH"
 echo ""
 
 # ─── STEP 2: Lakebase setup ───────────────────────────────────────────────────
-info "Setting up Lakebase (Autoscaling)..."
+info "Setting up Lakebase..."
 
-debug "Listing database instances..."
-INSTANCES_JSON=$(databricks database list-database-instances --profile "$OPT_PROFILE" 2>/dev/null || echo "[]")
+LAKEBASE_HOST=""
 
-INSTANCE_NAMES=$(echo "$INSTANCES_JSON" | python3 -c "
+# ── Fast path: hostname provided directly ──────────────────────────────────
+if [[ -n "$OPT_LAKEBASE_HOST" ]]; then
+  LAKEBASE_HOST="$OPT_LAKEBASE_HOST"
+  success "Using provided Lakebase host: $LAKEBASE_HOST"
+else
+  # ── Discover via CLI (Provisioned instances only) ──────────────────────────
+  debug "Listing database instances..."
+  INSTANCES_JSON=$(databricks database list-database-instances --profile "$OPT_PROFILE" 2>/dev/null || echo "[]")
+
+  INSTANCE_NAMES=$(echo "$INSTANCES_JSON" | python3 -c "
 import sys,json
 items = json.load(sys.stdin)
 if isinstance(items, list):
     for i in items: print(i.get('name',''))
 " 2>/dev/null || true)
 
-if [[ -z "$OPT_LAKEBASE_INSTANCE" ]]; then
-  if [[ "$INTERACTIVE" == "true" ]]; then
-    if [[ -n "$INSTANCE_NAMES" ]]; then
-      echo -e "${BOLD}Existing Lakebase instances:${RESET}"
-      echo "$INSTANCE_NAMES" | nl -w2 -s'. '
-      echo ""
-      echo "  Enter a name from the list above, or a new name to create one."
+  if [[ -z "$OPT_LAKEBASE_INSTANCE" ]]; then
+    if [[ "$INTERACTIVE" == "true" ]]; then
+      if [[ -n "$INSTANCE_NAMES" ]]; then
+        echo -e "${BOLD}Existing Lakebase instances:${RESET}"
+        echo "$INSTANCE_NAMES" | nl -w2 -s'. '
+        echo ""
+        echo "  Enter a name from the list above, or a new name to create one."
+        echo "  TIP: For Autoscaling instances (ep-*), use --lakebase-host <hostname> instead."
+      fi
+      read -rp "$(prompt 'Lakebase instance name [datamarket-lakebase]: ')" OPT_LAKEBASE_INSTANCE
+      OPT_LAKEBASE_INSTANCE="$(strip_cr "$OPT_LAKEBASE_INSTANCE")"
     fi
-    read -rp "$(prompt 'Lakebase instance name [datamarket-lakebase]: ')" OPT_LAKEBASE_INSTANCE
-    OPT_LAKEBASE_INSTANCE="$(strip_cr "$OPT_LAKEBASE_INSTANCE")"
+    OPT_LAKEBASE_INSTANCE="${OPT_LAKEBASE_INSTANCE:-datamarket-lakebase}"
   fi
-  OPT_LAKEBASE_INSTANCE="${OPT_LAKEBASE_INSTANCE:-datamarket-lakebase}"
-fi
-debug "Target instance: $OPT_LAKEBASE_INSTANCE"
+  debug "Target instance: $OPT_LAKEBASE_INSTANCE"
 
-# Find instance in list
-INSTANCE_INFO=$(echo "$INSTANCES_JSON" | python3 -c "
+  # Find instance in list
+  INSTANCE_INFO=$(echo "$INSTANCES_JSON" | python3 -c "
 import sys,json
 items=json.load(sys.stdin)
 if not isinstance(items, list): items=[]
@@ -328,42 +341,40 @@ for i in items:
         print(json.dumps(i))
 " 2>/dev/null || true)
 
-LAKEBASE_HOST=""
+  if [[ -n "$INSTANCE_INFO" ]]; then
+    LAKEBASE_HOST=$(echo "$INSTANCE_INFO" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('read_write_dns',''))" 2>/dev/null || true)
+    INSTANCE_STATE=$(echo "$INSTANCE_INFO" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('state','unknown'))" 2>/dev/null || true)
+    IS_STOPPED=$(echo "$INSTANCE_INFO" | python3 -c "import sys,json; d=json.load(sys.stdin); print(str(d.get('effective_stopped',False)).lower())" 2>/dev/null || true)
+    debug "Instance state: $INSTANCE_STATE | stopped: $IS_STOPPED"
+    if [[ "$IS_STOPPED" == "true" ]]; then
+      warn "Instance '$OPT_LAKEBASE_INSTANCE' is stopped. Attempting to start..."
+      run_cmd_tolerant "Start instance" databricks database update-database-instance \
+        "$OPT_LAKEBASE_INSTANCE" --json '{"stopped": false}' --profile "$OPT_PROFILE"
+      sleep 10
+    fi
+    success "Using existing instance: $OPT_LAKEBASE_INSTANCE ($LAKEBASE_HOST)"
+  else
+    warn "Instance '$OPT_LAKEBASE_INSTANCE' not found — creating it..."
+    CREATE_CONFIRM="Y"
+    if [[ "$INTERACTIVE" == "true" ]]; then
+      read -rp "$(prompt "Create it? [Y/n]: ")" CREATE_CONFIRM
+      CREATE_CONFIRM="$(strip_cr "${CREATE_CONFIRM:-Y}")"
+    fi
+    if [[ "$CREATE_CONFIRM" =~ ^[Yy] ]]; then
+      info "Creating Lakebase Autoscaling instance '$OPT_LAKEBASE_INSTANCE'..."
+      run_cmd_tolerant "Create instance (positional)" \
+        databricks database create-database-instance "$OPT_LAKEBASE_INSTANCE" \
+          --json '{}' --profile "$OPT_PROFILE"
+      run_cmd_tolerant "Create instance (JSON body)" \
+        databricks database create-database-instance \
+          --json "{\"name\": \"${OPT_LAKEBASE_INSTANCE}\"}" \
+          --profile "$OPT_PROFILE"
 
-if [[ -n "$INSTANCE_INFO" ]]; then
-  LAKEBASE_HOST=$(echo "$INSTANCE_INFO" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('read_write_dns',''))" 2>/dev/null || true)
-  INSTANCE_STATE=$(echo "$INSTANCE_INFO" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('state','unknown'))" 2>/dev/null || true)
-  IS_STOPPED=$(echo "$INSTANCE_INFO" | python3 -c "import sys,json; d=json.load(sys.stdin); print(str(d.get('effective_stopped',False)).lower())" 2>/dev/null || true)
-  debug "Instance state: $INSTANCE_STATE | stopped: $IS_STOPPED"
-  if [[ "$IS_STOPPED" == "true" ]]; then
-    warn "Instance '$OPT_LAKEBASE_INSTANCE' is stopped. Attempting to start..."
-    run_cmd_tolerant "Start instance" databricks database update-database-instance \
-      "$OPT_LAKEBASE_INSTANCE" --json '{"stopped": false}' --profile "$OPT_PROFILE"
-    sleep 10
-  fi
-  success "Using existing instance: $OPT_LAKEBASE_INSTANCE ($LAKEBASE_HOST)"
-else
-  warn "Instance '$OPT_LAKEBASE_INSTANCE' not found — creating it..."
-  CREATE_CONFIRM="Y"
-  if [[ "$INTERACTIVE" == "true" ]]; then
-    read -rp "$(prompt "Create it? [Y/n]: ")" CREATE_CONFIRM
-    CREATE_CONFIRM="$(strip_cr "${CREATE_CONFIRM:-Y}")"
-  fi
-  if [[ "$CREATE_CONFIRM" =~ ^[Yy] ]]; then
-    info "Creating Lakebase Autoscaling instance '$OPT_LAKEBASE_INSTANCE'..."
-    run_cmd_tolerant "Create instance (positional)" \
-      databricks database create-database-instance "$OPT_LAKEBASE_INSTANCE" \
-        --json '{}' --profile "$OPT_PROFILE"
-    run_cmd_tolerant "Create instance (JSON body)" \
-      databricks database create-database-instance \
-        --json "{\"name\": \"${OPT_LAKEBASE_INSTANCE}\"}" \
-        --profile "$OPT_PROFILE"
-
-    info "Waiting for instance to become available (up to 3 minutes)..."
-    for i in $(seq 1 36); do
-      sleep 5
-      POLL_JSON=$(databricks database list-database-instances --profile "$OPT_PROFILE" 2>/dev/null || echo "[]")
-      STATE=$(echo "$POLL_JSON" | python3 -c "
+      info "Waiting for instance to become available (up to 3 minutes)..."
+      for i in $(seq 1 36); do
+        sleep 5
+        POLL_JSON=$(databricks database list-database-instances --profile "$OPT_PROFILE" 2>/dev/null || echo "[]")
+        STATE=$(echo "$POLL_JSON" | python3 -c "
 import sys,json
 items=json.load(sys.stdin)
 for i in items:
@@ -371,9 +382,9 @@ for i in items:
         print(i.get('state',''))
         break
 " 2>/dev/null || true)
-      debug "Poll $i/36: state=$STATE"
-      if [[ "$STATE" == "AVAILABLE" ]]; then
-        LAKEBASE_HOST=$(echo "$POLL_JSON" | python3 -c "
+        debug "Poll $i/36: state=$STATE"
+        if [[ "$STATE" == "AVAILABLE" ]]; then
+          LAKEBASE_HOST=$(echo "$POLL_JSON" | python3 -c "
 import sys,json
 items=json.load(sys.stdin)
 for i in items:
@@ -381,24 +392,24 @@ for i in items:
         print(i.get('read_write_dns',''))
         break
 " 2>/dev/null || true)
-        break
+          break
+        fi
+        echo -n "."
+      done
+      echo ""
+      [[ -z "$LAKEBASE_HOST" ]] && error "Instance did not become available. Check the Databricks UI and re-run."
+      success "Instance created: $LAKEBASE_HOST"
+    else
+      if [[ "$INTERACTIVE" == "true" ]]; then
+        read -rp "$(prompt 'Lakebase hostname: ')" LAKEBASE_HOST
+        LAKEBASE_HOST="$(strip_cr "$LAKEBASE_HOST")"
       fi
-      echo -n "."
-    done
-    echo ""
-    [[ -z "$LAKEBASE_HOST" ]] && error "Instance did not become available. Check the Databricks UI and re-run."
-    success "Instance created: $LAKEBASE_HOST"
-  else
-    if [[ "$INTERACTIVE" == "true" ]]; then
-      read -rp "$(prompt 'Lakebase hostname: ')" LAKEBASE_HOST
-      LAKEBASE_HOST="$(strip_cr "$LAKEBASE_HOST")"
+      [[ -z "$LAKEBASE_HOST" ]] && error "Lakebase hostname required. Pass --lakebase-host <ep-...> or --lakebase-instance <name>."
     fi
-    [[ -z "$LAKEBASE_HOST" ]] && error "Lakebase hostname required. Pass an existing --lakebase-instance name or create one."
   fi
 fi
 
 debug "Final Lakebase: host=$LAKEBASE_HOST db=$OPT_DB schema=$OPT_SCHEMA"
-echo ""
 
 # ─── STEP 3: Database schema + seed ──────────────────────────────────────────
 if [[ "$OPT_SEED" != "skip" ]] && [[ -n "$PSQL" ]]; then
