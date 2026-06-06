@@ -139,52 +139,43 @@ Once registered as a UC catalog, tables are queryable directly from Databricks S
 
 ### Option A — One-step script (recommended)
 
-**Prerequisites:** Databricks CLI, Node.js ≥ 18, npm. psql optional (for demo data seeding).
-```bash
-# Install CLI:  brew tap databricks/tap && brew install databricks
-# Install Node: brew install node
-# Install psql: brew install postgresql@16  (optional)
-```
+> **Full guide:** [`docs/deploy_guide.md`](docs/deploy_guide.md)
+
+**Prerequisites:** Databricks CLI, Node.js ≥ 18, psql (optional for seeding).
 
 ```bash
 # 1. Clone
 git clone https://github.com/databricks-field-eng/datamarket.git
 cd datamarket
 
-# 2. Authenticate CLI against your workspace
+# 2. Authenticate the CLI
 databricks auth login --host https://your-workspace.azuredatabricks.net --profile my-profile
 
-# 3. Deploy (interactive — will prompt for everything)
+# 3a. Deploy — if you already have a Lakebase Autoscaling instance (ep-* hostname)
+./scripts/deploy.sh \
+  --profile       my-profile \
+  --email         you@company.com \
+  --lakebase-host ep-your-project.database.region.azuredatabricks.net \
+  --seed          demo
+
+# 3b. Deploy — let the script create a Lakebase instance for you
+./scripts/deploy.sh \
+  --profile           my-profile \
+  --email             you@company.com \
+  --lakebase-instance datamarket \
+  --seed              demo
+
+# 3c. Fully interactive — script will prompt for everything
 ./scripts/deploy.sh --profile my-profile
 ```
 
-The script walks you through everything:
-1. Validates CLI auth and detects your workspace URL
-2. Creates or reuses a Lakebase instance
-3. Seeds the database with demo data (if `psql` is available)
-4. Builds the React frontend
-5. Creates workspace directories and uploads all files
-6. Creates the Databricks App and waits for compute to be ready (~2 min)
-7. Deploys and prints the app URL
+> **Azure workspaces:** add `--pat YOUR_DATABRICKS_PAT` if the app can't authenticate at runtime.
 
-> **Note:** The script pauses ~2 minutes while app compute provisions. This is normal — don't Ctrl+C.
+The script handles everything: CLI auth check → Lakebase setup → schema + seed → frontend build → workspace upload → app create/deploy. It prints the app URL when done.
 
-**Non-interactive (CI/CD) usage:**
+> **Branding** (name, tagline, logo, Genie Space ID) is configured in **Admin → Settings** inside the app — no redeploy needed.
 
-```bash
-./scripts/deploy.sh \
-  --profile my-profile \
-  --email you@company.com \
-  --lakebase-instance my-lakebase \
-  --app-slug datamarket \
-  --seed demo
-```
-
-Run `./scripts/deploy.sh --help` for all flags.
-
-> **Branding** (portal name, tagline, logo, Genie Space ID) is configured via **Admin → Settings** in the app itself — no flags needed and no redeploy required when you change them.
-
-**Troubleshooting:** Every run writes a full log to `/tmp/datamarket-deploy-<timestamp>.log`. Run with `--verbose` to see all command output in real time.
+Run `./scripts/deploy.sh --help` for all flags. Full log always written to `/tmp/datamarket-deploy-<ts>.log`; add `--verbose` for live output.
 
 ---
 
