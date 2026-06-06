@@ -71,6 +71,7 @@ OPT_APP_SLUG=""
 OPT_WORKSPACE_PATH=""
 OPT_SEED="demo"
 OPT_DEMO_MODE="true"
+OPT_PAT=""
 VERBOSE="false"
 LOG_FILE="/tmp/datamarket-deploy-$(date +%Y%m%d-%H%M%S).log"
 
@@ -91,13 +92,14 @@ while [[ $# -gt 0 ]]; do
     --workspace-path)    OPT_WORKSPACE_PATH="$2";     shift 2 ;;
     --seed)              OPT_SEED="$2";               shift 2 ;;
     --demo-mode)         OPT_DEMO_MODE="$2";          shift 2 ;;
+    --pat)               OPT_PAT="$2";                shift 2 ;;
     --verbose|-v)        VERBOSE="true";              shift ;;
     --log-file)          LOG_FILE="$2";               shift 2 ;;
     --help|-h)
       sed -n '/^# Usage/,/^# Branding/p' "$0" | head -30
       exit 0 ;;
     # Compatibility shims — silently ignore deprecated flags
-    --lakebase-type|--app-name|--app-subtitle|--pat) shift 2 ;;
+    --lakebase-type|--app-name|--app-subtitle) shift 2 ;;
     *) error "Unknown flag: $1. Run with --help for usage." ;;
   esac
 done
@@ -484,10 +486,12 @@ command:
 env:
   # ── Databricks Identity ──────────────────────────────────────────────────────
   # DATABRICKS_TOKEN is auto-injected by Databricks Apps at runtime.
+  # On some Azure workspaces it is not injected — pass --pat to set it explicitly.
   - name: DATABRICKS_HOST
     value: "${OPT_HOST}"
   - name: DATABRICKS_USER
     value: "${OPT_EMAIL}"
+$(if [[ -n "$OPT_PAT" ]]; then printf "  - name: DATABRICKS_TOKEN\n    value: \"%s\"\n" "$OPT_PAT"; fi)
   # ── Lakebase Connection (Autoscaling) ────────────────────────────────────────
   - name: LAKEBASE_HOST
     value: "${LAKEBASE_HOST}"
@@ -599,3 +603,10 @@ echo "  2. Switch to the Admin persona (top-right dropdown)"
 echo "  3. Go to Manage → Settings to set your portal name, logo, and Genie Space"
 echo "  4. Go to Discover → 'Import from Unity Catalog' to populate your catalog"
 echo ""
+
+if [[ -z "$OPT_PAT" ]]; then
+  warn "If UC Import shows 'DATABRICKS_TOKEN required', your workspace may not auto-inject the token."
+  warn "Fix: generate a PAT (User Settings → Developer → Access Tokens) and redeploy with:"
+  warn "  ./scripts/deploy.sh ... --pat dapi<your-token>"
+  echo ""
+fi
