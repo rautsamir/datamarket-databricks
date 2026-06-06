@@ -492,18 +492,19 @@ env:
   - name: DATABRICKS_USER
     value: "${OPT_EMAIL}"
 $(if [[ -n "$OPT_PAT" ]]; then printf "  - name: DATABRICKS_TOKEN\n    value: \"%s\"\n" "$OPT_PAT"; fi)
-  # ── Lakebase Connection (Autoscaling) ────────────────────────────────────────
+  # ── Lakebase Connection ──────────────────────────────────────────────────────
   - name: LAKEBASE_HOST
     value: "${LAKEBASE_HOST}"
   - name: LAKEBASE_DB
     value: "${OPT_DB}"
   - name: LAKEBASE_SCHEMA
     value: "${OPT_SCHEMA}"
-  # Set when using a Provisioned Lakebase instance (hostname starts with "instance-").
-  # The app uses generate-database-credential instead of the token directly.
-  # Leave blank (or omit) for Autoscaling instances (hostname starts with "ep-").
-  - name: LAKEBASE_INSTANCE_NAME
-    value: "${OPT_LAKEBASE_INSTANCE}"
+$(if [[ "$LAKEBASE_HOST" == instance-* ]]; then
+  printf "  # Provisioned instance — app generates short-lived DB credentials via REST API.\n"
+  printf "  - name: LAKEBASE_INSTANCE_NAME\n    value: \"%s\"\n" "$OPT_LAKEBASE_INSTANCE"
+else
+  printf "  # Autoscaling instance — DATABRICKS_TOKEN used directly as Postgres password.\n"
+fi)
   # ── Mode ────────────────────────────────────────────────────────────────────
   # "true"  = persona switcher (demo/POC)
   # "false" = real SSO identity + UC GRANT execution
