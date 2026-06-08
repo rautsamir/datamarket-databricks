@@ -260,11 +260,49 @@ async function runMigrations() {
     // Always ensure the three core demo users exist — safe upsert, never overwrites existing rows
     await query(`
       INSERT INTO users (email, display_name, role, department) VALUES
-        ('analyst@example.org',     'Alex Analyst',   'analyst',   'Finance'),
-        ('manager@example.org',     'Morgan Manager', 'manager',   'Operations'),
-        ('datasteward@example.org', 'Dana Steward',   'steward',   'Data Governance')
+        ('analyst@example.org',     'Alex Analyst',   'analyst',      'Finance'),
+        ('manager@example.org',     'Morgan Manager', 'manager',      'Operations'),
+        ('datasteward@example.org', 'Dana Steward',   'data_steward', 'Data Governance')
       ON CONFLICT (email) DO NOTHING
     `);
+
+    // Auto-seed demo data products if catalog is empty and DEMO_MODE is on
+    if (DEMO_MODE) {
+      const { rows: [{ cnt }] } = await query(`SELECT COUNT(*)::int AS cnt FROM data_products`);
+      if (cnt === 0) {
+        console.log('[Lakebase] Empty catalog detected in DEMO_MODE — seeding demo products...');
+        await query(`
+          INSERT INTO data_products (product_ref, uc_full_name, display_name, description, type, domain, tags, source_system, refresh_frequency, owner_email, classification, last_refreshed) VALUES
+            ('DP-001', 'your_catalog.your_schema.revenue_summary',
+             'Revenue Summary', 'Monthly revenue aggregations by business unit and region.',
+             'Dataset', 'Finance', ARRAY['revenue','monthly','kpi'], 'ERP', 'Monthly', 'datasteward@example.org', 'Internal', NOW() - INTERVAL '5 days'),
+            ('DP-002', 'your_catalog.your_schema.customer_360',
+             'Customer 360', 'Unified customer profile combining CRM, support, and usage data.',
+             'Dataset', 'Operations', ARRAY['customer','crm','unified'], 'CRM', 'Daily', 'datasteward@example.org', 'Confidential', NOW() - INTERVAL '1 day'),
+            ('DP-003', 'your_catalog.your_schema.vendor_payments',
+             'Vendor Payments', 'All vendor payment transactions with contract and PO references.',
+             'Dataset', 'Finance', ARRAY['vendor','payments','procurement'], 'AP System', 'Weekly', 'datasteward@example.org', 'Confidential', NOW() - INTERVAL '3 days'),
+            ('DP-004', NULL,
+             'Operational KPI Dashboard', 'Executive dashboard showing service delivery metrics across all departments.',
+             'Dashboard', 'Operations', ARRAY['dashboard','kpi','executive'], 'Databricks', 'Daily', 'datasteward@example.org', 'Internal', NOW() - INTERVAL '1 day'),
+            ('DP-005', 'your_catalog.your_schema.employee_headcount',
+             'Employee Headcount', 'Active employee counts by department, location, and classification.',
+             'Dataset', 'HR', ARRAY['hr','headcount','workforce'], 'HRIS', 'Monthly', 'datasteward@example.org', 'Confidential', NOW() - INTERVAL '15 days'),
+            ('DP-006', 'your_catalog.your_schema.service_requests',
+             'Service Requests', 'Citizen and internal service requests with status tracking and SLA metrics.',
+             'Dataset', 'Operations', ARRAY['service','requests','sla'], 'ServiceNow', 'Daily', 'datasteward@example.org', 'Internal', NOW() - INTERVAL '1 day'),
+            ('DP-007', NULL,
+             'Budget vs. Actuals Report', 'Automated report comparing approved budget to actual expenditure by quarter.',
+             'Report', 'Finance', ARRAY['budget','report','quarterly'], 'ERP', 'Quarterly', 'datasteward@example.org', 'Internal', NOW() - INTERVAL '45 days'),
+            ('DP-008', 'your_catalog.your_schema.it_asset_inventory',
+             'IT Asset Inventory', 'Complete inventory of hardware, software, and cloud assets with lifecycle status.',
+             'Dataset', 'IT', ARRAY['assets','inventory','it'], 'CMDB', 'Weekly', 'datasteward@example.org', 'Internal', NOW() - INTERVAL '4 days')
+          ON CONFLICT (product_ref) DO NOTHING
+        `);
+        console.log('[Lakebase] Demo products seeded');
+      }
+    }
+
     console.log('[Lakebase] Migrations applied');
   } catch (e) {
     console.warn('[Lakebase] Migration warning (non-fatal):', e.message);
@@ -1083,6 +1121,80 @@ app.use((err, req, res, next) => {
 });
 
 // ─── Demo Reset (admin only) ───────────────────────────────────────────────
+app.post('/api/portal/demo-seed', async (req, res) => {
+  if (!DEMO_MODE) {
+    return res.status(403).json({ error: 'Demo seed is disabled in production mode.' });
+  }
+  try {
+    await query(`
+      INSERT INTO users (email, display_name, role, department) VALUES
+        ('analyst@example.org',     'Alex Analyst',   'analyst',      'Finance'),
+        ('manager@example.org',     'Morgan Manager', 'manager',       'Operations'),
+        ('datasteward@example.org', 'Dana Steward',   'data_steward', 'Data Governance')
+      ON CONFLICT (email) DO NOTHING
+    `);
+
+    await query(`
+      INSERT INTO data_products (product_ref, uc_full_name, display_name, description, type, domain, tags, source_system, refresh_frequency, owner_email, classification, last_refreshed) VALUES
+        ('DP-001', 'your_catalog.your_schema.revenue_summary',
+         'Revenue Summary', 'Monthly revenue aggregations by business unit and region.',
+         'Dataset', 'Finance', ARRAY['revenue','monthly','kpi'], 'ERP', 'Monthly', 'datasteward@example.org', 'Internal', NOW() - INTERVAL '5 days'),
+        ('DP-002', 'your_catalog.your_schema.customer_360',
+         'Customer 360', 'Unified customer profile combining CRM, support, and usage data.',
+         'Dataset', 'Operations', ARRAY['customer','crm','unified'], 'CRM', 'Daily', 'datasteward@example.org', 'Confidential', NOW() - INTERVAL '1 day'),
+        ('DP-003', 'your_catalog.your_schema.vendor_payments',
+         'Vendor Payments', 'All vendor payment transactions with contract and PO references.',
+         'Dataset', 'Finance', ARRAY['vendor','payments','procurement'], 'AP System', 'Weekly', 'datasteward@example.org', 'Confidential', NOW() - INTERVAL '3 days'),
+        ('DP-004', NULL,
+         'Operational KPI Dashboard', 'Executive dashboard showing service delivery metrics across all departments.',
+         'Dashboard', 'Operations', ARRAY['dashboard','kpi','executive'], 'Databricks', 'Daily', 'datasteward@example.org', 'Internal', NOW() - INTERVAL '1 day'),
+        ('DP-005', 'your_catalog.your_schema.employee_headcount',
+         'Employee Headcount', 'Active employee counts by department, location, and classification.',
+         'Dataset', 'HR', ARRAY['hr','headcount','workforce'], 'HRIS', 'Monthly', 'datasteward@example.org', 'Confidential', NOW() - INTERVAL '15 days'),
+        ('DP-006', 'your_catalog.your_schema.service_requests',
+         'Service Requests', 'Citizen and internal service requests with status tracking and SLA metrics.',
+         'Dataset', 'Operations', ARRAY['service','requests','sla'], 'ServiceNow', 'Daily', 'datasteward@example.org', 'Internal', NOW() - INTERVAL '1 day'),
+        ('DP-007', NULL,
+         'Budget vs. Actuals Report', 'Automated report comparing approved budget to actual expenditure by quarter.',
+         'Report', 'Finance', ARRAY['budget','report','quarterly'], 'ERP', 'Quarterly', 'datasteward@example.org', 'Internal', NOW() - INTERVAL '45 days'),
+        ('DP-008', 'your_catalog.your_schema.it_asset_inventory',
+         'IT Asset Inventory', 'Complete inventory of hardware, software, and cloud assets with lifecycle status.',
+         'Dataset', 'IT', ARRAY['assets','inventory','it'], 'CMDB', 'Weekly', 'datasteward@example.org', 'Internal', NOW() - INTERVAL '4 days')
+      ON CONFLICT (product_ref) DO NOTHING
+    `);
+
+    await query(`
+      INSERT INTO access_requests (request_ref, product_id, requester_id, requester_team, business_reason, access_level, status)
+      SELECT 'REQ-001',
+             (SELECT product_id FROM data_products WHERE product_ref = 'DP-002'),
+             (SELECT user_id FROM users WHERE email = 'analyst@example.org'),
+             'Finance',
+             'Need customer data for quarterly churn analysis report.',
+             'Read Only', 'Pending'
+      WHERE NOT EXISTS (SELECT 1 FROM access_requests WHERE request_ref = 'REQ-001')
+    `);
+
+    await query(`
+      INSERT INTO audit_log (event_type, actor_email, target_name, metadata) VALUES
+        ('REQUEST_SUBMITTED', 'analyst@example.org', 'REQ-001',
+         '{"productRef":"DP-002","reason":"Quarterly churn analysis"}')
+      ON CONFLICT DO NOTHING
+    `);
+
+    const { rows: counts } = await query(`
+      SELECT
+        (SELECT COUNT(*) FROM data_products) AS products,
+        (SELECT COUNT(*) FROM users)         AS users,
+        (SELECT COUNT(*) FROM access_requests) AS requests
+    `);
+    console.log('[demo-seed] Seeded:', counts[0]);
+    res.json({ success: true, counts: counts[0] });
+  } catch (e) {
+    console.error('[demo-seed]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.post('/api/portal/demo-reset', async (req, res) => {
   if (!DEMO_MODE) {
     return res.status(403).json({ error: 'Demo reset is disabled in production mode (DEMO_MODE=false).' });
@@ -1136,7 +1248,19 @@ const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`📡 RFA: ${RFA_ENABLED ? 'ENABLED' : 'disabled'} | UC Grants: ${!DEMO_MODE && SQL_WAREHOUSE_ID ? 'ENABLED' : 'disabled'}`);
   console.log(`📊 Health: http://localhost:${PORT}/api/health`);
   getPool()
-    .then(() => { console.log('✅ Lakebase pool initialized'); return runMigrations(); })
+    .then(() => {
+      console.log('✅ Lakebase pool initialized');
+      // Retry migrations — Autoscaling Lakebase may need a moment to wake from idle
+      const tryMigrate = (attempt) => runMigrations().catch(e => {
+        if (attempt < 5) {
+          console.warn(`⚠️  Migration attempt ${attempt} failed (${e.message}) — retrying in 8s...`);
+          setTimeout(() => tryMigrate(attempt + 1), 8000);
+        } else {
+          console.warn('⚠️  Migrations skipped after 5 attempts:', e.message);
+        }
+      });
+      tryMigrate(1);
+    })
     .catch(e => console.warn('⚠️  Lakebase init deferred:', e.message));
 });
 
