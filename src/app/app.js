@@ -15,14 +15,15 @@ const app = express();
 const PORT = process.env.DATABRICKS_APP_PORT || process.env.PORT || 3000;
 
 // ─── Lakebase connection config ───────────────────────────────────────────────
-// Autoscaling instances: set LAKEBASE_HOST, LAKEBASE_DB, LAKEBASE_SCHEMA.
-//   DATABRICKS_TOKEN (auto-injected by Apps) is used directly as PG password.
-// Provisioned instances: also set LAKEBASE_INSTANCE_NAME.
-//   A short-lived DB credential is generated via the REST API each connection.
+// Autoscaling: LAKEBASE_HOST + LAKEBASE_ENDPOINT (recommended for Databricks Apps).
+//   Apps inject DATABRICKS_CLIENT_ID/SECRET; app exchanges for OAuth + DB credential.
+//   Legacy/user mode: injected user OAuth JWT (DATABRICKS_TOKEN) used directly as PG password.
+// Provisioned: also set LAKEBASE_INSTANCE_NAME (short-lived cred via /api/2.0/database/credentials).
 const LAKEBASE_HOST          = process.env.LAKEBASE_HOST          || 'your-project.database.eastus2.azuredatabricks.net';
 const LAKEBASE_DB            = process.env.LAKEBASE_DB            || 'databricks_postgres';
 const LAKEBASE_SCHEMA        = process.env.LAKEBASE_SCHEMA        || 'datamarket';
 const LAKEBASE_INSTANCE_NAME = process.env.LAKEBASE_INSTANCE_NAME || '';
+const LAKEBASE_ENDPOINT      = process.env.LAKEBASE_ENDPOINT      || '';
 
 const DEMO_MODE        = (process.env.DEMO_MODE || 'true').toLowerCase() === 'true';
 const SQL_WAREHOUSE_ID = process.env.SQL_WAREHOUSE_ID || '';
@@ -37,6 +38,151 @@ let dbPool = null;
 let poolCreatedAt = 0;
 const POOL_TTL_MS = 55 * 60 * 1000; // recreate pool every 55 min (token TTL is 1h)
 
+function getDatabricksHost() {
+  return (process.env.DATABRICKS_HOST || '').replace(/^https?:\/\//, '');
+}
+
+function isPat(token) {
+  return typeof token === 'string' && token.startsWith('dapi');
+}
+
+function httpsJsonRequest({ hostname, path, method = 'GET', headers = {}, body = null }) {
+  return new Promise((resolve, reject) => {
+    const req = https.request({ hostname, path, method, headers }, (res) => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => {
+        try {
+          resolve({ status: res.statusCode, data: data ? JSON.parse(data) : {} });
+        } catch (_) {
+          reject(new Error(`Bad JSON response from ${path}`));
+        }
+      });
+    });
+    req.on('error', reject);
+    if (body) req.write(body);
+    req.end();
+  });
+}
+
+async function fetchM2MToken() {
+  const clientId = process.env.DATABRICKS_CLIENT_ID || '';
+  const clientSecret = process.env.DATABRICKS_CLIENT_SECRET || '';
+  const host = getDatabricksHost();
+  if (!clientId || !clientSecret || !host) {
+    throw new Error('DATABRICKS_CLIENT_ID, DATABRICKS_CLIENT_SECRET, and DATABRICKS_HOST are required');
+  }
+  const body = 'grant_type=client_credentials&scope=all-apis';
+  const { status, data } = await httpsJsonRequest({
+    hostname: host,
+    path: '/oidc/v1/token',
+    method: 'POST',
+    headers: {
+      Authorization: `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString('base64')}`,
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Content-Length': Buffer.byteLength(body),
+    },
+    body,
+  });
+  if (status !== 200 || !data.access_token) {
+    throw new Error(`OAuth token request failed (${status}): ${JSON.stringify(data)}`);
+  }
+  return data.access_token;
+}
+
+// Workspace auth for Databricks REST APIs (UC import, SQL, RFA).
+async function getWorkspaceOAuthToken() {
+  const envToken = process.env.DATABRICKS_TOKEN || process.env.DATABRICKS_RUNTIME_TOKEN || '';
+  if (envToken && !isPat(envToken)) return envToken;
+
+  const apiPat = process.env.DATABRICKS_API_TOKEN || (isPat(envToken) ? envToken : '');
+  if (apiPat) return apiPat;
+
+  return fetchM2MToken();
+}
+
+async function generateProvisionedDbCredential(oauthToken) {
+  const host = getDatabricksHost();
+  const payload = JSON.stringify({
+    instance_names: [LAKEBASE_INSTANCE_NAME],
+    request_id: `dm-${Date.now()}`,
+  });
+  const { status, data } = await httpsJsonRequest({
+    hostname: host,
+    path: '/api/2.0/database/credentials',
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${oauthToken}`,
+      'Content-Type': 'application/json',
+      'Content-Length': Buffer.byteLength(payload),
+    },
+    body: payload,
+  });
+  if (!data.token) {
+    throw new Error(`DB credential generation failed (${status}): ${JSON.stringify(data)}`);
+  }
+  return data.token;
+}
+
+async function generateAutoscaleDbCredential(oauthToken, endpoint) {
+  const host = getDatabricksHost();
+  const payload = JSON.stringify({ endpoint });
+  const { status, data } = await httpsJsonRequest({
+    hostname: host,
+    path: '/api/2.0/postgres/credentials',
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${oauthToken}`,
+      'Content-Type': 'application/json',
+      'Content-Length': Buffer.byteLength(payload),
+    },
+    body: payload,
+  });
+  if (!data.token) {
+    throw new Error(`Autoscale DB credential failed (${status}): ${JSON.stringify(data)}`);
+  }
+  return data.token;
+}
+
+async function resolveAutoscaleLakebaseAuth() {
+  const userToken = process.env.DATABRICKS_TOKEN || process.env.DATABRICKS_RUNTIME_TOKEN
+    || process.env.LAKEBASE_PASSWORD || '';
+
+  // Legacy/user path: OAuth JWT used directly as Postgres password (local deploy + some Apps).
+  if (userToken && !isPat(userToken) && !LAKEBASE_ENDPOINT) {
+    const pgUser = process.env.LAKEBASE_PGUSER || process.env.DATABRICKS_USER;
+    if (!pgUser) throw new Error('DATABRICKS_USER env var is required');
+    return { pgPassword: userToken, pgUser, mode: 'Autoscaling (user OAuth token)' };
+  }
+
+  if (isPat(userToken)) {
+    throw new Error(
+      'A PAT cannot be used as the Lakebase Postgres password. ' +
+      'Remove DATABRICKS_TOKEN from app.yaml (use DATABRICKS_API_TOKEN for UC Import via --pat).'
+    );
+  }
+
+  const endpoint = LAKEBASE_ENDPOINT;
+  if (!endpoint) {
+    throw new Error(
+      'LAKEBASE_ENDPOINT is required for Lakebase Autoscaling in Databricks Apps. ' +
+      'Find it with: databricks postgres list-endpoints projects/<project>/branches/production ' +
+      '— then redeploy with --lakebase-endpoint.'
+    );
+  }
+
+  const oauthToken = await fetchM2MToken();
+  const pgPassword = await generateAutoscaleDbCredential(oauthToken, endpoint);
+  // Apps connect as the app service principal (UUID). deploy.sh creates this Postgres role + schema grants.
+  const pgUser = process.env.LAKEBASE_PGUSER
+    || process.env.DATABRICKS_CLIENT_ID
+    || process.env.DATABRICKS_USER;
+  if (!pgUser) {
+    throw new Error('LAKEBASE_PGUSER, DATABRICKS_CLIENT_ID, or DATABRICKS_USER is required');
+  }
+  return { pgPassword, pgUser, mode: `Autoscaling (Apps SP ${pgUser.slice(0, 8)}… + credential API)` };
+}
+
 async function getPool() {
   const now = Date.now();
   // Recreate pool before token expires so in-flight queries aren't dropped
@@ -45,52 +191,26 @@ async function getPool() {
   if (dbPool) { try { await dbPool.end(); } catch (_) {} }
 
   let pgPassword;
+  let pgUser;
   if (LAKEBASE_INSTANCE_NAME) {
-    // Provisioned instance: generate a short-lived DB credential via REST API
     console.log(`[Lakebase] Generating DB credential for provisioned instance "${LAKEBASE_INSTANCE_NAME}"...`);
-    const host = (process.env.DATABRICKS_HOST || '').replace(/^https?:\/\//, '');
-    // DATABRICKS_TOKEN is auto-injected by Databricks Apps; DATABRICKS_RUNTIME_TOKEN is
-    // the fallback name used on some Azure workspaces.
-    const pat  = process.env.DATABRICKS_TOKEN || process.env.DATABRICKS_RUNTIME_TOKEN || '';
-    if (!host || !pat) {
-      console.error(`[Lakebase] Env check — DATABRICKS_HOST: "${process.env.DATABRICKS_HOST || '(unset)'}", DATABRICKS_TOKEN: ${pat ? '(set)' : '(unset)'}`);
-      throw new Error('DATABRICKS_HOST and DATABRICKS_TOKEN required for credential generation');
-    }
-    const credResult = await new Promise((resolve, reject) => {
-      const payload = JSON.stringify({ instance_names: [LAKEBASE_INSTANCE_NAME], request_id: `dm-${Date.now()}` });
-      const req = https.request({
-        hostname: host,
-        path: '/api/2.0/database/credentials',
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${pat}`,
-          'Content-Type': 'application/json',
-          'Content-Length': Buffer.byteLength(payload),
-        },
-      }, (res) => {
-        let data = '';
-        res.on('data', c => data += c);
-        res.on('end', () => { try { resolve(JSON.parse(data)); } catch (_) { reject(new Error('Bad credential response')); } });
-      });
-      req.on('error', reject);
-      req.write(payload);
-      req.end();
-    });
-    pgPassword = credResult.token;
-    if (!pgPassword) throw new Error(`DB credential generation failed: ${JSON.stringify(credResult)}`);
+    const oauthToken = await getWorkspaceOAuthToken();
+    pgPassword = await generateProvisionedDbCredential(oauthToken);
+    pgUser = process.env.LAKEBASE_PGUSER || process.env.DATABRICKS_USER;
+    if (!pgUser) throw new Error('DATABRICKS_USER env var is required');
     console.log('[Lakebase] Creating connection pool (Provisioned)...');
   } else {
-    // Autoscaling instance: use DATABRICKS_TOKEN (OAuth) directly as PG password
-    pgPassword = process.env.DATABRICKS_TOKEN || process.env.LAKEBASE_PASSWORD || '';
-    if (!pgPassword) throw new Error('DATABRICKS_TOKEN is required for Lakebase Autoscaling');
-    console.log('[Lakebase] Creating connection pool (Autoscaling)...');
+    const auth = await resolveAutoscaleLakebaseAuth();
+    pgPassword = auth.pgPassword;
+    pgUser = auth.pgUser;
+    console.log(`[Lakebase] Creating connection pool (${auth.mode})...`);
   }
 
   dbPool = new Pool({
     host:     LAKEBASE_HOST,
     port:     5432,
     database: LAKEBASE_DB,
-    user:     process.env.DATABRICKS_USER || (() => { throw new Error('DATABRICKS_USER env var is required'); })(),
+    user:     pgUser,
     password: pgPassword,
     ssl:      { rejectUnauthorized: true },
     max:      5,
@@ -110,30 +230,24 @@ async function query(sql, params = []) {
 }
 
 // ─── Databricks REST API helper ──────────────────────────────────────────────
-function databricksApi(method, apiPath, body = null) {
-  return new Promise((resolve, reject) => {
-    const host = (process.env.DATABRICKS_HOST || '').replace(/^https?:\/\//, '');
-    const token = process.env.DATABRICKS_TOKEN || '';
-    if (!host || !token) return reject(new Error('DATABRICKS_HOST or DATABRICKS_TOKEN not set'));
+async function databricksApi(method, apiPath, body = null) {
+  const host = getDatabricksHost();
+  const token = await getWorkspaceOAuthToken();
+  if (!host || !token) throw new Error('DATABRICKS_HOST or workspace credentials not set');
 
-    const payload = body ? JSON.stringify(body) : null;
-    const options = {
-      hostname: host, path: apiPath, method,
-      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json',
-                 ...(payload ? { 'Content-Length': Buffer.byteLength(payload) } : {}) }
-    };
-    const req = https.request(options, (res) => {
-      let data = '';
-      res.on('data', chunk => data += chunk);
-      res.on('end', () => {
-        try { resolve({ status: res.statusCode, data: data ? JSON.parse(data) : {} }); }
-        catch (_) { resolve({ status: res.statusCode, data, raw: true }); }
-      });
-    });
-    req.on('error', reject);
-    if (payload) req.write(payload);
-    req.end();
+  const payload = body ? JSON.stringify(body) : null;
+  const { status, data } = await httpsJsonRequest({
+    hostname: host,
+    path: apiPath,
+    method,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+      ...(payload ? { 'Content-Length': Buffer.byteLength(payload) } : {}),
+    },
+    body: payload,
   });
+  return { status, data };
 }
 
 // ─── RFA: Send access request notification to configured destinations ────────
@@ -235,16 +349,12 @@ async function fetchUcSchema(ucFullName) {
 }
 
 // ─── Schema migration — run at startup ───────────────────────────────────────
+// DDL lives in schema/schema.sql (applied by deploy.sh). The app SP has DML grants
+// but not table ownership, so avoid ALTER TABLE here — use UPDATE/INSERT only.
 async function runMigrations() {
   try {
-    // Add status + updated_at to data_products if missing (for product registration flow)
-    await query(`ALTER TABLE data_products ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'Published'`);
-    await query(`ALTER TABLE data_products ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW()`);
-    await query(`ALTER TABLE data_products ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW()`);
     // Mark all existing rows as Published so they stay visible
     await query(`UPDATE data_products SET status = 'Published' WHERE status IS NULL`);
-    await query(`ALTER TABLE access_requests ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ`);
-    await query(`ALTER TABLE data_products ADD COLUMN IF NOT EXISTS last_refreshed TIMESTAMPTZ`);
     // Seed last_refreshed with plausible values based on refresh_frequency
     await query(`UPDATE data_products SET last_refreshed =
       CASE refresh_frequency
@@ -254,8 +364,6 @@ async function runMigrations() {
         ELSE                NOW() - (RANDOM() * INTERVAL '365 days')
       END
       WHERE last_refreshed IS NULL AND refresh_frequency IS NOT NULL`);
-    await query(`ALTER TABLE data_products ADD COLUMN IF NOT EXISTS source_type VARCHAR(20) DEFAULT 'Databricks'`);
-    await query(`ALTER TABLE data_products ADD COLUMN IF NOT EXISTS report_url TEXT DEFAULT NULL`);
     await query(`UPDATE data_products SET source_type = 'Databricks' WHERE source_type IS NULL`);
     // Always ensure the three core demo users exist — safe upsert, never overwrites existing rows
     await query(`
@@ -440,12 +548,6 @@ app.post('/api/portal/products', async (req, res) => {
     const { name, description, type, source, tags, refreshFrequency,
             ownerEmail, classification, ucFullName, domain, hasPII, submittedBy, productUrl } = req.body;
     if (!name || !description) return res.status(400).json({ error: 'name and description are required' });
-
-    // Ensure columns exist before inserting
-    await query(`ALTER TABLE data_products ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'Published'`);
-    await query(`ALTER TABLE data_products ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW()`);
-    await query(`ALTER TABLE data_products ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW()`);
-    await query(`ALTER TABLE data_products ADD COLUMN IF NOT EXISTS product_url TEXT DEFAULT NULL`);
 
     // Generate a sequential ref after current max
     const { rows: [maxRow] } = await query(
@@ -994,16 +1096,16 @@ function ucApiRequest(host, token, path) {
   });
 }
 
-function getUcAuth() {
-  const host = (process.env.DATABRICKS_HOST || '').replace(/^https?:\/\//, '');
-  const token = process.env.DATABRICKS_TOKEN || process.env.DATABRICKS_RUNTIME_TOKEN || '';
-  if (!host || !token) throw new Error('DATABRICKS_HOST and DATABRICKS_TOKEN are required');
+async function getUcAuth() {
+  const host = getDatabricksHost();
+  const token = await getWorkspaceOAuthToken();
+  if (!host || !token) throw new Error('DATABRICKS_HOST and workspace credentials are required');
   return { host, token };
 }
 
 app.get('/api/portal/admin/uc-catalogs', async (req, res) => {
   try {
-    const { host, token } = getUcAuth();
+    const { host, token } = await getUcAuth();
     const data = await ucApiRequest(host, token, '/api/2.1/unity-catalog/catalogs');
     const catalogs = (data.catalogs || []).map(c => ({ name: c.name, comment: c.comment }));
     res.json({ catalogs });
@@ -1016,7 +1118,7 @@ app.get('/api/portal/admin/uc-schemas', async (req, res) => {
   try {
     const { catalog } = req.query;
     if (!catalog) return res.status(400).json({ error: 'catalog param required' });
-    const { host, token } = getUcAuth();
+    const { host, token } = await getUcAuth();
     const data = await ucApiRequest(host, token,
       `/api/2.1/unity-catalog/schemas?catalog_name=${encodeURIComponent(catalog)}`);
     const schemas = (data.schemas || []).map(s => ({ name: s.name, full_name: s.full_name, comment: s.comment }));
@@ -1030,7 +1132,7 @@ app.get('/api/portal/admin/uc-tables-browse', async (req, res) => {
   try {
     const { catalog, schema } = req.query;
     if (!catalog || !schema) return res.status(400).json({ error: 'catalog and schema params required' });
-    const { host, token } = getUcAuth();
+    const { host, token } = await getUcAuth();
     const { rows: existing } = await query(
       `SELECT uc_full_name FROM data_products WHERE uc_full_name IS NOT NULL AND uc_full_name != ''`);
     const registered = new Set(existing.map(r => r.uc_full_name));
