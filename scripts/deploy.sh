@@ -22,6 +22,8 @@
 #   --lakebase-instance  Lakebase instance name to look up or create (Provisioned)
 #   --lakebase-host      Direct hostname override, e.g. ep-foo.database.eastus2.azuredatabricks.net
 #                        Use this for Autoscaling instances — skips instance lookup entirely
+#   --lakebase-endpoint  Autoscaling endpoint resource name (required for Databricks Apps), e.g.
+#                        projects/my-project/branches/production/endpoints/ep-my-project-abc123
 #   --db              Postgres database name (default: databricks_postgres)
 #   --schema          Postgres schema name (default: datamarket)
 #   --app-slug        App name / workspace folder (default: datamarket)
@@ -68,6 +70,7 @@ OPT_HOST=""
 OPT_EMAIL=""
 OPT_LAKEBASE_INSTANCE=""
 OPT_LAKEBASE_HOST=""    # Direct hostname override — skips instance lookup entirely
+OPT_LAKEBASE_ENDPOINT="" # Autoscaling endpoint resource name for Apps auth
 OPT_DB="databricks_postgres"
 OPT_SCHEMA="datamarket"
 OPT_APP_SLUG=""
@@ -90,6 +93,7 @@ while [[ $# -gt 0 ]]; do
     --email)             OPT_EMAIL="$2";              shift 2 ;;
     --lakebase-instance) OPT_LAKEBASE_INSTANCE="$2"; shift 2 ;;
     --lakebase-host)     OPT_LAKEBASE_HOST="$2";     shift 2 ;;
+    --lakebase-endpoint) OPT_LAKEBASE_ENDPOINT="$2"; shift 2 ;;
     --db)                OPT_DB="$2";                 shift 2 ;;
     --schema)            OPT_SCHEMA="$2";             shift 2 ;;
     --app-slug)          OPT_APP_SLUG="$2";           shift 2 ;;
@@ -107,6 +111,12 @@ while [[ $# -gt 0 ]]; do
     *) error "Unknown flag: $1. Run with --help for usage." ;;
   esac
 done
+
+# Strip accidental user@ / password@ prefix copied from Lakebase connection strings
+if [[ -n "$OPT_LAKEBASE_HOST" && "$OPT_LAKEBASE_HOST" == *@* ]]; then
+  warn "Stripping prefix from --lakebase-host (use hostname only, e.g. ep-....database....azuredatabricks.net)"
+  OPT_LAKEBASE_HOST="${OPT_LAKEBASE_HOST##*@}"
+fi
 
 # ─── Logging helper ──────────────────────────────────────────────────────────
 run_cmd() {
@@ -422,7 +432,71 @@ for i in items:
   fi
 fi
 
-debug "Final Lakebase: host=$LAKEBASE_HOST db=$OPT_DB schema=$OPT_SCHEMA"
+# Auto-discover Autoscaling endpoint resource name (required for Databricks Apps runtime auth)
+if [[ -n "$LAKEBASE_HOST" && -z "$OPT_LAKEBASE_ENDPOINT" && "$LAKEBASE_HOST" == ep-* ]]; then
+  info "Looking up LAKEBASE_ENDPOINT for Apps auth..."
+  OPT_LAKEBASE_ENDPOINT=$(python3 - "$LAKEBASE_HOST" "$OPT_PROFILE" <<'PY' 2>/dev/null || true
+import json, subprocess, sys
+target = sys.argv[1]
+profile = sys.argv[2]
+
+def run(*args):
+    return subprocess.check_output(
+        list(args) + ["-o", "json", "--profile", profile],
+        text=True,
+        stderr=subprocess.DEVNULL,
+    )
+
+try:
+    projects = json.loads(run("databricks", "postgres", "list-projects"))
+except Exception:
+    sys.exit(0)
+if not isinstance(projects, list):
+    sys.exit(0)
+
+for proj in projects:
+    project_name = proj.get("name") or ""
+    if not project_name:
+        continue
+    try:
+        branches = json.loads(run("databricks", "postgres", "list-branches", project_name))
+    except Exception:
+        continue
+    if not isinstance(branches, list):
+        continue
+    for branch in branches:
+        branch_name = branch.get("name") or ""
+        if not branch_name:
+            continue
+        try:
+            endpoints = json.loads(run("databricks", "postgres", "list-endpoints", branch_name))
+        except Exception:
+            continue
+        if not isinstance(endpoints, list):
+            continue
+        for ep in endpoints:
+            ep_name = ep.get("name") or ""
+            if not ep_name:
+                continue
+            try:
+                detail = json.loads(run("databricks", "postgres", "get-endpoint", ep_name))
+            except Exception:
+                continue
+            host = ((detail.get("status") or {}).get("hosts") or {}).get("host") or ""
+            if host == target:
+                print(ep_name)
+                sys.exit(0)
+PY
+  )
+  if [[ -n "$OPT_LAKEBASE_ENDPOINT" ]]; then
+    success "Resolved LAKEBASE_ENDPOINT: $OPT_LAKEBASE_ENDPOINT"
+  else
+    warn "Could not auto-resolve LAKEBASE_ENDPOINT — pass --lakebase-endpoint for Databricks Apps Lakebase auth"
+    warn "  databricks postgres list-endpoints projects/<project>/branches/production --profile $OPT_PROFILE"
+  fi
+fi
+
+debug "Final Lakebase: host=$LAKEBASE_HOST endpoint=${OPT_LAKEBASE_ENDPOINT:-<none>} db=$OPT_DB schema=$OPT_SCHEMA"
 
 # ─── STEP 3: Database schema + seed ──────────────────────────────────────────
 if [[ "$OPT_SEED" != "skip" ]] && [[ -n "$PSQL" ]]; then
@@ -509,13 +583,13 @@ command:
   - "app.js"
 env:
   # ── Databricks Identity ──────────────────────────────────────────────────────
-  # DATABRICKS_TOKEN is auto-injected by Databricks Apps at runtime.
-  # On some Azure workspaces it is not injected — pass --pat to set it explicitly.
+  # DATABRICKS_TOKEN is auto-injected by Databricks Apps at runtime (OAuth JWT).
+  # For UC Import on Azure, pass --pat (stored as DATABRICKS_API_TOKEN — not used for Lakebase).
   - name: DATABRICKS_HOST
     value: "${OPT_HOST}"
   - name: DATABRICKS_USER
     value: "${OPT_EMAIL}"
-$(if [[ -n "$OPT_PAT" ]]; then printf "  - name: DATABRICKS_TOKEN\n    value: \"%s\"\n" "$OPT_PAT"; fi)
+$(if [[ -n "$OPT_PAT" ]]; then printf "  - name: DATABRICKS_API_TOKEN\n    value: \"%s\"\n" "$OPT_PAT"; fi)
   # ── Lakebase Connection ──────────────────────────────────────────────────────
   - name: LAKEBASE_HOST
     value: "${LAKEBASE_HOST}"
@@ -523,11 +597,14 @@ $(if [[ -n "$OPT_PAT" ]]; then printf "  - name: DATABRICKS_TOKEN\n    value: \"
     value: "${OPT_DB}"
   - name: LAKEBASE_SCHEMA
     value: "${OPT_SCHEMA}"
+$(if [[ -n "$OPT_LAKEBASE_ENDPOINT" ]]; then
+  printf "  - name: LAKEBASE_ENDPOINT\n    value: \"%s\"\n" "$OPT_LAKEBASE_ENDPOINT"
+fi)
 $(if [[ "$LAKEBASE_HOST" == instance-* ]]; then
   printf "  # Provisioned instance — app generates short-lived DB credentials via REST API.\n"
   printf "  - name: LAKEBASE_INSTANCE_NAME\n    value: \"%s\"\n" "$OPT_LAKEBASE_INSTANCE"
 else
-  printf "  # Autoscaling instance — DATABRICKS_TOKEN used directly as Postgres password.\n"
+  printf "  # Autoscaling — Apps use LAKEBASE_ENDPOINT + service principal credential API.\n"
 fi)
   # ── Mode ────────────────────────────────────────────────────────────────────
   # "true"  = persona switcher (demo/POC)
@@ -612,10 +689,69 @@ run_cmd "Deploy app" databricks apps deploy "$OPT_APP_SLUG" \
   --source-code-path "$OPT_WORKSPACE_PATH" \
   --profile "$OPT_PROFILE"
 
+APP_JSON=$(databricks apps get "$OPT_APP_SLUG" --profile "$OPT_PROFILE" 2>/dev/null || true)
+
+echo ""
+
+# ─── STEP 7b: Lakebase Postgres role for the app's service principal ───────────
+# Databricks Apps authenticate to Autoscaling Lakebase as the app SP (UUID username).
+# Each app gets its own SP — resolved dynamically from databricks apps get (never hardcoded).
+# The SP needs a Postgres OAuth role on the branch + DML grants on the portal schema.
+# DDL (CREATE/ALTER TABLE) is applied by deploy.sh as the deploying user via schema/*.sql.
+if [[ -n "$OPT_LAKEBASE_ENDPOINT" && "$LAKEBASE_HOST" == ep-* ]]; then
+  LAKEBASE_BRANCH="${OPT_LAKEBASE_ENDPOINT%/endpoints/*}"
+  APP_SP_ID=$(echo "$APP_JSON" 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin).get('service_principal_client_id',''))" 2>/dev/null || true)
+  if [[ -z "$APP_SP_ID" ]]; then
+    APP_SP_ID=$(databricks apps get "$OPT_APP_SLUG" --profile "$OPT_PROFILE" -o json 2>/dev/null | \
+      python3 -c "import sys,json; print(json.load(sys.stdin).get('service_principal_client_id',''))" 2>/dev/null || true)
+  fi
+
+  if [[ -n "$APP_SP_ID" && -n "$LAKEBASE_BRANCH" ]]; then
+    info "Ensuring Lakebase Postgres role for app service principal ($APP_SP_ID)..."
+    ROLE_EXISTS=$(databricks postgres list-roles "$LAKEBASE_BRANCH" --profile "$OPT_PROFILE" -o json 2>/dev/null | \
+      python3 -c "import sys,json; sp='${APP_SP_ID}'; roles=json.load(sys.stdin); print('yes' if any(r.get('status',{}).get('postgres_role')==sp for r in (roles if isinstance(roles,list) else [])) else 'no')" 2>/dev/null || echo "no")
+
+    if [[ "$ROLE_EXISTS" != "yes" ]]; then
+      info "Creating Postgres OAuth role for app SP..."
+      run_cmd_tolerant "Create app SP Postgres role" \
+        databricks postgres create-role "$LAKEBASE_BRANCH" \
+          --role-id "$APP_SP_ID" \
+          --json "{\"spec\": {\"identity_type\": \"SERVICE_PRINCIPAL\", \"postgres_role\": \"${APP_SP_ID}\", \"auth_method\": \"LAKEBASE_OAUTH_V1\"}}" \
+          --profile "$OPT_PROFILE"
+    else
+      success "Postgres role already exists for app SP"
+    fi
+
+    if [[ -n "$PSQL" ]]; then
+      info "Granting schema '$OPT_SCHEMA' to app SP..."
+      PG_PASSWORD="$DATABRICKS_TOKEN"
+      CONN="host=$LAKEBASE_HOST port=5432 dbname=$OPT_DB user=$OPT_EMAIL sslmode=require"
+      GRANT_SQL="
+GRANT CONNECT ON DATABASE ${OPT_DB} TO \"${APP_SP_ID}\";
+GRANT USAGE ON SCHEMA ${OPT_SCHEMA} TO \"${APP_SP_ID}\";
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA ${OPT_SCHEMA} TO \"${APP_SP_ID}\";
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA ${OPT_SCHEMA} TO \"${APP_SP_ID}\";
+ALTER DEFAULT PRIVILEGES IN SCHEMA ${OPT_SCHEMA} GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO \"${APP_SP_ID}\";
+ALTER DEFAULT PRIVILEGES IN SCHEMA ${OPT_SCHEMA} GRANT USAGE, SELECT ON SEQUENCES TO \"${APP_SP_ID}\";
+"
+      GRANT_OUT=$(PGPASSWORD="$PG_PASSWORD" "$PSQL" "$CONN" -c "$GRANT_SQL" 2>&1 || true)
+      echo "$GRANT_OUT" >> "$LOG_FILE"
+      if echo "$GRANT_OUT" | grep -qi "error"; then
+        warn "Could not grant schema to app SP (see log). Run deploy again or grant manually."
+      else
+        success "App SP granted DML access to schema '$OPT_SCHEMA'"
+      fi
+    else
+      warn "psql not available — Postgres role created but schema grants skipped. Install psql and redeploy."
+    fi
+  else
+    warn "Could not resolve app service principal — Lakebase may fail until Postgres role is created"
+  fi
+fi
+
 echo ""
 
 # ─── STEP 8: Done ─────────────────────────────────────────────────────────────
-APP_JSON=$(databricks apps get "$OPT_APP_SLUG" --profile "$OPT_PROFILE" 2>/dev/null || true)
 APP_URL=$(echo "$APP_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin).get('url',''))" 2>/dev/null || true)
 APP_STATE=$(echo "$APP_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin).get('app_status',{}).get('state','unknown'))" 2>/dev/null || true)
 
@@ -635,8 +771,11 @@ echo "  4. Go to Discover → 'Import from Unity Catalog' to populate your catal
 echo ""
 
 if [[ -z "$OPT_PAT" ]]; then
-  warn "If UC Import shows 'DATABRICKS_TOKEN required', your workspace may not auto-inject the token."
-  warn "Fix: generate a PAT (User Settings → Developer → Access Tokens) and redeploy with:"
+  warn "If UC Import fails on Azure, generate a PAT and redeploy with --pat (stored as DATABRICKS_API_TOKEN; Lakebase auth is unaffected)."
   warn "  ./scripts/deploy.sh ... --pat dapi<your-token>"
+  echo ""
+fi
+if [[ -n "$LAKEBASE_HOST" && "$LAKEBASE_HOST" == ep-* && -z "$OPT_LAKEBASE_ENDPOINT" ]]; then
+  warn "LAKEBASE_ENDPOINT was not set — Discover/Insights will fail in Databricks Apps until you redeploy with --lakebase-endpoint."
   echo ""
 fi
