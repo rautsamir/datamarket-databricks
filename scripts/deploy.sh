@@ -73,7 +73,7 @@ OPT_SCHEMA="datamarket"
 OPT_APP_SLUG=""
 OPT_WORKSPACE_PATH=""
 OPT_SEED="demo"
-OPT_DEMO_MODE="true"
+OPT_DEMO_MODE=""   # Will prompt in interactive mode; defaults to "true" if unset
 OPT_PAT=""
 VERBOSE="false"
 LOG_FILE="/tmp/datamarket-deploy-$(date +%Y%m%d-%H%M%S).log"
@@ -291,6 +291,19 @@ if [[ -z "$OPT_WORKSPACE_PATH" ]]; then
   OPT_WORKSPACE_PATH="${INPUT_PATH:-$DEFAULT_PATH}"
 fi
 success "Workspace path: $OPT_WORKSPACE_PATH"
+
+# Deployment mode
+if [[ -z "$OPT_DEMO_MODE" ]]; then
+  if [[ "$INTERACTIVE" == "true" ]]; then
+    read -rp "$(prompt 'Deployment mode — demo (persona switcher) or production (real SSO)? [demo]: ')" INPUT_MODE
+    INPUT_MODE="$(strip_cr "$INPUT_MODE")"
+    [[ "$INPUT_MODE" =~ ^[Pp]rod ]] && OPT_DEMO_MODE="false" || OPT_DEMO_MODE="true"
+  else
+    OPT_DEMO_MODE="true"
+    warn "DEMO_MODE defaulting to 'true'. Pass --demo-mode false for a production deployment."
+  fi
+fi
+success "Mode: $([ "$OPT_DEMO_MODE" = "true" ] && echo 'Demo (persona switcher)' || echo 'Production (real SSO + UC grants)')"
 
 echo ""
 

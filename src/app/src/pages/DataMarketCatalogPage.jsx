@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import { Search, SlidersHorizontal, BarChart3, FileText, Database, ChevronLeft, ChevronRight, RefreshCw, Layers, Bot, LayoutDashboard, AppWindow, Cpu, Upload, PlusCircle, Sparkles } from 'lucide-react'
 import { usePersona } from '../context/PersonaContext'
 import { useAppConfig } from '../context/AppConfigContext'
@@ -6,7 +6,6 @@ import { ImportUCModal } from '../components/ImportUCModal'
 
 const DataMarket_BLUE = '#003865'
 
-const categories = ['All', 'Property Tax', 'Audit', 'Accounting', 'ERP', 'Demographics', 'GIS', 'Health Services', 'Public Safety', 'HRIS', 'Payroll', 'Budget', 'eHR']
 const types = ['All', 'Dashboard', 'AI/BI Dashboard', 'Genie Space', 'Dataset', 'Report', 'App', 'ML Model']
 const sourceTypes = ['All', 'Databricks', 'Power BI']
 
@@ -102,6 +101,12 @@ export function DataMarketCatalogPage({ onOpenProduct, onNavigate, initialSearch
   const [showImport, setShowImport] = useState(false)
   const [lakebaseEmpty, setLakebaseEmpty] = useState(false)
 
+  // Derive categories dynamically from loaded products so filters always match real data
+  const categories = useMemo(() => {
+    const cats = [...new Set(allProducts.map(p => p.category).filter(Boolean))].sort()
+    return ['All', ...cats]
+  }, [allProducts])
+
   const loadProducts = () => {
     const isAdmin = currentPersona === 'admin'
     fetch(`/api/portal/products${isAdmin ? '?includeAll=true' : ''}`)
@@ -110,6 +115,8 @@ export function DataMarketCatalogPage({ onOpenProduct, onNavigate, initialSearch
         if (Array.isArray(rows) && rows.length > 0) {
           setAllProducts(rows.map(normalizeProduct))
           setLakebaseEmpty(false)
+          setSelectedCategory('All')
+          setSelectedType('All')
         } else if (Array.isArray(rows) && rows.length === 0) {
           setAllProducts([])
           setLakebaseEmpty(true)
