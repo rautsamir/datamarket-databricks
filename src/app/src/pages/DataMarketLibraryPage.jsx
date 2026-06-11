@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { Search, Plus, BarChart3, FileText, Database, BookmarkCheck, Edit3, Check, X, Upload, Users, ExternalLink, Link2, Shield, Clock, Package, ClipboardList, FolderOpen, ShieldCheck, Settings, Save, Sparkles } from 'lucide-react'
+import { Search, Plus, BarChart3, FileText, Database, BookmarkCheck, Edit3, Check, X, Upload, Users, ExternalLink, Link2, Shield, Clock, Package, ClipboardList, FolderOpen, ShieldCheck, Settings, Save, Sparkles, RotateCcw, AlertTriangle, CheckCircle2, RefreshCw } from 'lucide-react'
 import { usePersona } from '../context/PersonaContext'
 import { ImportUCModal } from '../components/ImportUCModal'
 import { DataMarketAdminPage } from './DataMarketAdminPage'
@@ -98,6 +98,81 @@ function ProductEditRow({ product, onSave, onCancel }) {
 }
 
 // ─── Settings Panel (Steward Only) ────────────────────────────────────────────
+function DemoControlsPanel() {
+  const [resetState, setResetState]   = useState('idle')   // idle | confirm | loading | done
+  const [seedState,  setSeedState]    = useState('idle')   // idle | loading | done | error
+  const [seedCounts, setSeedCounts]   = useState(null)
+
+  const handleReset = async () => {
+    setResetState('loading')
+    try {
+      await fetch('/api/portal/demo-reset', { method: 'POST' })
+      setResetState('done')
+      setTimeout(() => { setResetState('idle'); window.location.reload() }, 1500)
+    } catch { setResetState('idle') }
+  }
+
+  const handleSeed = async () => {
+    setSeedState('loading')
+    try {
+      const res = await fetch('/api/portal/demo-seed', { method: 'POST' })
+      const data = await res.json()
+      setSeedCounts(data.counts)
+      setSeedState('done')
+      setTimeout(() => { setSeedState('idle'); window.location.reload() }, 2000)
+    } catch { setSeedState('error') }
+  }
+
+  return (
+    <div className="max-w-xl space-y-6">
+      <div className="bg-rose-50 border border-rose-200 rounded-xl p-5">
+        <h3 className="font-semibold text-rose-800 mb-1 flex items-center gap-2">
+          <RotateCcw className="h-4 w-4" /> Reset Demo Data
+        </h3>
+        <p className="text-sm text-rose-700 mb-4">
+          Clears all access requests, audit logs, and user library entries. Users and published products are preserved.
+        </p>
+        {resetState === 'idle' && (
+          <button onClick={() => setResetState('confirm')}
+            className="px-4 py-2 bg-rose-600 text-white rounded-lg text-sm font-medium hover:bg-rose-700">
+            Reset Demo Data
+          </button>
+        )}
+        {resetState === 'confirm' && (
+          <div className="flex items-center gap-3">
+            <AlertTriangle className="h-4 w-4 text-rose-600 shrink-0" />
+            <span className="text-sm text-rose-700 font-medium">Are you sure? This cannot be undone.</span>
+            <button onClick={handleReset} className="px-3 py-1.5 bg-rose-600 text-white rounded text-sm font-medium hover:bg-rose-700">Yes, reset</button>
+            <button onClick={() => setResetState('idle')} className="px-3 py-1.5 border border-gray-200 rounded text-sm text-gray-600 hover:bg-gray-50">Cancel</button>
+          </div>
+        )}
+        {resetState === 'loading' && <span className="flex items-center gap-2 text-sm text-rose-600"><RotateCcw className="h-4 w-4 animate-spin" /> Clearing...</span>}
+        {resetState === 'done'    && <span className="flex items-center gap-2 text-sm text-emerald-600 font-medium"><CheckCircle2 className="h-4 w-4" /> Reset complete</span>}
+      </div>
+
+      <div className="bg-blue-50 border border-blue-200 rounded-xl p-5">
+        <h3 className="font-semibold text-blue-800 mb-1 flex items-center gap-2">
+          <RefreshCw className="h-4 w-4" /> Load Demo Data
+        </h3>
+        <p className="text-sm text-blue-700 mb-4">
+          Seeds 8 sample data products, 3 demo users, and 1 pending access request. Safe to run on an empty catalog — skips existing records.
+        </p>
+        {seedState === 'idle' && (
+          <button onClick={handleSeed}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700">
+            Load Demo Data
+          </button>
+        )}
+        {seedState === 'loading' && <span className="flex items-center gap-2 text-sm text-blue-600"><RefreshCw className="h-4 w-4 animate-spin" /> Seeding...</span>}
+        {seedState === 'done'    && <span className="flex items-center gap-2 text-sm text-emerald-600 font-medium"><CheckCircle2 className="h-4 w-4" /> {seedCounts ? `Loaded — ${seedCounts.products} products, ${seedCounts.users} users` : 'Loaded'}</span>}
+        {seedState === 'error'   && <span className="text-sm text-red-600">Seed failed — check app logs.</span>}
+      </div>
+
+      <p className="text-xs text-gray-400">Demo Controls are only visible when <code className="font-mono bg-gray-100 px-1 rounded">DEMO_MODE=true</code>.</p>
+    </div>
+  )
+}
+
 function SettingsPanel() {
   const { appName, appSubtitle, appLogoUrl, genieSpaceId, sqlWarehouseId, rfaEnabled, setupComplete, demoMode, refreshConfig } = useAppConfig()
 
@@ -492,6 +567,7 @@ export function DataMarketLibraryPage({ onNavigate, onOpenProduct, initialTab })
         { id: 'Manage Approvals', icon: ShieldCheck,   label: 'Manage Approvals', desc: 'Review access requests',      activeColor: 'bg-amber-500 text-white border-amber-500',  countColor: 'bg-red-500 text-white' },
         { id: 'Users',            icon: Users,         label: 'Users',            desc: 'Manage user roles',           activeColor: 'bg-purple-600 text-white border-purple-600',countColor: 'bg-purple-500 text-white' },
         { id: 'Settings',         icon: Settings,      label: 'Settings',         desc: 'Configure portal',            activeColor: 'bg-gray-700 text-white border-gray-700',    countColor: 'bg-gray-500 text-white' },
+        ...(demoMode ? [{ id: 'Demo Controls', icon: RotateCcw, label: 'Demo Controls', desc: 'Reset or reload demo data', activeColor: 'bg-rose-600 text-white border-rose-600', countColor: 'bg-rose-500 text-white' }] : []),
       ]
     : [
         { id: 'Data Product',     icon: FolderOpen,    label: 'My Products',      desc: 'Data you have access to',     activeColor: 'bg-emerald-600 text-white border-emerald-600', countColor: 'bg-emerald-500 text-white' },
@@ -563,6 +639,8 @@ export function DataMarketLibraryPage({ onNavigate, onOpenProduct, initialTab })
 
       {/* ── Settings Tab (Steward) ────────────────────────────────────────────── */}
       {activeTab === 'Settings' && isSteward && <SettingsPanel />}
+
+      {activeTab === 'Demo Controls' && isSteward && demoMode && <DemoControlsPanel />}
 
       {/* ── Manage Approvals Tab (Steward) — embeds the full admin approval UI ── */}
       {activeTab === 'Manage Approvals' && isSteward && <DataMarketAdminPage embedded />}
