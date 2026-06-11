@@ -499,6 +499,7 @@ function UsersPanel() {
 // ─── Main Library Page ─────────────────────────────────────────────────────────
 export function DataMarketLibraryPage({ onNavigate, onOpenProduct, initialTab }) {
   const { myRequests, persona, currentPersona, pendingRequests } = usePersona()
+  const { demoMode } = useAppConfig()
   const isSteward = currentPersona === 'admin'
   const [search, setSearch] = useState('')
   const [activeTab, setActiveTab] = useState(initialTab || (isSteward ? 'Data Products' : 'Data Product'))
