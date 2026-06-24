@@ -15,15 +15,28 @@ const app = express();
 const PORT = process.env.DATABRICKS_APP_PORT || process.env.PORT || 3000;
 
 // ─── Lakebase connection config ───────────────────────────────────────────────
-// Autoscaling: LAKEBASE_HOST + LAKEBASE_ENDPOINT (recommended for Databricks Apps).
-//   Apps inject DATABRICKS_CLIENT_ID/SECRET; app exchanges for OAuth + DB credential.
-//   Legacy/user mode: injected user OAuth JWT (DATABRICKS_TOKEN) used directly as PG password.
-// Provisioned: also set LAKEBASE_INSTANCE_NAME (short-lived cred via /api/2.0/database/credentials).
-const LAKEBASE_HOST          = process.env.LAKEBASE_HOST          || 'your-project.database.eastus2.azuredatabricks.net';
-const LAKEBASE_DB            = process.env.LAKEBASE_DB            || 'databricks_postgres';
-const LAKEBASE_SCHEMA        = process.env.LAKEBASE_SCHEMA        || 'datamarket';
+// Three deployment modes — detected by which env vars are present:
+//
+// 1. Marketplace install (recommended):
+//    app.yaml uses `valueFrom: lakebase-db` → platform injects LAKEBASE_ENDPOINT,
+//    PGHOST, PGDATABASE, PGPORT, PGSSLMODE. App SP (DATABRICKS_CLIENT_ID/SECRET)
+//    authenticates via M2M OAuth + /api/2.0/postgres/credentials.
+//
+// 2. CLI deploy (deploy.sh):
+//    LAKEBASE_HOST + LAKEBASE_ENDPOINT set explicitly for Autoscaling, or
+//    LAKEBASE_HOST + LAKEBASE_INSTANCE_NAME for Provisioned instances.
+//
+// 3. Legacy / local dev:
+//    DATABRICKS_TOKEN (user OAuth JWT) used directly as Postgres password.
+//
+// PGHOST / PGDATABASE / PGPORT are the Marketplace-injected equivalents of
+// LAKEBASE_HOST / LAKEBASE_DB — checked as fallbacks so one app binary works
+// for both paths without modification.
+const LAKEBASE_HOST          = process.env.LAKEBASE_HOST || process.env.PGHOST || 'your-project.database.azuredatabricks.net';
+const LAKEBASE_DB            = process.env.LAKEBASE_DB   || process.env.PGDATABASE || 'databricks_postgres';
+const LAKEBASE_SCHEMA        = process.env.LAKEBASE_SCHEMA || 'datamarket';
 const LAKEBASE_INSTANCE_NAME = process.env.LAKEBASE_INSTANCE_NAME || '';
-const LAKEBASE_ENDPOINT      = process.env.LAKEBASE_ENDPOINT      || '';
+const LAKEBASE_ENDPOINT      = process.env.LAKEBASE_ENDPOINT || '';
 
 const DEMO_MODE        = (process.env.DEMO_MODE || 'true').toLowerCase() === 'true';
 const SQL_WAREHOUSE_ID = process.env.SQL_WAREHOUSE_ID || '';
@@ -208,7 +221,7 @@ async function getPool() {
 
   dbPool = new Pool({
     host:     LAKEBASE_HOST,
-    port:     5432,
+    port:     parseInt(process.env.PGPORT || '5432', 10),
     database: LAKEBASE_DB,
     user:     pgUser,
     password: pgPassword,
