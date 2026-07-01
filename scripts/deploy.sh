@@ -711,14 +711,13 @@ if [[ -n "$OPT_LAKEBASE_ENDPOINT" && "$LAKEBASE_HOST" == ep-* ]]; then
   fi
 
   if [[ -n "$APP_SP_ID" && -n "$LAKEBASE_BRANCH" ]]; then
-    # Postgres role names must start with a lowercase letter — prefix UUID with "sp-" if needed
-    if [[ "$APP_SP_ID" =~ ^[0-9] ]]; then
-      APP_SP_ROLE="sp-${APP_SP_ID}"
-    else
-      APP_SP_ROLE="$APP_SP_ID"
-    fi
+    # The role-id (resource name component) must start with a lowercase letter.
+    # The postgres_role (actual Postgres username) is the SP UUID — Databricks handles quoting.
+    # We use a deterministic human-readable role-id: "<app-slug>-app-sp"
+    APP_SP_ROLE_ID="${OPT_APP_SLUG}-app-sp"
+    APP_SP_ROLE="$APP_SP_ID"  # Postgres username = SP UUID
 
-    info "Ensuring Lakebase Postgres role for app service principal ($APP_SP_ID → role: $APP_SP_ROLE)..."
+    info "Ensuring Lakebase Postgres role for app service principal ($APP_SP_ID)..."
     ROLE_EXISTS=$(databricks postgres list-roles "$LAKEBASE_BRANCH" --profile "$OPT_PROFILE" -o json 2>/dev/null | \
       python3 -c "import sys,json; sp='${APP_SP_ROLE}'; roles=json.load(sys.stdin); print('yes' if any(r.get('status',{}).get('postgres_role')==sp for r in (roles if isinstance(roles,list) else [])) else 'no')" 2>/dev/null || echo "no")
 
@@ -726,7 +725,7 @@ if [[ -n "$OPT_LAKEBASE_ENDPOINT" && "$LAKEBASE_HOST" == ep-* ]]; then
       info "Creating Postgres OAuth role for app SP..."
       run_cmd_tolerant "Create app SP Postgres role" \
         databricks postgres create-role "$LAKEBASE_BRANCH" \
-          --role-id "$APP_SP_ROLE" \
+          --role-id "$APP_SP_ROLE_ID" \
           --json "{\"spec\": {\"identity_type\": \"SERVICE_PRINCIPAL\", \"postgres_role\": \"${APP_SP_ROLE}\", \"auth_method\": \"LAKEBASE_OAUTH_V1\"}}" \
           --profile "$OPT_PROFILE"
     else
