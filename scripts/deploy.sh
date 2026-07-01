@@ -711,16 +711,23 @@ if [[ -n "$OPT_LAKEBASE_ENDPOINT" && "$LAKEBASE_HOST" == ep-* ]]; then
   fi
 
   if [[ -n "$APP_SP_ID" && -n "$LAKEBASE_BRANCH" ]]; then
-    info "Ensuring Lakebase Postgres role for app service principal ($APP_SP_ID)..."
+    # Postgres role names must start with a lowercase letter — prefix UUID with "sp-" if needed
+    if [[ "$APP_SP_ID" =~ ^[0-9] ]]; then
+      APP_SP_ROLE="sp-${APP_SP_ID}"
+    else
+      APP_SP_ROLE="$APP_SP_ID"
+    fi
+
+    info "Ensuring Lakebase Postgres role for app service principal ($APP_SP_ID → role: $APP_SP_ROLE)..."
     ROLE_EXISTS=$(databricks postgres list-roles "$LAKEBASE_BRANCH" --profile "$OPT_PROFILE" -o json 2>/dev/null | \
-      python3 -c "import sys,json; sp='${APP_SP_ID}'; roles=json.load(sys.stdin); print('yes' if any(r.get('status',{}).get('postgres_role')==sp for r in (roles if isinstance(roles,list) else [])) else 'no')" 2>/dev/null || echo "no")
+      python3 -c "import sys,json; sp='${APP_SP_ROLE}'; roles=json.load(sys.stdin); print('yes' if any(r.get('status',{}).get('postgres_role')==sp for r in (roles if isinstance(roles,list) else [])) else 'no')" 2>/dev/null || echo "no")
 
     if [[ "$ROLE_EXISTS" != "yes" ]]; then
       info "Creating Postgres OAuth role for app SP..."
       run_cmd_tolerant "Create app SP Postgres role" \
         databricks postgres create-role "$LAKEBASE_BRANCH" \
-          --role-id "$APP_SP_ID" \
-          --json "{\"spec\": {\"identity_type\": \"SERVICE_PRINCIPAL\", \"postgres_role\": \"${APP_SP_ID}\", \"auth_method\": \"LAKEBASE_OAUTH_V1\"}}" \
+          --role-id "$APP_SP_ROLE" \
+          --json "{\"spec\": {\"identity_type\": \"SERVICE_PRINCIPAL\", \"postgres_role\": \"${APP_SP_ROLE}\", \"auth_method\": \"LAKEBASE_OAUTH_V1\"}}" \
           --profile "$OPT_PROFILE"
     else
       success "Postgres role already exists for app SP"
@@ -731,12 +738,12 @@ if [[ -n "$OPT_LAKEBASE_ENDPOINT" && "$LAKEBASE_HOST" == ep-* ]]; then
       PG_PASSWORD="$DATABRICKS_TOKEN"
       CONN="host=$LAKEBASE_HOST port=5432 dbname=$OPT_DB user=$OPT_EMAIL sslmode=require"
       GRANT_SQL="
-GRANT CONNECT ON DATABASE ${OPT_DB} TO \"${APP_SP_ID}\";
-GRANT USAGE ON SCHEMA ${OPT_SCHEMA} TO \"${APP_SP_ID}\";
-GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA ${OPT_SCHEMA} TO \"${APP_SP_ID}\";
-GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA ${OPT_SCHEMA} TO \"${APP_SP_ID}\";
-ALTER DEFAULT PRIVILEGES IN SCHEMA ${OPT_SCHEMA} GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO \"${APP_SP_ID}\";
-ALTER DEFAULT PRIVILEGES IN SCHEMA ${OPT_SCHEMA} GRANT USAGE, SELECT ON SEQUENCES TO \"${APP_SP_ID}\";
+GRANT CONNECT ON DATABASE ${OPT_DB} TO \"${APP_SP_ROLE}\";
+GRANT USAGE ON SCHEMA ${OPT_SCHEMA} TO \"${APP_SP_ROLE}\";
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA ${OPT_SCHEMA} TO \"${APP_SP_ROLE}\";
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA ${OPT_SCHEMA} TO \"${APP_SP_ROLE}\";
+ALTER DEFAULT PRIVILEGES IN SCHEMA ${OPT_SCHEMA} GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO \"${APP_SP_ROLE}\";
+ALTER DEFAULT PRIVILEGES IN SCHEMA ${OPT_SCHEMA} GRANT USAGE, SELECT ON SEQUENCES TO \"${APP_SP_ROLE}\";
 "
       GRANT_OUT=$(PGPASSWORD="$PG_PASSWORD" "$PSQL" "$CONN" -c "$GRANT_SQL" 2>&1 || true)
       echo "$GRANT_OUT" >> "$LOG_FILE"
