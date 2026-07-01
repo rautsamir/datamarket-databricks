@@ -114,4 +114,4 @@ Delta Tables on Databricks
 
 **Author:** Samir Raut | SLED | Databricks Field Engineering
 **Date:** March 2026
-**Repo:** [databricks-field-eng/datamarket](https://github.com/databricks-field-eng/datamarket)
+**Repo:** [rautsamir/datamarket-databricks](https://github.com/rautsamir/datamarket-databricks)

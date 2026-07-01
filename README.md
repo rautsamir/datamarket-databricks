@@ -145,7 +145,7 @@ Once registered as a UC catalog, tables are queryable directly from Databricks S
 
 ```bash
 # 1. Clone
-git clone https://github.com/databricks-field-eng/datamarket.git
+git clone https://github.com/rautsamir/datamarket-databricks.git
 cd datamarket
 
 # 2. Authenticate the CLI
@@ -186,7 +186,7 @@ Run `./scripts/deploy.sh --help` for all flags. Full log always written to `/tmp
 ### Step 1 — Clone the repo
 
 ```bash
-git clone https://github.com/databricks-field-eng/datamarket.git
+git clone https://github.com/rautsamir/datamarket-databricks.git
 cd datamarket
 ```
 
