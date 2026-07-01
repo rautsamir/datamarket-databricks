@@ -990,16 +990,32 @@ app.get('/api/portal/identity', async (req, res) => {
   const email = req.headers['x-forwarded-email'] || req.headers['x-forwarded-user'] || '';
   if (!email) return res.json({ mode: 'demo', reason: 'no_sso_header' });
 
+  // Emails that always get admin role — deployer + any explicitly listed admins
+  const ADMIN_EMAILS = (process.env.ADMIN_EMAIL || process.env.DATABRICKS_USER || '')
+    .split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
+  const isAdmin = ADMIN_EMAILS.includes(email.toLowerCase());
+
   try {
     const { rows: [user] } = await query(
       `SELECT user_id, email, display_name, role, department FROM users WHERE email = $1`, [email]);
-    if (user) return res.json({ mode: 'sso', user });
+
+    // If user exists but is not yet admin and should be, promote them
+    if (user) {
+      if (isAdmin && user.role !== 'admin') {
+        await query(`UPDATE users SET role = 'admin' WHERE email = $1`, [email]);
+        user.role = 'admin';
+        console.info(`[identity] Promoted ${email} to admin (matches ADMIN_EMAIL)`);
+      }
+      return res.json({ mode: 'sso', user });
+    }
 
     // Auto-create new user on first login
     const displayName = email.split('@')[0].replace(/[._]/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+    const role = isAdmin ? 'admin' : 'analyst';
     const { rows: [newUser] } = await query(
       `INSERT INTO users (email, display_name, role, department)
-       VALUES ($1, $2, 'analyst', 'General') RETURNING *`, [email, displayName]);
+       VALUES ($1, $2, $3, 'General') RETURNING *`, [email, displayName, role]);
+    console.info(`[identity] Auto-registered ${email} as ${role}`);
     return res.json({ mode: 'sso', user: newUser, new_user: true });
   } catch (e) {
     console.warn('[/api/portal/identity]', e.message);

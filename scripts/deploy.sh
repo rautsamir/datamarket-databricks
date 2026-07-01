@@ -589,6 +589,10 @@ env:
     value: "${OPT_HOST}"
   - name: DATABRICKS_USER
     value: "${OPT_EMAIL}"
+  # ── Admin — deployer gets admin role on first SSO login ─────────────────────
+  # Comma-separated list of emails. Add more admins without redeploying via Admin → Users.
+  - name: ADMIN_EMAIL
+    value: "${OPT_EMAIL}"
 $(if [[ -n "$OPT_PAT" ]]; then printf "  - name: DATABRICKS_API_TOKEN\n    value: \"%s\"\n" "$OPT_PAT"; fi)
   # ── Lakebase Connection ──────────────────────────────────────────────────────
   - name: LAKEBASE_HOST
