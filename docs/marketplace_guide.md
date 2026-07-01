@@ -154,5 +154,5 @@ When a new version is published to Marketplace, update your installation from th
 
 ## Getting help
 
-- GitHub: [databricks-field-eng/datamarket](https://github.com/databricks-field-eng/datamarket)
+- GitHub: [rautsamir/datamarket-databricks](https://github.com/rautsamir/datamarket-databricks)
 - Open an issue for bugs or feature requests

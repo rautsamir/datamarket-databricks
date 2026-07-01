@@ -33,7 +33,7 @@ export function DataMarketLayout({ currentPage, onNavigate, children }) {
   const [personaMenuOpen, setPersonaMenuOpen] = useState(false)
   const [notifOpen, setNotifOpen] = useState(false)
   const { persona, currentPersona, setCurrentPersona, pendingRequests, notifications, unreadNotificationCount } = usePersona()
-  const { appName, appSubtitle, appLogoUrl } = useAppConfig()
+  const { appName, appSubtitle, appLogoUrl, demoMode } = useAppConfig()
 
   const isAdmin = currentPersona === 'admin'
 
@@ -63,18 +63,20 @@ export function DataMarketLayout({ currentPage, onNavigate, children }) {
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
-      {/* Demo Banner */}
-      <div className="text-center py-1.5 text-xs text-white font-medium"
-        style={{ backgroundColor: currentPersona === 'admin' ? '#7C3AED' : currentPersona === 'james' ? '#059669' : '#3B82F6' }}>
-        <ShieldCheck className="inline h-3 w-3 mr-1.5 mb-0.5" />
-        Demo mode — viewing as <strong>{persona.name}</strong> ({persona.role}, {persona.department})
-        {currentPersona !== 'admin' && ' · '}
-        {currentPersona === 'admin' && pendingRequests.length > 0 && (
-          <button onClick={() => onNavigate('my-access')} className="underline ml-1">
-            {pendingRequests.length} pending approval{pendingRequests.length !== 1 ? 's' : ''} →
-          </button>
-        )}
-      </div>
+      {/* Demo Banner — only shown in demo mode */}
+      {demoMode && (
+        <div className="text-center py-1.5 text-xs text-white font-medium"
+          style={{ backgroundColor: currentPersona === 'admin' ? '#7C3AED' : currentPersona === 'james' ? '#059669' : '#3B82F6' }}>
+          <ShieldCheck className="inline h-3 w-3 mr-1.5 mb-0.5" />
+          Demo mode — viewing as <strong>{persona.name}</strong> ({persona.role}, {persona.department})
+          {currentPersona !== 'admin' && ' · '}
+          {currentPersona === 'admin' && pendingRequests.length > 0 && (
+            <button onClick={() => onNavigate('my-access')} className="underline ml-1">
+              {pendingRequests.length} pending approval{pendingRequests.length !== 1 ? 's' : ''} →
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Top Nav */}
       <header style={{ backgroundColor: DataMarket_BLUE }} className="sticky top-0 z-50 shadow-md">
@@ -230,28 +232,30 @@ export function DataMarketLayout({ currentPage, onNavigate, children }) {
                       )}
                     </div>
 
-                    {/* Persona switcher */}
-                    <div className="py-2">
-                      <p className="px-4 py-1 text-[10px] font-semibold text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
-                        <ShieldCheck className="h-3 w-3" /> Switch Demo Persona
-                      </p>
-                      {Object.values(personas).map(p => (
-                        <button
-                          key={p.id}
-                          onClick={() => switchPersona(p.id)}
-                          className={`w-full text-left px-4 py-2.5 hover:bg-gray-50 flex items-center gap-3 ${currentPersona === p.id ? 'bg-blue-50' : ''}`}
-                        >
-                          <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold ${personaBadgeColors[p.id]}`}>
-                            {p.avatar}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-gray-900">{p.name} — {p.role}</p>
-                            <p className="text-xs text-gray-400 truncate">{p.description}</p>
-                          </div>
-                          {currentPersona === p.id && <span className="w-2 h-2 rounded-full bg-blue-500 shrink-0" />}
-                        </button>
-                      ))}
-                    </div>
+                    {/* Persona switcher — demo mode only */}
+                    {demoMode && (
+                      <div className="py-2">
+                        <p className="px-4 py-1 text-[10px] font-semibold text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
+                          <ShieldCheck className="h-3 w-3" /> Switch Demo Persona
+                        </p>
+                        {Object.values(personas).map(p => (
+                          <button
+                            key={p.id}
+                            onClick={() => switchPersona(p.id)}
+                            className={`w-full text-left px-4 py-2.5 hover:bg-gray-50 flex items-center gap-3 ${currentPersona === p.id ? 'bg-blue-50' : ''}`}
+                          >
+                            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold ${personaBadgeColors[p.id]}`}>
+                              {p.avatar}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium text-gray-900">{p.name} — {p.role}</p>
+                              <p className="text-xs text-gray-400 truncate">{p.description}</p>
+                            </div>
+                            {currentPersona === p.id && <span className="w-2 h-2 rounded-full bg-blue-500 shrink-0" />}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
