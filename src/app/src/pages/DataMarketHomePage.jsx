@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { Search, ArrowRight, Clock, Sparkles, BarChart3, FileText, Database, Lock, Bot, LayoutDashboard, AppWindow, Cpu, Layers } from 'lucide-react'
 import { usePersona } from '../context/PersonaContext'
 
@@ -11,48 +11,25 @@ function isNaturalLanguage(q) {
 
 const DataMarket_BLUE = '#003865'
 
-const featuredProducts = [
-  {
-    id: 7,
-    ref: 'DP-007',
-    name: 'Payroll Dashboard',
-    tags: ['Payroll', 'HR'],
-    type: 'Dashboard',
-    description: 'Organization-wide payroll expenditure, headcount trends, and compensation analytics across all departments and bargaining units.',
-    source: 'HRIS',
-    refreshFrequency: 'Daily',
-    owner: 'James Park'
-  },
-  {
-    id: 1,
-    ref: 'DP-001',
-    name: 'Budget Expenditure Report',
-    tags: ['Budget', 'ERP'],
-    type: 'Dashboard',
-    description: 'Departmental budget allocations and year-to-date expenditures with variance analysis across all departments.',
-    source: 'ERP',
-    refreshFrequency: 'Daily',
-    owner: 'James Park'
-  },
-  {
-    id: 2,
-    ref: 'DP-002',
-    name: 'Employee Metrics Dashboard',
-    tags: ['HRIS', 'HR'],
-    type: 'Dashboard',
-    description: 'Headcount, turnover rates, overtime trends, and compensation metrics segmented by department and bargaining unit.',
-    source: 'HRIS',
-    refreshFrequency: 'Weekly',
-    owner: 'Sarah Kim',
-    restricted: true
-  }
-]
+function timeAgo(dateStr) {
+  if (!dateStr) return ''
+  const diff = Date.now() - new Date(dateStr)
+  const mins = Math.floor(diff / 60000)
+  if (mins < 2)   return 'Just now'
+  if (mins < 60)  return `${mins}m ago`
+  const hrs = Math.floor(mins / 60)
+  if (hrs < 24)   return `${hrs}h ago`
+  const days = Math.floor(hrs / 24)
+  if (days === 1) return 'Yesterday'
+  if (days < 7)   return `${days} days ago`
+  return new Date(dateStr).toLocaleDateString()
+}
 
-const recentlyAccessed = [
-  { name: 'Budget Expenditure Report', ref: 'DP-001', type: 'Dashboard', accessed: '2 hours ago', tags: ['Budget'] },
-  { name: 'Payroll Dashboard', ref: 'DP-007', type: 'Dashboard', accessed: 'Yesterday', tags: ['Payroll', 'HR'] },
-  { name: 'Property Tax Report 2024', ref: 'DP-003', type: 'Report', accessed: '3 days ago', tags: ['Property Tax'] }
-]
+function parseTags(tags) {
+  if (Array.isArray(tags)) return tags
+  if (typeof tags === 'string') return tags.replace(/[{}"]/g, '').split(',').map(t => t.trim()).filter(Boolean)
+  return []
+}
 
 const tagColors = {
   Budget: 'bg-blue-100 text-blue-800',
@@ -79,7 +56,53 @@ const typeIcons = {
 
 export function DataMarketHomePage({ onNavigate, onOpenProduct }) {
   const [searchQuery, setSearchQuery] = useState('')
-  const { persona, hasAccess } = usePersona()
+  const [featuredProducts, setFeaturedProducts] = useState([])
+  const [recentlyAccessed, setRecentlyAccessed] = useState([])
+  const { persona, hasAccess, myRequests } = usePersona()
+
+  // Load featured (3 most recently published products)
+  useEffect(() => {
+    fetch('/api/portal/products?includeAll=false')
+      .then(r => r.json())
+      .then(products => {
+        if (!Array.isArray(products)) return
+        const sorted = [...products]
+          .sort((a, b) => new Date(b.updated_at || 0) - new Date(a.updated_at || 0))
+          .slice(0, 3)
+          .map(p => ({
+            id:               p.product_id,
+            ref:              p.product_ref,
+            name:             p.display_name,
+            tags:             parseTags(p.tags),
+            type:             p.type || 'Dataset',
+            description:      p.description || '',
+            source:           p.source_system || '-',
+            refreshFrequency: p.refresh_frequency || 'Daily',
+            owner:            p.owner_email || '-',
+            uc_full_name:     p.uc_full_name,
+          }))
+        setFeaturedProducts(sorted)
+      })
+      .catch(() => {})
+  }, [])
+
+  // Derive recently accessed from approved requests (most recent first)
+  useEffect(() => {
+    if (!myRequests) return
+    const approved = myRequests
+      .filter(r => r.status === 'Approved')
+      .sort((a, b) => new Date(b.updated_at || 0) - new Date(a.updated_at || 0))
+      .slice(0, 4)
+      .map(r => ({
+        name:     r.product_name || r.display_name || r.name || 'Unknown',
+        ref:      r.product_ref,
+        type:     r.product_type || r.type || 'Dataset',
+        accessed: timeAgo(r.updated_at),
+        tags:     parseTags(r.tags),
+        product:  r,
+      }))
+    setRecentlyAccessed(approved)
+  }, [myRequests])
 
   const isAI = isNaturalLanguage(searchQuery)
 
@@ -173,12 +196,20 @@ export function DataMarketHomePage({ onNavigate, onOpenProduct }) {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {featuredProducts.length === 0 && [1,2,3].map(i => (
+            <div key={i} className="bg-white rounded-xl border border-gray-100 p-5 animate-pulse">
+              <div className="w-10 h-10 rounded-lg bg-gray-100 mb-3" />
+              <div className="h-4 bg-gray-100 rounded w-3/4 mb-2" />
+              <div className="h-3 bg-gray-100 rounded w-full mb-1" />
+              <div className="h-3 bg-gray-100 rounded w-2/3" />
+            </div>
+          ))}
           {featuredProducts.map(product => {
             const Icon = typeIcons[product.type] || BarChart3
-            const isLocked = product.restricted && !hasAccess(product.ref)
+            const isLocked = false
             return (
               <button
-                key={product.id}
+                key={product.id || product.ref}
                 onClick={() => onOpenProduct(product)}
                 className={`text-left bg-white rounded-xl border p-5 hover:shadow-md transition-all group ${isLocked ? 'border-amber-200 hover:border-amber-300' : 'border-gray-200 hover:border-blue-300'}`}
               >
@@ -213,34 +244,61 @@ export function DataMarketHomePage({ onNavigate, onOpenProduct }) {
       {/* Recently Accessed */}
       <section>
         <h2 className="text-xl font-semibold text-gray-900 mb-4">Recently Accessed</h2>
-        <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-100">
-          {recentlyAccessed.map((item, i) => {
-            const Icon = typeIcons[item.type] || BarChart3
-            return (
-              <button
-                key={i}
-                onClick={() => onNavigate('discover')}
-                className="w-full flex items-center gap-4 px-5 py-4 hover:bg-gray-50 transition-colors text-left group"
-              >
-                <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: '#E8F0F7' }}>
-                  <Icon className="h-4 w-4" style={{ color: DataMarket_BLUE }} />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-gray-900 group-hover:text-blue-700">{item.name}</p>
-                  <div className="flex items-center gap-2 mt-0.5">
-                    {item.tags.map(t => (
-                      <span key={t} className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${tagColors[t] || 'bg-gray-100 text-gray-600'}`}>{t}</span>
-                    ))}
+        {recentlyAccessed.length > 0 ? (
+          <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-100">
+            {recentlyAccessed.map((item, i) => {
+              const Icon = typeIcons[item.type] || BarChart3
+              return (
+                <button key={i}
+                  onClick={async () => {
+                    try {
+                      const res = await fetch('/api/portal/products?includeAll=true')
+                      const products = await res.json()
+                      const p = products.find(x => x.product_ref === item.ref)
+                      if (p && onOpenProduct) {
+                        onOpenProduct({
+                          id: p.product_id, product_ref: p.product_ref, ref: p.product_ref,
+                          name: p.display_name, description: p.description, type: p.type,
+                          source: p.source_system, tags: parseTags(p.tags),
+                          refreshFrequency: p.refresh_frequency, owner: p.owner_email,
+                          classification: p.classification, uc_full_name: p.uc_full_name, ucFullName: p.uc_full_name,
+                        })
+                        return
+                      }
+                    } catch (_) {}
+                    onNavigate('my-access')
+                  }}
+                  className="w-full flex items-center gap-4 px-5 py-4 hover:bg-gray-50 transition-colors text-left group"
+                >
+                  <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: '#E8F0F7' }}>
+                    <Icon className="h-4 w-4" style={{ color: DataMarket_BLUE }} />
                   </div>
-                </div>
-                <div className="flex items-center gap-1.5 text-xs text-gray-400 shrink-0">
-                  <Clock className="h-3.5 w-3.5" />
-                  {item.accessed}
-                </div>
-              </button>
-            )
-          })}
-        </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-900 group-hover:text-blue-700">{item.name}</p>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      {item.tags.slice(0, 3).map(t => (
+                        <span key={t} className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${tagColors[t] || 'bg-gray-100 text-gray-600'}`}>{t}</span>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5 text-xs text-gray-400 shrink-0">
+                    <Clock className="h-3.5 w-3.5" />
+                    {item.accessed}
+                  </div>
+                </button>
+              )
+            })}
+          </div>
+        ) : (
+          <div className="bg-white rounded-xl border border-gray-100 px-6 py-10 text-center">
+            <p className="text-sm text-gray-500">No approved data products yet.</p>
+            <button onClick={() => onNavigate('discover')}
+              className="mt-3 text-sm font-medium flex items-center gap-1 mx-auto hover:gap-2 transition-all"
+              style={{ color: DataMarket_BLUE }}>
+              Browse the catalog <ArrowRight className="h-4 w-4" />
+            </button>
+          </div>
+        )}
       </section>
     </div>
   )
