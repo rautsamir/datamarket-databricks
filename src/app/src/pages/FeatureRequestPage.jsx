@@ -22,6 +22,7 @@ export function FeatureRequestPage() {
   const [showNew, setShowNew]     = useState(false)
   const [newForm, setNewForm]     = useState({ title: '', description: '' })
   const [submitting, setSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState('')
   const [votingId, setVotingId]   = useState(null)
 
   const load = useCallback(() => {
@@ -51,6 +52,7 @@ export function FeatureRequestPage() {
   const handleSubmit = async () => {
     if (!newForm.title.trim()) return
     setSubmitting(true)
+    setSubmitError('')
     try {
       const r = await fetch('/api/portal/feature-requests', {
         method: 'POST',
@@ -64,10 +66,17 @@ export function FeatureRequestPage() {
       if (r.ok) {
         setShowNew(false)
         setNewForm({ title: '', description: '' })
+        setSubmitError('')
         load()
+      } else {
+        const body = await r.json().catch(() => ({}))
+        setSubmitError(body.error || `Server error (${r.status}) — please try again.`)
       }
-    } catch (_) {}
-    finally { setSubmitting(false) }
+    } catch (e) {
+      setSubmitError('Network error — please check your connection and try again.')
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   const handleStatus = async (id, status) => {
@@ -104,7 +113,7 @@ export function FeatureRequestPage() {
             <p className="text-sm text-gray-500">Tell us what data you need — upvote what matters most</p>
           </div>
         </div>
-        <button onClick={() => setShowNew(true)}
+        <button onClick={() => { setShowNew(true); setSubmitError('') }}
           className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white"
           style={{ backgroundColor: DataMarket_BLUE }}>
           <Plus className="h-4 w-4" /> New request
@@ -135,6 +144,9 @@ export function FeatureRequestPage() {
                 placeholder="Describe your use case — helps stewards understand priority"
                 className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 resize-none" />
             </div>
+            {submitError && (
+              <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-xs text-red-700">{submitError}</div>
+            )}
             <div className="flex gap-2 pt-1">
               <button onClick={handleSubmit} disabled={submitting || !newForm.title.trim()}
                 className="flex-1 py-2 rounded-lg text-sm font-medium text-white disabled:opacity-50"
