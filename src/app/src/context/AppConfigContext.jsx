@@ -11,8 +11,10 @@ const defaults = {
   autoDiscoverEnabled: false,
   autoDiscoverPrefix:  '',
   databricksHost: '',
-  askAiEnabled:    true,
-  insightsEnabled: true,
+  askAiEnabled:           true,
+  insightsEnabled:        true,
+  featureRequestsEnabled: false,
+  contributeUrl:          '',
   searchChips:     [],
   navLinks: [
     { label: 'About',   visible: true },

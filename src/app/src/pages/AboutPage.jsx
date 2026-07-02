@@ -1,5 +1,5 @@
 import React from 'react'
-import { Database, ShieldCheck, Users, Zap, ArrowRight } from 'lucide-react'
+import { Database, ShieldCheck, Users, Zap, ArrowRight, ExternalLink, MessageSquarePlus } from 'lucide-react'
 import { useAppConfig } from '@/context/AppConfigContext'
 
 const DataMarket_BLUE = '#003865'
@@ -12,7 +12,7 @@ const FEATURES = [
 ]
 
 export function AboutPage({ onNavigate }) {
-  const { appName, appSubtitle, appLogoUrl, aboutText } = useAppConfig()
+  const { appName, appSubtitle, appLogoUrl, aboutText, contributeUrl } = useAppConfig()
 
   return (
     <div className="max-w-3xl mx-auto space-y-10 py-4">
@@ -80,7 +80,7 @@ export function AboutPage({ onNavigate }) {
       </div>
 
       {/* CTA */}
-      <div className="flex gap-3">
+      <div className="flex flex-wrap gap-3">
         <button onClick={() => onNavigate?.('discover')}
           className="flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium text-white"
           style={{ backgroundColor: DataMarket_BLUE }}>
@@ -90,6 +90,14 @@ export function AboutPage({ onNavigate }) {
           className="flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium border border-gray-200 text-gray-700 hover:bg-gray-50">
           Try Ask AI
         </button>
+        {contributeUrl && (
+          <a href={contributeUrl} target="_blank" rel="noopener noreferrer"
+            className="flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium border border-orange-200 text-orange-700 bg-orange-50 hover:bg-orange-100">
+            <MessageSquarePlus className="h-4 w-4" />
+            Suggest a feature
+            <ExternalLink className="h-3 w-3 opacity-60" />
+          </a>
+        )}
       </div>
 
     </div>
