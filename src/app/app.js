@@ -420,6 +420,15 @@ async function runMigrations() {
       ON CONFLICT (email) DO NOTHING
     `);
 
+    // Create settings table if it doesn't exist
+    await query(`
+      CREATE TABLE IF NOT EXISTS settings (
+        key        VARCHAR(100) PRIMARY KEY,
+        value      TEXT,
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+
     // Create portal_groups table if it doesn't exist (group-based role assignment)
     await query(`
       CREATE TABLE IF NOT EXISTS portal_groups (
