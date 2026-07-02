@@ -111,18 +111,55 @@ The script will prompt for each setting one at a time.
 
 ## Step 4 — Open the app and configure it
 
-Once the script prints `✅ DataMarket deployed successfully!`, open the URL it gives you.
+Once the script prints `✅ DataMarket deployed successfully!`, open the URL it gives you. You'll be logged in automatically via SSO — the deployer email is auto-promoted to **Admin**.
 
-1. **Switch to the Admin persona** using the dropdown in the top-right corner
-2. Go to **Manage → Settings** to set:
-   - Portal name and tagline
-   - Logo URL
-   - Genie Space ID (for the Ask AI feature)
-   - SQL Warehouse ID (for live UC grant execution)
-   - RFA Notifications toggle (sends Databricks RFA notifications on access requests)
-3. Go to **Discover → Import from Unity Catalog** to populate the catalog with tables from your workspace (no SQL Warehouse needed for browsing)
+Go to **Manage → Settings** to complete the one-time setup. There are two critical integrations that unlock the full feature set:
 
-> All of these settings persist in Lakebase — no redeployment needed when you change them.
+---
+
+### ⚡ Critical: SQL Warehouse ID (enables real UC access grants)
+
+**Without this:** Approving an access request logs the approval in the portal but does **nothing** in Unity Catalog — the user cannot actually query the table.
+
+**With this:** Approving an access request executes `GRANT SELECT ON <table> TO <user>` in Unity Catalog automatically. This is what makes DataMarket a real self-service access portal rather than a request tracker.
+
+**How to find your Warehouse ID:**
+1. In your Databricks workspace, go to **SQL Warehouses** (under Compute)
+2. Click any running warehouse (or start one)
+3. Copy the ID from the URL: `https://your-workspace.net/sql/warehouses/**abc123def456**`
+   — or from the **Connection details** tab
+
+**How to set it:** Paste the ID into **Manage → Settings → Integrations → SQL Warehouse ID** → Save Settings.
+
+> **Recommendation:** Use a small serverless warehouse. The app only runs quick GRANT/REVOKE statements — it won't generate significant DBU spend.
+
+---
+
+### 🤖 Optional: Genie Space ID (enables natural language Ask AI)
+
+**Without this:** The Ask AI page in the top nav shows a placeholder.
+
+**With this:** Users can type natural language questions about your data products — *"show me fire incidents from last month"* — and get live SQL results powered by Genie.
+
+**Important:** A Genie Space must be **built on your specific UC tables** — it is not generic. You need to create one that knows about your data.
+
+**How to set up a Genie Space for your data:**
+1. In your workspace, go to **AI/BI → Genie → New Space**
+2. Add the UC tables you want to make queryable (e.g. `your_catalog.gold.*`)
+3. Give it a name, optionally add natural language instructions
+4. Save it — then copy the Space ID from the URL:
+   `https://your-workspace.net/genie/spaces/**01f3a...**`
+5. Paste that ID into **Manage → Settings → Integrations → Genie Space ID** → Save Settings
+
+> One Genie Space can cover multiple tables from the same catalog/schema. Configure it to cover your gold/published data products for the best Ask AI experience.
+
+---
+
+### Populate the catalog
+
+After saving settings, go to **Manage → Data Products → Import from UC** to pull in your Unity Catalog tables as data products. No warehouse required for browsing or importing metadata.
+
+> All settings persist in Lakebase — no redeployment needed when you change them.
 
 > **Switching from Demo to Production mode** is the one exception: `DEMO_MODE` is an `app.yaml` env var, not a UI setting. To disable the persona switcher and enable real SSO identity + UC grants, set `--demo-mode false` when redeploying (see Re-deploying below).
 
