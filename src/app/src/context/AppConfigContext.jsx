@@ -13,10 +13,15 @@ const defaults = {
   autoDiscoverPrefix:  '',
   databricksHost: '',
   navLinks: [
-    { label: 'About',   url: '', visible: true },
-    { label: 'FAQ',     url: '', visible: true },
-    { label: 'Contact', url: '', visible: true },
+    { label: 'About',   visible: true },
+    { label: 'FAQ',     visible: true },
+    { label: 'Contact', visible: true },
   ],
+  aboutText:    '',
+  contactName:  '',
+  contactEmail: '',
+  contactNote:  '',
+  faqItems:     [],
 }
 
 const AppConfigContext = createContext({ ...defaults, refreshConfig: () => {} })
