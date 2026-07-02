@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { PersonaProvider } from './context/PersonaContext'
 import { AppConfigProvider } from './context/AppConfigContext'
 import { DataMarketLayout } from './components/layout/DataMarketLayout'
+import { FirstRunWizard } from './components/FirstRunWizard'
 import { DataMarketHomePage } from './pages/DataMarketHomePage'
 import { DataMarketCatalogPage } from './pages/DataMarketCatalogPage'
 import { DataMarketProductDetailPage } from './pages/DataMarketProductDetailPage'
@@ -13,11 +14,19 @@ import { AboutPage } from './pages/AboutPage'
 import { FAQPage } from './pages/FAQPage'
 import { ContactPage } from './pages/ContactPage'
 import { FeatureRequestPage } from './pages/FeatureRequestPage'
+import { useAppConfig } from './context/AppConfigContext'
+import { usePersona } from './context/PersonaContext'
 
 function AppInner() {
   const [currentPage, setCurrentPage] = useState('home')
   const [pageProps, setPageProps] = useState({})
   const [selectedProduct, setSelectedProduct] = useState(null)
+  const [wizardDismissed, setWizardDismissed] = useState(false)
+
+  const { setupComplete } = useAppConfig()
+  const { isAdmin } = usePersona()
+
+  const showWizard = !setupComplete && isAdmin && !wizardDismissed
 
   const navigate = (page, props = {}) => {
     setCurrentPage(page)
@@ -64,6 +73,7 @@ function AppInner() {
   return (
     <DataMarketLayout currentPage={currentPage} onNavigate={navigate}>
       {renderPage()}
+      {showWizard && <FirstRunWizard onDismiss={() => setWizardDismissed(true)} />}
     </DataMarketLayout>
   )
 }
