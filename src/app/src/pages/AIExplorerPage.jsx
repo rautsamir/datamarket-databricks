@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react'
-import { Bot, Send, Sparkles, Database, BarChart3, FileText, Lightbulb, RotateCcw, Search, ExternalLink, Tag, ArrowRight } from 'lucide-react'
+import { Bot, Send, Sparkles, Database, BarChart3, FileText, RotateCcw, Search, ExternalLink, Tag, ArrowRight, BookOpen, ClipboardCheck, Zap, ChevronRight } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { useAppConfig } from '@/context/AppConfigContext'
@@ -7,29 +7,69 @@ import { useAppConfig } from '@/context/AppConfigContext'
 const TYPE_ICONS = { Dashboard: BarChart3, Report: FileText, Dataset: Database }
 const DataMarket_BLUE = '#003865'
 
-const SAMPLE_QUESTIONS = [
-  'What financial data do we have?',
-  'Show me datasets related to HR or employees',
-  'What data is available about operations?',
-  'Do we have any real-time or daily refreshed data?',
-  'What datasets can I use for budget analysis?',
-  'Show me all AI or ML-related data products',
-]
-
-// Thin fallback used only when FMAPI call fails
-function fallbackMatches(question, demoMode) {
-  if (!demoMode) return null
-  return null // production: show error state, don't fake it
+const DOMAIN_COLORS = {
+  Finance:     { bg: 'bg-emerald-50',  text: 'text-emerald-700',  border: 'border-emerald-200' },
+  HR:          { bg: 'bg-violet-50',   text: 'text-violet-700',   border: 'border-violet-200' },
+  Operations:  { bg: 'bg-blue-50',     text: 'text-blue-700',     border: 'border-blue-200' },
+  'Public Safety': { bg: 'bg-red-50',  text: 'text-red-700',      border: 'border-red-200' },
+  Technology:  { bg: 'bg-cyan-50',     text: 'text-cyan-700',     border: 'border-cyan-200' },
+  Analytics:   { bg: 'bg-amber-50',    text: 'text-amber-700',    border: 'border-amber-200' },
+  Other:       { bg: 'bg-gray-50',     text: 'text-gray-600',     border: 'border-gray-200' },
 }
+function domainColor(d) { return DOMAIN_COLORS[d] || DOMAIN_COLORS.Other }
+
+const HOW_IT_WORKS = [
+  {
+    icon: Search,
+    step: '1. Describe what you need',
+    detail: 'Type a business question, topic, or use case in plain English.',
+  },
+  {
+    icon: BookOpen,
+    step: '2. AI finds matching data',
+    detail: 'Databricks AI scans your catalog and explains why each product fits.',
+  },
+  {
+    icon: ClipboardCheck,
+    step: '3. Request access',
+    detail: 'Open a product and click "Request Access" — a steward reviews and approves.',
+  },
+  {
+    icon: Zap,
+    step: '4. Query immediately',
+    detail: 'Once approved, open the table in UC Explorer or copy a ready-to-run SQL snippet.',
+  },
+]
 
 export function AIExplorerPage({ initialQuestion = '', onNavigate, onOpenProduct }) {
   const { demoMode } = useAppConfig()
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
+  const [domains, setDomains] = useState([])
   const bottomRef = useRef(null)
   const inputRef = useRef(null)
   const initialSent = useRef(false)
+
+  // Load real domains from catalog on mount
+  useEffect(() => {
+    fetch('/api/portal/products?includeAll=false')
+      .then(r => r.json())
+      .then(products => {
+        if (!Array.isArray(products)) return
+        const counts = {}
+        products.forEach(p => {
+          const d = p.domain || 'Other'
+          counts[d] = (counts[d] || 0) + 1
+        })
+        setDomains(Object.entries(counts)
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 7)
+          .map(([name, count]) => ({ name, count }))
+        )
+      })
+      .catch(() => {})
+  }, [])
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages, loading])
 
@@ -54,13 +94,13 @@ export function AIExplorerPage({ initialQuestion = '', onNavigate, onOpenProduct
       } else {
         setMessages(prev => [...prev, {
           role: 'assistant', type: 'empty', question: q,
-          content: `No data products matched "${q}". Try browsing the full catalog or refining your search.`
+          content: `No data products matched "${q}". Try rephrasing or browse the full catalog.`
         }])
       }
     } catch (e) {
       setMessages(prev => [...prev, {
         role: 'assistant', type: 'error',
-        content: `Couldn't reach the catalog search service. ${e.message}`
+        content: `Catalog search is unavailable right now. ${e.message}`
       }])
     } finally {
       setLoading(false)
@@ -85,8 +125,7 @@ export function AIExplorerPage({ initialQuestion = '', onNavigate, onOpenProduct
           name: p.display_name, description: p.description, type: p.type,
           source: p.source_system, tags: Array.isArray(p.tags) ? p.tags : [],
           refreshFrequency: p.refresh_frequency, owner: p.owner_email,
-          classification: p.classification, uc_full_name: p.uc_full_name,
-          ucFullName: p.uc_full_name,
+          classification: p.classification, uc_full_name: p.uc_full_name, ucFullName: p.uc_full_name,
         })
         return
       }
@@ -110,8 +149,8 @@ export function AIExplorerPage({ initialQuestion = '', onNavigate, onOpenProduct
 
         {/* ── Chat panel ── */}
         <div className="xl:col-span-3">
-          <Card className="flex flex-col min-h-[520px]">
-            <CardContent className="flex-1 p-4 space-y-4 overflow-y-auto max-h-[520px]">
+          <Card className="flex flex-col min-h-[540px]">
+            <CardContent className="flex-1 p-4 space-y-4 overflow-y-auto max-h-[540px]">
 
               {messages.length === 0 && !loading && (
                 <div className="flex flex-col items-center justify-center h-64 text-center gap-3">
@@ -119,7 +158,21 @@ export function AIExplorerPage({ initialQuestion = '', onNavigate, onOpenProduct
                     <Search className="h-7 w-7 text-blue-500" />
                   </div>
                   <p className="font-semibold text-gray-800">What data are you looking for?</p>
-                  <p className="text-sm text-gray-400 max-w-xs">Describe your use case or ask about a topic — I'll find the most relevant data products in your catalog.</p>
+                  <p className="text-sm text-gray-400 max-w-xs">Describe your use case or ask about a topic. I'll find the most relevant data products in your catalog.</p>
+                  {domains.length > 0 && (
+                    <div className="flex flex-wrap justify-center gap-2 mt-1 max-w-sm">
+                      {domains.map(d => {
+                        const c = domainColor(d.name)
+                        return (
+                          <button key={d.name}
+                            onClick={() => sendQuestion(`What ${d.name} data products do we have?`)}
+                            className={`text-xs px-3 py-1 rounded-full border font-medium transition-all hover:shadow-sm ${c.bg} ${c.text} ${c.border}`}>
+                            {d.name} · {d.count}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -144,6 +197,7 @@ export function AIExplorerPage({ initialQuestion = '', onNavigate, onOpenProduct
                           <div className="space-y-2">
                             {msg.matches.map((m, mi) => {
                               const Icon = TYPE_ICONS[m.type] || Database
+                              const c = domainColor(m.domain)
                               return (
                                 <div key={mi} className="bg-white border border-gray-200 rounded-xl p-3.5 hover:border-blue-200 hover:shadow-sm transition-all">
                                   <div className="flex items-start justify-between gap-3">
@@ -154,7 +208,7 @@ export function AIExplorerPage({ initialQuestion = '', onNavigate, onOpenProduct
                                       <div className="min-w-0">
                                         <div className="flex items-center gap-2 flex-wrap">
                                           <span className="font-semibold text-sm text-gray-900">{m.name}</span>
-                                          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-700 font-medium">{m.domain}</span>
+                                          <span className={`text-[10px] px-1.5 py-0.5 rounded-full border font-medium ${c.bg} ${c.text} ${c.border}`}>{m.domain}</span>
                                           <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-600">{m.type}</span>
                                         </div>
                                         <p className="text-xs text-gray-500 mt-1 leading-relaxed">{m.reason}</p>
@@ -169,11 +223,9 @@ export function AIExplorerPage({ initialQuestion = '', onNavigate, onOpenProduct
                                         )}
                                       </div>
                                     </div>
-                                    <button
-                                      onClick={() => openProduct(m.ref, m.name)}
+                                    <button onClick={() => openProduct(m.ref, m.name)}
                                       className="shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium text-white transition-colors hover:opacity-90"
-                                      style={{ backgroundColor: DataMarket_BLUE }}
-                                    >
+                                      style={{ backgroundColor: DataMarket_BLUE }}>
                                       View <ArrowRight className="h-3 w-3" />
                                     </button>
                                   </div>
@@ -181,12 +233,10 @@ export function AIExplorerPage({ initialQuestion = '', onNavigate, onOpenProduct
                               )
                             })}
                           </div>
-                          <div className="flex gap-2 pt-1">
-                            <button onClick={() => onNavigate?.('discover')}
-                              className="text-xs text-blue-600 hover:underline flex items-center gap-1">
-                              <ExternalLink className="h-3 w-3" /> Browse full catalog
-                            </button>
-                          </div>
+                          <button onClick={() => onNavigate?.('discover')}
+                            className="text-xs text-blue-600 hover:underline flex items-center gap-1 pt-1">
+                            <ExternalLink className="h-3 w-3" /> Browse full catalog
+                          </button>
                         </>
                       )}
 
@@ -245,37 +295,70 @@ export function AIExplorerPage({ initialQuestion = '', onNavigate, onOpenProduct
 
         {/* ── Sidebar ── */}
         <div className="space-y-4">
+
+          {/* Browse by domain */}
+          {domains.length > 0 && (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-xs text-gray-500 uppercase tracking-wide font-semibold">Browse by domain</CardTitle>
+              </CardHeader>
+              <CardContent className="pt-0 space-y-1">
+                {domains.map(d => {
+                  const c = domainColor(d.name)
+                  return (
+                    <button key={d.name}
+                      onClick={() => sendQuestion(`Show me ${d.name} data products`)}
+                      className="w-full flex items-center justify-between px-3 py-2 rounded-lg hover:bg-gray-50 transition-colors group">
+                      <div className="flex items-center gap-2">
+                        <span className={`w-2 h-2 rounded-full ${c.bg.replace('bg-', 'bg-').replace('50', '400')}`}
+                          style={{ backgroundColor: undefined }}
+                        />
+                        <span className="text-xs font-medium text-gray-700 group-hover:text-gray-900">{d.name}</span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <span className="text-[10px] text-gray-400">{d.count}</span>
+                        <ChevronRight className="h-3 w-3 text-gray-300 group-hover:text-gray-500" />
+                      </div>
+                    </button>
+                  )
+                })}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* How it works */}
           <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm flex items-center gap-2">
-                <Lightbulb className="h-4 w-4 text-amber-500" /> Try asking...
-              </CardTitle>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-xs text-gray-500 uppercase tracking-wide font-semibold">How it works</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-1.5">
-              {SAMPLE_QUESTIONS.map((q, i) => (
-                <button key={i} onClick={() => sendQuestion(q)}
-                  className="w-full text-left p-2.5 rounded-lg border border-gray-100 hover:bg-blue-50 hover:border-blue-200 transition-colors group">
-                  <span className="text-xs text-gray-600 group-hover:text-blue-800 leading-snug">{q}</span>
-                </button>
+            <CardContent className="pt-0 space-y-3">
+              {HOW_IT_WORKS.map((step, i) => (
+                <div key={i} className="flex gap-3">
+                  <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 bg-blue-50">
+                    <step.icon className="h-3.5 w-3.5 text-blue-600" />
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold text-gray-800">{step.step}</p>
+                    <p className="text-[11px] text-gray-500 mt-0.5 leading-relaxed">{step.detail}</p>
+                  </div>
+                </div>
               ))}
             </CardContent>
           </Card>
 
-          <Card className="bg-blue-50 border-blue-200">
-            <CardContent className="p-4">
-              <div className="flex items-start gap-2">
-                <Sparkles className="h-4 w-4 text-blue-600 mt-0.5 shrink-0" />
-                <div>
-                  <p className="text-xs font-semibold text-blue-900">Powered by Databricks FMAPI</p>
-                  <p className="text-xs text-blue-700 mt-1 leading-relaxed">
-                    Describes your use case in plain language and finds matching data products from your catalog. No SQL, no warehouse required.
-                  </p>
-                </div>
-              </div>
+          {/* Tip */}
+          <Card className="bg-amber-50 border-amber-200">
+            <CardContent className="p-3.5">
+              <p className="text-[11px] font-semibold text-amber-800 mb-1">Tip</p>
+              <p className="text-[11px] text-amber-700 leading-relaxed">
+                The more specific your question, the better. Try including the use case:
+                <span className="italic"> "revenue data for Q4 budget forecasting"</span> rather than just
+                <span className="italic"> "revenue"</span>.
+              </p>
             </CardContent>
           </Card>
-        </div>
 
+        </div>
       </div>
     </div>
   )
