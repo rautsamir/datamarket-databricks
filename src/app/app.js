@@ -424,7 +424,7 @@ async function runMigrations() {
     await query(`
       CREATE TABLE IF NOT EXISTS settings (
         key        VARCHAR(100) PRIMARY KEY,
-        value      TEXT,
+        value      VARCHAR(4096),
         updated_at TIMESTAMPTZ DEFAULT NOW()
       )
     `);
