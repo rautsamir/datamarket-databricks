@@ -1,0 +1,493 @@
+import {
+  query,
+  getProductCols,
+  resetProductColsCache,
+  loadSettings,
+  getSetting,
+  SQL_WAREHOUSE_ID,
+} from '../db.js';
+import {
+  fetchUcSchema,
+  ucApiRequest,
+  getUcAuth,
+} from '../databricks.js';
+
+// ─── Background auto-discover (runs once after startup if enabled) ────────────
+export async function maybeAutoDiscover() {
+  try {
+    await loadSettings();
+    if (getSetting('auto_discover_enabled', 'false') !== 'true') return;
+    const prefix = getSetting('auto_discover_prefix', '');
+    if (!prefix) return;
+    const parts = prefix.split('.');
+    if (parts.length < 2) return;
+    const [catalog, schema] = parts;
+    const { host, token } = await getUcAuth();
+    const listData = await ucApiRequest(host, token,
+      `/api/2.0/unity-catalog/tables?catalog_name=${encodeURIComponent(catalog)}&schema_name=${encodeURIComponent(schema)}&max_results=200`);
+    const ucTables = (listData?.tables || []).filter(t =>
+      parts[2] ? t.name?.toLowerCase().startsWith(parts[2].toLowerCase()) : true);
+    const { rows: existing } = await query(`SELECT uc_full_name FROM data_products WHERE uc_full_name IS NOT NULL`);
+    const existingSet = new Set(existing.map(r => r.uc_full_name.toLowerCase()));
+    const newTables = ucTables.filter(t => !existingSet.has(`${catalog}.${schema}.${t.name}`.toLowerCase()));
+    if (!newTables.length) return;
+    const { rows: [maxRow] } = await query(`SELECT MAX(CAST(SUBSTRING(product_ref FROM 4) AS INTEGER)) AS max_id FROM data_products`);
+    let nextId = (maxRow.max_id || 0) + 1;
+    for (const t of newTables) {
+      const fullName = `${catalog}.${schema}.${t.name}`;
+      const ref = `DP-${String(nextId++).padStart(3, '0')}`;
+      const displayName = t.name.replace(/_/g, ' ').replace(/\bgold\b/i, '').trim().replace(/\b\w/g, c => c.toUpperCase());
+      await query(
+        `INSERT INTO data_products (product_ref, display_name, description, type, domain, tags, source_system, refresh_frequency, owner_email, classification, uc_full_name, is_active, status, last_refreshed)
+         VALUES ($1,$2,$3,'Dataset','Other','{}','Unity Catalog','Daily','','Internal',$4,FALSE,'Draft',NOW())
+         ON CONFLICT (product_ref) DO NOTHING`,
+        [ref, displayName, `Auto-discovered from Unity Catalog: ${fullName}`, fullName]);
+    }
+    console.log(`[auto-discover] Drafted ${newTables.length} new table(s) from ${prefix}`);
+  } catch (e) {
+    console.warn('[auto-discover] Non-fatal:', e.message);
+  }
+}
+
+export function registerRoutes(app) {
+  // ─── Data Products ────────────────────────────────────────────────────────────
+  app.get('/api/portal/products', async (req, res) => {
+    try {
+      const { domain, type, q, includeAll } = req.query;
+      const cols = await getProductCols();
+
+      // Build SELECT — only include optional columns if they exist in this schema
+      const optionalCols = [
+        cols.has('source_type')  ? "COALESCE(source_type, source_system, 'Databricks') AS source_type"
+                                 : "COALESCE(source_system,'Databricks') AS source_type",
+        cols.has('product_url')  ? "COALESCE(product_url,'')  AS product_url"  : "'' AS product_url",
+        cols.has('report_url')   ? "COALESCE(report_url,'')   AS report_url"   : "'' AS report_url",
+      ].join(', ');
+
+      let sql = `SELECT product_id, product_ref, uc_full_name, display_name, description, type, domain,
+                        tags, source_system, refresh_frequency, owner_email, classification, is_active,
+                        COALESCE(status,'Published') AS status, created_at, updated_at, last_refreshed,
+                        ${optionalCols}
+                 FROM data_products WHERE (is_active = TRUE OR COALESCE(status,'Published') = 'Pending')`;
+
+      if (!includeAll) sql = sql.replace(
+        "(is_active = TRUE OR COALESCE(status,'Published') = 'Pending')",
+        "is_active = TRUE AND COALESCE(status,'Published') = 'Published'"
+      );
+      // When includeAll=true (admin view), remove all status/active filters — show everything
+      if (includeAll) sql = sql.replace(
+        "WHERE (is_active = TRUE OR COALESCE(status,'Published') = 'Pending')",
+        'WHERE TRUE'
+      );
+      const params = [];
+      if (domain) { params.push(domain); sql += ` AND domain = $${params.length}`; }
+      if (type)   { params.push(type);   sql += ` AND type = $${params.length}`; }
+      if (q)      { params.push(`%${q}%`); sql += ` AND (display_name ILIKE $${params.length} OR description ILIKE $${params.length})`; }
+      sql += ' ORDER BY display_name';
+
+      const { rows } = await query(sql, params);
+      res.json(rows);
+    } catch (e) {
+      console.error('[/api/portal/products]', e.message);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ─── Products debug ────────────────────────────────────────────────────────────
+  app.get('/api/portal/products/debug', async (req, res) => {
+    try {
+      const cols = await getProductCols();
+      const { rows: countRows } = await query('SELECT COUNT(*) as total FROM data_products');
+      const { rows: sample } = await query(
+        `SELECT product_ref, display_name, is_active, status FROM data_products LIMIT 5`
+      );
+      res.json({
+        detected_optional_cols: [...cols],
+        total_products: countRows[0]?.total,
+        sample,
+      });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post('/api/portal/products', async (req, res) => {
+    try {
+      const { name, description, type, source, tags, refreshFrequency,
+              ownerEmail, classification, ucFullName, domain, hasPII, submittedBy, productUrl } = req.body;
+      if (!name || !description) return res.status(400).json({ error: 'name and description are required' });
+
+      // Generate a sequential ref after current max
+      const { rows: [maxRow] } = await query(
+        `SELECT MAX(CAST(SUBSTRING(product_ref FROM 4) AS INTEGER)) AS max_id FROM data_products`
+      );
+      const nextId = (maxRow.max_id || 12) + 1;
+      const productRef = `DP-${String(nextId).padStart(3, '0')}`;
+
+      const tagsArr = Array.isArray(tags) ? tags : (tags ? tags.split(',').map(t => t.trim()) : []);
+
+      const { rows: [product] } = await query(
+        `INSERT INTO data_products
+           (product_ref, display_name, description, type, source_system, tags,
+            refresh_frequency, owner_email, classification, uc_full_name, domain, is_active, status, product_url)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,FALSE,'Pending',$12)
+         RETURNING *`,
+        [productRef, name, description, type || 'Dashboard', source || 'Other',
+         tagsArr, refreshFrequency || 'Daily',
+         ownerEmail || submittedBy || 'unknown@example.org',
+         classification || 'Internal', ucFullName || '', domain || source || 'Other',
+         productUrl || null]
+      );
+
+      // Best-effort audit log (non-fatal if table doesn't exist)
+      try {
+        await query(
+          `INSERT INTO audit_log (event_type, actor_email, target_name, metadata)
+           VALUES ('PRODUCT_SUBMITTED', $1, $2, $3)`,
+          [submittedBy || ownerEmail || 'unknown', productRef, JSON.stringify({ name, productRef })]
+        );
+      } catch (_) {}
+
+      res.status(201).json(product);
+    } catch (e) {
+      console.error('[POST /api/portal/products]', e.message);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ─── Get pending products (for admin review) ──────────────────────────────────
+  app.get('/api/portal/products/pending', async (req, res) => {
+    try {
+      const { rows } = await query(
+        `SELECT * FROM data_products WHERE is_active = FALSE AND status = 'Pending' ORDER BY created_at DESC`
+      );
+      res.json(rows);
+    } catch (e) {
+      console.error('[/api/portal/products/pending]', e.message);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ─── Publish product (admin approves, makes it live in catalog) ───────────────
+  app.put('/api/portal/products/:ref/publish', async (req, res) => {
+    try {
+      const { ref } = req.params;
+      const { reviewerEmail } = req.body;
+      const { rows: [product] } = await query(
+        `UPDATE data_products SET is_active = TRUE, status = 'Published', updated_at = NOW()
+         WHERE product_ref = $1 RETURNING *`,
+        [ref]
+      );
+      if (!product) return res.status(404).json({ error: 'Product not found' });
+
+      try {
+        await query(
+          `INSERT INTO audit_log (event_type, actor_email, target_name, metadata)
+           VALUES ('PRODUCT_PUBLISHED', $1, $2, $3)`,
+          [reviewerEmail || 'admin', ref, JSON.stringify({ ref, name: product.display_name })]
+        );
+      } catch (_) {}
+      res.json(product);
+    } catch (e) {
+      console.error('[PUT /api/portal/products/:ref/publish]', e.message);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ─── Reject product registration ──────────────────────────────────────────────
+  app.put('/api/portal/products/:ref/reject', async (req, res) => {
+    try {
+      const { ref } = req.params;
+      const { reviewerEmail, reason } = req.body;
+      const { rows: [product] } = await query(
+        `UPDATE data_products SET status = 'Rejected', updated_at = NOW()
+         WHERE product_ref = $1 RETURNING *`,
+        [ref]
+      );
+      if (!product) return res.status(404).json({ error: 'Product not found' });
+
+      try {
+        await query(
+          `INSERT INTO audit_log (event_type, actor_email, target_name, metadata)
+           VALUES ('PRODUCT_REJECTED', $1, $2, $3)`,
+          [reviewerEmail || 'admin', ref, JSON.stringify({ ref, reason })]
+        );
+      } catch (_) {}
+      res.json(product);
+    } catch (e) {
+      console.error('[PUT /api/portal/products/:ref/reject]', e.message);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ─── UC Schema — live column metadata with synthetic fallback ────────────────
+  app.get('/api/portal/products/:ref/schema', async (req, res) => {
+    try {
+      const { ref } = req.params;
+      const { rows: [product] } = await query('SELECT uc_full_name, domain FROM data_products WHERE product_ref = $1', [ref]);
+      if (!product) return res.status(404).json({ error: 'Product not found' });
+
+      // Try live UC schema first (requires SQL_WAREHOUSE_ID)
+      if (product.uc_full_name) {
+        const liveSchema = await fetchUcSchema(product.uc_full_name);
+        if (liveSchema) {
+          return res.json({ source: 'unity_catalog', uc_full_name: product.uc_full_name, columns: liveSchema });
+        }
+      }
+      // Fall back to signal that frontend should use its synthetic schemas
+      res.json({ source: 'synthetic', domain: product.domain, uc_full_name: product.uc_full_name || null });
+    } catch (e) {
+      console.error('[/api/portal/products/:ref/schema]', e.message);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ─── Admin: Product inline update ─────────────────────────────────────────────
+  app.put('/api/portal/products/:ref', async (req, res) => {
+    try {
+      const { ref } = req.params;
+      const {
+        uc_full_name, source_type, refresh_frequency, report_url, domain,
+        description, display_name, owner_email, data_classification, tags
+      } = req.body;
+      const sets = [];
+      const params = [];
+      if (uc_full_name !== undefined)        { params.push(uc_full_name);          sets.push(`uc_full_name = $${params.length}`); }
+      if (source_type !== undefined)         { params.push(source_type);            sets.push(`source_system = $${params.length}`); }
+      if (refresh_frequency !== undefined)   { params.push(refresh_frequency);      sets.push(`refresh_frequency = $${params.length}`); }
+      if (report_url !== undefined)          { params.push(report_url);             sets.push(`report_url = $${params.length}`); }
+      if (domain !== undefined)              { params.push(domain);                 sets.push(`domain = $${params.length}`); }
+      if (description !== undefined)         { params.push(description);            sets.push(`description = $${params.length}`); }
+      if (display_name !== undefined)        { params.push(display_name);           sets.push(`display_name = $${params.length}`); }
+      if (owner_email !== undefined)         { params.push(owner_email);            sets.push(`owner_email = $${params.length}`); }
+      if (data_classification !== undefined) { params.push(data_classification);    sets.push(`data_classification = $${params.length}`); }
+      if (tags !== undefined)                { params.push(JSON.stringify(tags));   sets.push(`tags = $${params.length}`); }
+      if (sets.length === 0) return res.status(400).json({ error: 'Nothing to update' });
+      sets.push('updated_at = NOW()');
+      params.push(ref);
+      const { rows: [product] } = await query(
+        `UPDATE data_products SET ${sets.join(', ')} WHERE product_ref = $${params.length} RETURNING *`, params);
+      if (!product) return res.status(404).json({ error: 'Product not found' });
+      res.json(product);
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ─── Admin: UC Catalog Browser ────────────────────────────────────────────────
+  app.get('/api/portal/admin/uc-catalogs', async (req, res) => {
+    try {
+      const { host, token } = await getUcAuth();
+      const data = await ucApiRequest(host, token, '/api/2.1/unity-catalog/catalogs');
+      const catalogs = (data.catalogs || []).map(c => ({ name: c.name, comment: c.comment }));
+      res.json({ catalogs });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get('/api/portal/admin/uc-schemas', async (req, res) => {
+    try {
+      const { catalog } = req.query;
+      if (!catalog) return res.status(400).json({ error: 'catalog param required' });
+      const { host, token } = await getUcAuth();
+      const data = await ucApiRequest(host, token,
+        `/api/2.1/unity-catalog/schemas?catalog_name=${encodeURIComponent(catalog)}`);
+      const schemas = (data.schemas || []).map(s => ({ name: s.name, full_name: s.full_name, comment: s.comment }));
+      res.json({ schemas });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get('/api/portal/admin/uc-tables-browse', async (req, res) => {
+    try {
+      const { catalog, schema } = req.query;
+      if (!catalog || !schema) return res.status(400).json({ error: 'catalog and schema params required' });
+      const { host, token } = await getUcAuth();
+      const { rows: existing } = await query(
+        `SELECT uc_full_name FROM data_products WHERE uc_full_name IS NOT NULL AND uc_full_name != ''`);
+      const registered = new Set(existing.map(r => r.uc_full_name));
+      const data = await ucApiRequest(host, token,
+        `/api/2.1/unity-catalog/tables?catalog_name=${encodeURIComponent(catalog)}&schema_name=${encodeURIComponent(schema)}&omit_columns=true`);
+      const tables = (data.tables || []).map(t => ({
+        full_name: t.full_name, table_name: t.name,
+        schema_name: schema, catalog_name: catalog,
+        table_type: t.table_type, comment: t.comment,
+        registered: registered.has(t.full_name),
+      }));
+      res.json({ tables });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ─── Admin: UC Table Discovery ────────────────────────────────────────────────
+  app.get('/api/portal/admin/uc-tables', async (req, res) => {
+    try {
+      // Get already-registered UC table names
+      const { rows: existing } = await query(
+        `SELECT uc_full_name FROM data_products WHERE uc_full_name IS NOT NULL AND uc_full_name != ''`);
+      const registered = new Set(existing.map(r => r.uc_full_name));
+
+      // If a warehouse is configured, always query real UC tables (even in demo mode)
+      if (SQL_WAREHOUSE_ID) {
+        const schema = await fetchUcSchema('information_schema.tables');
+        if (schema) return res.json({ source: 'unity_catalog', tables: schema.filter(t => !registered.has(t.full_name)) });
+      }
+
+      // No warehouse configured — return generic placeholder tables so the UI isn't empty
+      const demoTables = [
+        { full_name: 'your_catalog.your_schema.sales_transactions',    table_name: 'sales_transactions',    schema_name: 'your_schema', catalog_name: 'your_catalog' },
+        { full_name: 'your_catalog.your_schema.customer_profiles',     table_name: 'customer_profiles',     schema_name: 'your_schema', catalog_name: 'your_catalog' },
+        { full_name: 'your_catalog.your_schema.product_inventory',     table_name: 'product_inventory',     schema_name: 'your_schema', catalog_name: 'your_catalog' },
+        { full_name: 'your_catalog.your_schema.employee_records',      table_name: 'employee_records',      schema_name: 'your_schema', catalog_name: 'your_catalog' },
+        { full_name: 'your_catalog.your_schema.financial_ledger',      table_name: 'financial_ledger',      schema_name: 'your_schema', catalog_name: 'your_catalog' },
+      ];
+      res.json({ source: 'demo_placeholder', tables: demoTables.filter(t => !registered.has(t.full_name)), registered: existing.map(r => r.uc_full_name) });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post('/api/portal/admin/import-uc', async (req, res) => {
+    try {
+      const { tables } = req.body;
+      if (!Array.isArray(tables) || tables.length === 0) return res.status(400).json({ error: 'tables array required' });
+
+      const { rows: [maxRow] } = await query(
+        `SELECT MAX(CAST(SUBSTRING(product_ref FROM 4) AS INTEGER)) AS max_id FROM data_products`);
+      let nextId = (maxRow.max_id || 16) + 1;
+
+      const imported = [];
+      for (const t of tables) {
+        const ref = `DP-${String(nextId++).padStart(3, '0')}`;
+        const displayName = (t.table_name || t.full_name.split('.').pop())
+          .replace(/_/g, ' ').replace(/\bgold\b/i, '').trim()
+          .replace(/\b\w/g, c => c.toUpperCase());
+        const { rows: [product] } = await query(
+          `INSERT INTO data_products
+             (product_ref, display_name, description, type, domain, tags, source_system,
+              refresh_frequency, owner_email, classification, uc_full_name, is_active, status,
+              last_refreshed)
+           VALUES ($1, $2, $3, 'Dataset', $4, $5, 'Unity Catalog', 'Daily',
+                   $6, 'Internal', $7, TRUE, 'Published', NOW())
+           ON CONFLICT (product_ref) DO NOTHING RETURNING *`,
+          [ref, t.display_name || displayName, t.description || `Imported from Unity Catalog: ${t.full_name}`,
+           t.domain || 'Other', `{${(t.domain || 'UC Import').replace(/'/g, '')}}`,
+           t.owner_email || 'datasteward@example.org', t.full_name]);
+        if (product) imported.push(product);
+      }
+      res.json({ imported: imported.length, products: imported });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ─── Sync UC metadata (last_refreshed + mark unavailable) ────────────────────
+  // Fetches updated_at from UC for each product that has a uc_full_name.
+  // Also marks products whose UC table no longer exists as status='Unavailable'.
+  app.post('/api/portal/admin/sync-uc-metadata', async (req, res) => {
+    try {
+      const { host, token } = await getUcAuth();
+      const { rows: products } = await query(
+        `SELECT product_id, product_ref, uc_full_name FROM data_products
+         WHERE uc_full_name IS NOT NULL AND uc_full_name NOT LIKE 'your_catalog.%'`
+      );
+      if (!products.length) return res.json({ synced: 0, unavailable: 0 });
+
+      let synced = 0, unavailable = 0;
+      for (const p of products) {
+        try {
+          const ucMeta = await ucApiRequest(host, token,
+            `/api/2.0/unity-catalog/tables/${encodeURIComponent(p.uc_full_name)}`);
+
+          if (ucMeta?.error_code === 'TABLE_DOES_NOT_EXIST' || ucMeta?.error_code === 'NOT_FOUND') {
+            await query(
+              `UPDATE data_products SET status = 'Unavailable', updated_at = NOW() WHERE product_id = $1`,
+              [p.product_id]);
+            unavailable++;
+          } else {
+            // updated_at from UC is epoch ms
+            const updatedAt = ucMeta?.updated_at
+              ? new Date(ucMeta.updated_at).toISOString()
+              : new Date().toISOString();
+            await query(
+              `UPDATE data_products SET last_refreshed = $1, updated_at = NOW() WHERE product_id = $2`,
+              [updatedAt, p.product_id]);
+            synced++;
+          }
+        } catch (_) { /* skip individual failures */ }
+      }
+      // Bust product column cache so next fetch rebuilds
+      resetProductColsCache();
+      console.log(`[sync-uc] synced=${synced} unavailable=${unavailable}`);
+      res.json({ synced, unavailable, total: products.length });
+    } catch (e) {
+      console.error('[sync-uc-metadata]', e.message);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ─── Auto-discover new UC tables ─────────────────────────────────────────────
+  // Scans a catalog/schema prefix from settings (auto_discover_prefix) and imports
+  // any tables not yet in data_products as status='Draft' for admin review.
+  app.post('/api/portal/admin/discover-uc', async (req, res) => {
+    try {
+      const prefix = getSetting('auto_discover_prefix', '') || req.body?.prefix || '';
+      if (!prefix) return res.status(400).json({ error: 'auto_discover_prefix not configured in Settings' });
+
+      const parts = prefix.split('.');
+      if (parts.length < 2) return res.status(400).json({ error: 'prefix must be catalog.schema or catalog.schema.prefix' });
+      const [catalog, schema] = parts;
+
+      const { host, token } = await getUcAuth();
+      const listData = await ucApiRequest(host, token,
+        `/api/2.0/unity-catalog/tables?catalog_name=${encodeURIComponent(catalog)}&schema_name=${encodeURIComponent(schema)}&max_results=200`);
+
+      const ucTables = (listData?.tables || []).filter(t => {
+        if (parts[2]) return t.name?.toLowerCase().startsWith(parts[2].toLowerCase());
+        return true;
+      });
+
+      // Find which uc_full_names are already in data_products
+      const { rows: existing } = await query(
+        `SELECT uc_full_name FROM data_products WHERE uc_full_name IS NOT NULL`);
+      const existingSet = new Set(existing.map(r => r.uc_full_name.toLowerCase()));
+
+      const newTables = ucTables.filter(t =>
+        !existingSet.has(`${catalog}.${schema}.${t.name}`.toLowerCase()));
+
+      if (!newTables.length) return res.json({ discovered: 0, message: 'No new tables found' });
+
+      // Get next product_ref
+      const { rows: [maxRow] } = await query(
+        `SELECT MAX(CAST(SUBSTRING(product_ref FROM 4) AS INTEGER)) AS max_id FROM data_products`);
+      let nextId = (maxRow.max_id || 0) + 1;
+
+      const drafted = [];
+      for (const t of newTables) {
+        const fullName = `${catalog}.${schema}.${t.name}`;
+        const ref = `DP-${String(nextId++).padStart(3, '0')}`;
+        const displayName = t.name.replace(/_/g, ' ').replace(/\bgold\b/i, '').trim()
+          .replace(/\b\w/g, c => c.toUpperCase());
+        const { rows: [product] } = await query(
+          `INSERT INTO data_products
+             (product_ref, display_name, description, type, domain, tags, source_system,
+              refresh_frequency, owner_email, classification, uc_full_name, is_active, status, last_refreshed)
+           VALUES ($1, $2, $3, 'Dataset', 'Other', '{}', 'Unity Catalog', 'Daily',
+                   '', 'Internal', $4, FALSE, 'Draft', NOW())
+           ON CONFLICT (product_ref) DO NOTHING RETURNING *`,
+          [ref, displayName,
+           `Auto-discovered from Unity Catalog: ${fullName}`, fullName]);
+        if (product) drafted.push(product);
+      }
+
+      console.log(`[discover-uc] ${drafted.length} new tables drafted from ${prefix}`);
+      res.json({ discovered: drafted.length, products: drafted });
+    } catch (e) {
+      console.error('[discover-uc]', e.message);
+      res.status(500).json({ error: e.message });
+    }
+  });
+}

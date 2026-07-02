@@ -56,7 +56,7 @@ function AppInner() {
       case 'about':           return <AboutPage onNavigate={navigate} />
       case 'faq':             return <FAQPage onNavigate={navigate} />
       case 'contact':         return <ContactPage onNavigate={navigate} />
-      case 'feature-requests': return <FeatureRequestPage />
+      case 'feature-requests': return <FeatureRequestPage onNavigate={navigate} />
       default:             return <DataMarketHomePage onNavigate={navigate} onOpenProduct={openProduct} />
     }
   }
