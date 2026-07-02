@@ -10,17 +10,19 @@ A production-ready demo of a governed, self-service data product marketplace bui
 
 ## Post-Deployment Checklist
 
-After running `deploy.sh`, complete these steps in the app before using it with customers:
+After running `deploy.sh`, complete these steps **before** using the app:
 
 | # | Step | Where | Why it matters |
 |---|---|---|---|
+| **0** | **Set `ADMIN_EMAIL` in `app.yaml`** | `app.yaml` → `env_vars` | **Critical first step.** Set this to the deployer's email (e.g. `sglendye@yourorg.com`). On first SSO login the app auto-promotes this email to admin. Without it you land as a regular analyst with no Manage tab and no way to configure anything. Comma-separate multiple emails for co-admins. |
 | 1 | Import your UC tables | **Manage → Data Products → Import from UC** | Populates the catalog — nothing shows in Discover until you do this |
 | 2 | Set SQL Warehouse ID | **Manage → Settings → Integrations** | Required for `GRANT SELECT` to actually execute when you approve access requests. Without it, approvals are logged but UC permissions are never set. |
-| 3 | Create & set Genie Space ID | **Manage → Settings → Integrations** | Powers the Ask AI page with natural language queries over your real data. Needs a Genie Space built on your specific UC tables — create one at **AI/BI → Genie → New Space** first. |
-| 4 | Set production mode | Redeploy with `--demo-mode false` | Disables the persona switcher and enables real SSO identity. Do this before any customer-facing demo. |
-| 5 | Add team members | **Manage → Users** | Add data stewards and analysts, or configure Entra ID groups under the **Groups** tab for bulk role assignment. |
+| 3 | Turn off demo mode | Set `DEMO_MODE: "false"` in `app.yaml` and redeploy | Disables the persona switcher and enables real SSO identity. Do this before any customer-facing demo. |
+| 4 | Add team members | **Manage → Users** | Add data stewards and analysts, or configure Entra ID groups under the **Groups** tab for bulk role assignment. |
 
-> Steps 1–3 take about 10 minutes total and make the difference between a skeleton and a fully working portal.
+> **Stuck as the wrong persona after turning off demo mode?** Make sure `ADMIN_EMAIL` is set to your email and redeploy. The identity endpoint auto-promotes on first login.
+
+> Steps 1–4 take about 10 minutes total.
 
 ---
 
