@@ -189,8 +189,8 @@ function DemoControlsPanel() {
 }
 
 function SettingsPanel() {
-  const { appName, appSubtitle, appLogoUrl, genieSpaceId, sqlWarehouseId, rfaEnabled, setupComplete, demoMode, refreshConfig,
-          autoDiscoverEnabled, autoDiscoverPrefix, navLinks: configNavLinks,
+  const { appName, appSubtitle, appLogoUrl, sqlWarehouseId: cfgWarehouse, rfaEnabled, setupComplete, demoMode, refreshConfig,
+          autoDiscoverEnabled, autoDiscoverPrefix, navLinks: configNavLinks, askAiEnabled: cfgAskAi, insightsEnabled: cfgInsights,
           aboutText: configAboutText, contactName: configContactName,
           contactEmail: configContactEmail, contactNote: configContactNote,
           faqItems: configFaqItems } = useAppConfig()
@@ -210,9 +210,10 @@ function SettingsPanel() {
     app_name:        appName,
     app_subtitle:    appSubtitle,
     app_logo_url:    appLogoUrl || '',
-    genie_space_id:  genieSpaceId || '',
-    sql_warehouse_id:sqlWarehouseId || '',
+    sql_warehouse_id:cfgWarehouse || '',
     rfa_enabled:     String(rfaEnabled),
+    ask_ai_enabled:  String(cfgAskAi !== false),
+    insights_enabled:String(cfgInsights !== false),
     auto_discover_enabled: String(autoDiscoverEnabled),
     auto_discover_prefix:  autoDiscoverPrefix || '',
     about_text:      configAboutText || '',
@@ -231,9 +232,10 @@ function SettingsPanel() {
       app_name:        appName,
       app_subtitle:    appSubtitle,
       app_logo_url:    appLogoUrl || '',
-      genie_space_id:  genieSpaceId || '',
-      sql_warehouse_id:sqlWarehouseId || '',
+      sql_warehouse_id:cfgWarehouse || '',
       rfa_enabled:     String(rfaEnabled),
+      ask_ai_enabled:  String(cfgAskAi !== false),
+      insights_enabled:String(cfgInsights !== false),
       auto_discover_enabled: String(autoDiscoverEnabled),
       auto_discover_prefix:  autoDiscoverPrefix || '',
       about_text:      configAboutText || '',
@@ -243,7 +245,7 @@ function SettingsPanel() {
     })
     setNavLinks(configNavLinks?.length ? configNavLinks : DEFAULT_NAV_LINKS)
     setFaqItems(configFaqItems?.length ? configFaqItems : DEFAULT_FAQ)
-  }, [appName, appSubtitle, appLogoUrl, genieSpaceId, sqlWarehouseId, rfaEnabled, autoDiscoverEnabled, autoDiscoverPrefix,
+  }, [appName, appSubtitle, appLogoUrl, cfgWarehouse, rfaEnabled, cfgAskAi, cfgInsights, autoDiscoverEnabled, autoDiscoverPrefix,
       configNavLinks, configAboutText, configContactName, configContactEmail, configContactNote, configFaqItems])
 
   const handleSave = async () => {
@@ -281,72 +283,149 @@ function SettingsPanel() {
     </div>
   )
 
+  const toggle = (key, color = 'bg-blue-600') => (
+    <button onClick={() => setForm(f => ({ ...f, [key]: f[key] === 'true' ? 'false' : 'true' }))}
+      className={`relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors ${form[key] === 'true' ? color : 'bg-gray-200'}`}>
+      <span className={`pointer-events-none block h-5 w-5 rounded-full bg-white shadow transition-transform ${form[key] === 'true' ? 'translate-x-5' : 'translate-x-0'}`} />
+    </button>
+  )
+
   return (
-    <div className="max-w-2xl space-y-8 mt-4">
+    <div className="max-w-2xl space-y-6 mt-4">
       {!setupComplete && (
         <div className="rounded-xl border border-blue-200 bg-blue-50 p-5 flex gap-4">
           <Sparkles className="h-6 w-6 text-blue-500 shrink-0 mt-0.5" />
           <div>
             <p className="font-semibold text-blue-900 text-sm">Finish setting up your portal</p>
             <p className="text-blue-700 text-sm mt-1">
-              Set your portal name, connect a Genie Space for Ask AI, and optionally enable real Unity Catalog grants.
-              Click <strong>Save Settings</strong> — changes take effect immediately, no redeploy needed.
+              Set your portal name and SQL Warehouse ID, then save. Changes take effect immediately — no redeploy needed.
             </p>
           </div>
         </div>
       )}
-      <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-4">
-        <h3 className="font-semibold text-gray-900 text-sm uppercase tracking-wide">Branding</h3>
-        {field('Portal Name', 'app_name', 'DataMarket', 'Displayed in the top navigation bar')}
-        {field('Tagline', 'app_subtitle', 'Data Discovery & Access', 'Subtitle shown under the portal name')}
-        {field('Logo URL', 'app_logo_url', '/your-logo.png', 'Path or full URL. Leave empty to hide.')}
+
+      {/* ── Branding & Layout ─────────────────────────────────────────── */}
+      <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-5">
+        <h3 className="font-semibold text-gray-900 text-sm uppercase tracking-wide">Branding & Layout</h3>
+        <div className="space-y-4">
+          {field('Portal Name', 'app_name', 'DataMarket', 'Shown in the top navigation bar')}
+          {field('Tagline', 'app_subtitle', 'Data Discovery & Access', 'Subtitle shown under the portal name')}
+          {field('Logo URL', 'app_logo_url', '/your-logo.png', 'Path or full URL. Leave empty to hide.')}
+        </div>
+        <div className="border-t border-gray-100 pt-4 space-y-3">
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Navigation visibility</p>
+          {[
+            { key: 'ask_ai_enabled',   label: 'Ask AI',   desc: 'Natural language catalog search (Databricks FMAPI)' },
+            { key: 'insights_enabled', label: 'Insights', desc: 'Dashboard and data product insights gallery' },
+          ].map(({ key, label, desc }) => (
+            <div key={key} className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-sm font-medium text-gray-700">{label}</p>
+                <p className="text-xs text-gray-400">{desc}</p>
+              </div>
+              {toggle(key)}
+            </div>
+          ))}
+          <p className="text-xs text-gray-400">Home, Discover, and My Data / Manage are always shown.</p>
+        </div>
+        <div className="border-t border-gray-100 pt-4 space-y-2">
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Footer links</p>
+          {navLinks.map((link, i) => (
+            <div key={i} className="flex items-center gap-3 py-1">
+              <button onClick={() => setNavLinks(ls => ls.map((l, idx) => idx === i ? { ...l, visible: !l.visible } : l))}
+                className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors ${link.visible ? 'bg-blue-600' : 'bg-gray-300'}`}>
+                <span className={`block h-4 w-4 rounded-full bg-white shadow transition-transform ${link.visible ? 'translate-x-4' : 'translate-x-0'}`} />
+              </button>
+              <span className="text-sm font-medium text-gray-700 w-16">{link.label}</span>
+              <span className="text-xs text-gray-400">in-app page · content editable in Page Content below</span>
+            </div>
+          ))}
+        </div>
       </div>
-      {/* Page Content */}
+      {/* ── Integrations ──────────────────────────────────────────────── */}
+      <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-4">
+        <h3 className="font-semibold text-gray-900 text-sm uppercase tracking-wide">Integrations</h3>
+        {field('SQL Warehouse ID', 'sql_warehouse_id', 'abc123...', 'Required to execute real GRANT / REVOKE in Unity Catalog on approval. Leave empty to log approvals only.')}
+        <div className={`rounded-lg px-4 py-2.5 text-xs border flex items-center gap-2 ${form.sql_warehouse_id ? 'bg-emerald-50 border-emerald-100' : 'bg-amber-50 border-amber-100'}`}>
+          <span className={`w-2 h-2 rounded-full shrink-0 ${form.sql_warehouse_id ? 'bg-emerald-400' : 'bg-amber-400'}`} />
+          {form.sql_warehouse_id
+            ? <span className="text-emerald-700 font-medium">UC grants enabled — GRANT SELECT will execute on approval</span>
+            : <span className="text-amber-700">UC grants disabled — approvals are logged but no UC permissions are set</span>
+          }
+        </div>
+      </div>
+
+      {/* ── Mode ──────────────────────────────────────────────────────── */}
+      <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-4">
+        <h3 className="font-semibold text-gray-900 text-sm uppercase tracking-wide">Mode</h3>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-sm font-medium text-gray-700">RFA Notifications</p>
+            <p className="text-xs text-gray-400 mt-0.5">Send Databricks RFA access-request notifications when a user requests access.</p>
+          </div>
+          {toggle('rfa_enabled')}
+        </div>
+        {demoMode && (
+          <div className="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 text-xs text-amber-800">
+            <strong>Demo Mode is active.</strong> SSO identity and real UC grants are disabled.
+            Set <code className="font-mono bg-amber-100 px-1 rounded">DEMO_MODE=false</code> in app.yaml and redeploy to enable production mode.
+          </div>
+        )}
+      </div>
+
+      {/* ── Data Product Lifecycle ─────────────────────────────────────── */}
+      <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-4">
+        <h3 className="font-semibold text-gray-900 text-sm uppercase tracking-wide">Data Product Lifecycle</h3>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-sm font-medium text-gray-700">Auto-Discover New UC Tables</p>
+            <p className="text-xs text-gray-400 mt-0.5">
+              New tables matching the prefix below are automatically added as <span className="font-medium text-amber-600">Draft</span> each time the app starts for admin review — nothing goes live without approval.
+            </p>
+          </div>
+          {toggle('auto_discover_enabled', 'bg-emerald-500')}
+        </div>
+        {field('Discovery Prefix', 'auto_discover_prefix', 'main.gold or main.gold.sales_', 'catalog.schema or catalog.schema.name_prefix to scan.')}
+      </div>
+
+      {/* ── Page Content ──────────────────────────────────────────────── */}
       <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-5">
         <h3 className="font-semibold text-gray-900 text-sm uppercase tracking-wide">Page Content</h3>
 
-        {/* About */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">About — description text</label>
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">About page</p>
           <textarea rows={3} value={form.about_text}
             onChange={e => setForm(f => ({ ...f, about_text: e.target.value }))}
             placeholder="Describe this portal in 2–3 sentences. Leave blank to show the default description."
             className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 resize-none" />
         </div>
 
-        {/* Contact */}
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Contact name</label>
-            <input type="text" value={form.contact_name}
-              onChange={e => setForm(f => ({ ...f, contact_name: e.target.value }))}
-              placeholder="Samir Raut"
-              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+        <div className="border-t border-gray-100 pt-4">
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Contact page</p>
+          <div className="grid grid-cols-2 gap-3 mb-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Name</label>
+              <input type="text" value={form.contact_name} placeholder="Your name"
+                onChange={e => setForm(f => ({ ...f, contact_name: e.target.value }))}
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Email</label>
+              <input type="email" value={form.contact_email} placeholder="you@databricks.com"
+                onChange={e => setForm(f => ({ ...f, contact_email: e.target.value }))}
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+            </div>
           </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Contact email</label>
-            <input type="email" value={form.contact_email}
-              onChange={e => setForm(f => ({ ...f, contact_email: e.target.value }))}
-              placeholder="you@databricks.com"
-              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
-          </div>
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Contact note <span className="text-gray-400 font-normal">(optional)</span></label>
-          <input type="text" value={form.contact_note}
+          <input type="text" value={form.contact_note} placeholder="Note — e.g. Slack: #data-platform · Response time: 1 business day"
             onChange={e => setForm(f => ({ ...f, contact_note: e.target.value }))}
-            placeholder="Slack: #data-platform · Response time: 1 business day"
             className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
         </div>
 
-        {/* FAQ editor */}
-        <div>
-          <div className="flex items-center justify-between mb-2">
-            <label className="block text-sm font-medium text-gray-700">FAQ items</label>
+        <div className="border-t border-gray-100 pt-4">
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">FAQ items</p>
             <button onClick={() => setFaqItems(f => [...f, { q: '', a: '' }])}
-              className="text-xs text-blue-600 hover:underline flex items-center gap-1">
-              + Add question
-            </button>
+              className="text-xs text-blue-600 hover:underline">+ Add question</button>
           </div>
           <div className="space-y-3">
             {faqItems.map((item, i) => (
@@ -364,94 +443,13 @@ function SettingsPanel() {
               </div>
             ))}
           </div>
-          <p className="text-xs text-gray-400 mt-1.5">Items save with the rest of settings — no redeploy needed.</p>
         </div>
       </div>
 
-      <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-4">
-        <h3 className="font-semibold text-gray-900 text-sm uppercase tracking-wide">Integrations</h3>
-        {field('Genie Space ID', 'genie_space_id', '01f3a...', 'Powers the Ask AI page. Find it in Databricks → AI/BI → Genie.')}
-        {field('SQL Warehouse ID', 'sql_warehouse_id', 'abc123...', 'Required to execute real UC GRANT/REVOKE on approval. Leave empty to show SQL without executing.')}
-      </div>
-      <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-4">
-        <h3 className="font-semibold text-gray-900 text-sm uppercase tracking-wide">Mode</h3>
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="text-sm font-medium text-gray-700">RFA Notifications</p>
-            <p className="text-xs text-gray-400 mt-0.5">Send Databricks RFA access-request notifications when a user requests access.</p>
-          </div>
-          <button
-            onClick={() => setForm(f => ({ ...f, rfa_enabled: f.rfa_enabled === 'true' ? 'false' : 'true' }))}
-            className={`relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors ${form.rfa_enabled === 'true' ? 'bg-blue-600' : 'bg-gray-200'}`}
-          >
-            <span className={`pointer-events-none block h-5 w-5 rounded-full bg-white shadow transition-transform ${form.rfa_enabled === 'true' ? 'translate-x-5' : 'translate-x-0'}`} />
-          </button>
-        </div>
-        {demoMode && (
-          <div className="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 text-xs text-amber-800">
-            <strong>Demo Mode is active</strong> (set via DEMO_MODE env var). SSO identity and real UC grants are disabled.
-            To enable production mode, set <code className="font-mono bg-amber-100 px-1 rounded">DEMO_MODE=false</code> in app.yaml and redeploy.
-          </div>
-        )}
-      </div>
-
-      {/* Auto-Discovery */}
-      <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-4">
-        <h3 className="font-semibold text-gray-900 text-sm uppercase tracking-wide">Data Product Lifecycle</h3>
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="text-sm font-medium text-gray-700">Auto-Discover New UC Tables</p>
-            <p className="text-xs text-gray-400 mt-0.5">
-              When enabled, new tables matching the prefix below are automatically added as <span className="font-medium text-amber-600">Draft</span> each time the app starts.
-              Admins review and publish or discard them — nothing goes live without approval.
-            </p>
-          </div>
-          <button
-            onClick={() => setForm(f => ({ ...f, auto_discover_enabled: f.auto_discover_enabled === 'true' ? 'false' : 'true' }))}
-            className={`relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors ${form.auto_discover_enabled === 'true' ? 'bg-emerald-500' : 'bg-gray-200'}`}
-          >
-            <span className={`pointer-events-none block h-5 w-5 rounded-full bg-white shadow transition-transform ${form.auto_discover_enabled === 'true' ? 'translate-x-5' : 'translate-x-0'}`} />
-          </button>
-        </div>
-        {field('Discovery Prefix', 'auto_discover_prefix', 'main.gold or main.gold.sales_', 'Catalog.schema or catalog.schema.name_prefix to scan. Only tables with this prefix are drafted.')}
-        <div className="rounded-lg bg-gray-50 border border-gray-100 px-4 py-3 text-xs text-gray-500">
-          <strong className="text-gray-700">UC Grants:</strong>{' '}
-          {form.sql_warehouse_id
-            ? <span className="text-emerald-600 font-medium">Enabled — GRANT SELECT will execute on approval</span>
-            : <span className="text-amber-600">Disabled — set SQL Warehouse ID above to activate real UC grants</span>
-          }
-        </div>
-      </div>
-      {/* Navigation Links */}
-      <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-4">
-        <div>
-          <h3 className="font-semibold text-gray-900 text-sm uppercase tracking-wide">Footer Navigation</h3>
-          <p className="text-xs text-gray-400 mt-1">Show or hide links in the footer. Optionally add a URL — leave blank to show as a placeholder button.</p>
-        </div>
-        <div className="space-y-2">
-          {navLinks.map((link, i) => (
-            <div key={i} className="flex items-center gap-3 p-3 rounded-lg border border-gray-100 bg-gray-50">
-              <button
-                onClick={() => setNavLinks(ls => ls.map((l, idx) => idx === i ? { ...l, visible: !l.visible } : l))}
-                className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors ${link.visible ? 'bg-blue-600' : 'bg-gray-300'}`}
-              >
-                <span className={`block h-4 w-4 rounded-full bg-white shadow transition-transform ${link.visible ? 'translate-x-4' : 'translate-x-0'}`} />
-              </button>
-              <span className="text-sm font-medium text-gray-700">{link.label}</span>
-              <span className="text-xs text-gray-400 ml-auto">in-app page</span>
-            </div>
-          ))}
-        </div>
-        <p className="text-xs text-gray-400">Each is an in-app page. Content is editable in the Page Content section above. All hidden = footer nav disappears.</p>
-      </div>
-
-      <div className="flex items-center gap-3">
-        <button
-          onClick={handleSave}
-          disabled={saving}
+      <div className="flex items-center gap-3 pb-4">
+        <button onClick={handleSave} disabled={saving}
           className="flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium text-white transition-colors disabled:opacity-50"
-          style={{ backgroundColor: DataMarket_BLUE }}
-        >
+          style={{ backgroundColor: DataMarket_BLUE }}>
           <Save className="h-4 w-4" />
           {saving ? 'Saving…' : 'Save Settings'}
         </button>
@@ -949,7 +947,7 @@ function GroupsList() {
 // ─── Main Library Page ─────────────────────────────────────────────────────────
 export function DataMarketLibraryPage({ onNavigate, onOpenProduct, initialTab }) {
   const { myRequests, persona, currentPersona, pendingRequests, isAdmin, apiAvailable } = usePersona()
-  const { demoMode, databricksHost } = useAppConfig()
+  const { demoMode, databricksHost, sqlWarehouseId } = useAppConfig()
   const isSteward = isAdmin
   const [search, setSearch] = useState('')
   const [activeTab, setActiveTab] = useState(initialTab || (isSteward ? 'Data Products' : 'Data Product'))
@@ -1132,7 +1130,23 @@ export function DataMarketLibraryPage({ onNavigate, onOpenProduct, initialTab })
       {activeTab === 'Demo Controls' && isSteward && demoMode && <DemoControlsPanel />}
 
       {/* ── Manage Approvals Tab (Steward) — embeds the full admin approval UI ── */}
-      {activeTab === 'Manage Approvals' && isSteward && <DataMarketAdminPage embedded />}
+      {activeTab === 'Manage Approvals' && isSteward && (
+        <>
+          {!sqlWarehouseId && (
+            <div className="mb-4 flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+              <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm font-semibold text-amber-800">UC grants are disabled</p>
+                <p className="text-xs text-amber-700 mt-0.5">
+                  Approving a request will log it in the portal but <strong>will not set any Unity Catalog permissions</strong> — the user won't actually be able to query the table.
+                  {' '}<button className="underline font-medium" onClick={() => setActiveTab('Settings')}>Set a SQL Warehouse ID in Settings</button> to activate real UC grants.
+                </p>
+              </div>
+            </div>
+          )}
+          <DataMarketAdminPage embedded />
+        </>
+      )}
 
       {/* ── Steward: All Products ─────────────────────────────────────────────── */}
       {((activeTab === 'Data Products' && isSteward)) && (
