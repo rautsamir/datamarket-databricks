@@ -54,18 +54,22 @@ export function PersonaProvider({ children }) {
   const [rfaEnabled, setRfaEnabled] = useState(false)
   const [ucGrantsEnabled, setUcGrantsEnabled] = useState(false)
 
+  const isAdminRole = ssoUser && !demoMode && (ssoUser.role === 'admin' || ssoUser.role === 'steward')
+
   const persona = ssoUser && !demoMode ? {
-    id: 'sso',
+    id: isAdminRole ? 'admin' : 'sso',
     name: ssoUser.display_name?.split(' ')[0] || 'User',
     fullName: ssoUser.display_name || ssoUser.email,
     email: ssoUser.email,
-    role: ssoUser.role === 'steward' ? 'Data Steward' : ssoUser.role === 'manager' ? 'Manager' : 'Data Analyst',
+    role: isAdminRole ? 'Data Steward' : ssoUser.role === 'manager' ? 'Manager' : 'Data Analyst',
     department: ssoUser.department || 'General',
     avatar: (ssoUser.display_name || ssoUser.email).split(' ').map(w => w[0]).join('').substring(0, 2).toUpperCase(),
-    color: ssoUser.role === 'steward' ? '#8B5CF6' : ssoUser.role === 'manager' ? '#10B981' : '#3B82F6',
-    approvedProductRefs: ssoUser.role === 'steward' ? 'all' : [],
-    description: `${ssoUser.role} — authenticated via SSO`
+    color: isAdminRole ? '#8B5CF6' : ssoUser.role === 'manager' ? '#10B981' : '#3B82F6',
+    approvedProductRefs: isAdminRole ? 'all' : [],
+    description: isAdminRole ? 'Data Steward — authenticated via SSO' : `${ssoUser.role} — authenticated via SSO`
   } : personas[currentPersona]
+
+  const isAdmin = persona.id === 'admin' || isAdminRole
 
   // ── Check API availability and identity mode ───────────────────────────────
   useEffect(() => {
@@ -115,7 +119,7 @@ export function PersonaProvider({ children }) {
   }, [apiAvailable, persona.email])
 
   const loadNotifications = useCallback(async () => {
-    if (!apiAvailable || persona.id === 'admin') return
+    if (!apiAvailable || isAdmin) return
     try {
       const r = await fetch(`/api/portal/notifications?email=${encodeURIComponent(persona.email)}`)
       if (r.ok) setNotifications(await r.json())
@@ -265,6 +269,7 @@ export function PersonaProvider({ children }) {
       currentPersona,
       setCurrentPersona: demoMode ? setCurrentPersona : () => {},
       persona,
+      isAdmin,
       requests,
       myRequests,
       pendingRequests,

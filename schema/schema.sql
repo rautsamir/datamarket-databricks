@@ -41,6 +41,7 @@ CREATE TABLE IF NOT EXISTS data_products (
     source_type       VARCHAR(20) DEFAULT 'Databricks',
     product_url       TEXT,
     report_url        TEXT,
+    data_classification VARCHAR(50) DEFAULT 'Internal',
     last_refreshed    TIMESTAMPTZ,
     created_at        TIMESTAMPTZ DEFAULT NOW(),
     updated_at        TIMESTAMPTZ DEFAULT NOW()

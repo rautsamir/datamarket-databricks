@@ -32,10 +32,11 @@ export function DataMarketLayout({ currentPage, onNavigate, children }) {
   const [userMenuOpen, setUserMenuOpen] = useState(false)
   const [personaMenuOpen, setPersonaMenuOpen] = useState(false)
   const [notifOpen, setNotifOpen] = useState(false)
-  const { persona, currentPersona, setCurrentPersona, pendingRequests, notifications, unreadNotificationCount } = usePersona()
-  const { appName, appSubtitle, appLogoUrl, demoMode } = useAppConfig()
+  const { persona, currentPersona, setCurrentPersona, pendingRequests, notifications, unreadNotificationCount, isAdmin, demoMode } = usePersona()
+  const { appName, appSubtitle, appLogoUrl } = useAppConfig()
 
-  const isAdmin = currentPersona === 'admin'
+  const personaColor = isAdmin ? '#7C3AED' : currentPersona === 'james' ? '#059669' : '#3B82F6'
+  const avatarBadgeClass = isAdmin ? 'bg-purple-600' : currentPersona === 'james' ? 'bg-emerald-500' : 'bg-blue-500'
 
   const navItems = [
     { id: 'home',     label: 'Home' },
@@ -66,11 +67,11 @@ export function DataMarketLayout({ currentPage, onNavigate, children }) {
       {/* Demo Banner — only shown in demo mode */}
       {demoMode && (
         <div className="text-center py-1.5 text-xs text-white font-medium"
-          style={{ backgroundColor: currentPersona === 'admin' ? '#7C3AED' : currentPersona === 'james' ? '#059669' : '#3B82F6' }}>
+          style={{ backgroundColor: personaColor }}>
           <ShieldCheck className="inline h-3 w-3 mr-1.5 mb-0.5" />
           Demo mode — viewing as <strong>{persona.name}</strong> ({persona.role}, {persona.department})
-          {currentPersona !== 'admin' && ' · '}
-          {currentPersona === 'admin' && pendingRequests.length > 0 && (
+          {!isAdmin && ' · '}
+          {isAdmin && pendingRequests.length > 0 && (
             <button onClick={() => onNavigate('my-access')} className="underline ml-1">
               {pendingRequests.length} pending approval{pendingRequests.length !== 1 ? 's' : ''} →
             </button>
@@ -121,7 +122,7 @@ export function DataMarketLayout({ currentPage, onNavigate, children }) {
                   className="relative p-2 text-white/80 hover:text-white transition-colors"
                 >
                   <Bell className="h-5 w-5" />
-                  {(currentPersona === 'admin' ? pendingRequests.length : unreadNotificationCount) > 0 && (
+                  {(isAdmin ? pendingRequests.length : unreadNotificationCount) > 0 && (
                     <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-red-500 rounded-full border border-[#003865]" />
                   )}
                 </button>
@@ -129,9 +130,9 @@ export function DataMarketLayout({ currentPage, onNavigate, children }) {
                 {notifOpen && (
                   <div className="absolute right-0 mt-1 w-80 bg-white rounded-xl shadow-xl border border-gray-200 py-2 z-50">
                     <p className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider border-b border-gray-100">
-                      {currentPersona === 'admin' ? 'Pending Approvals' : 'Notifications'}
+                      {isAdmin ? 'Pending Approvals' : 'Notifications'}
                     </p>
-                    {currentPersona === 'admin' ? (
+                    {isAdmin ? (
                       pendingRequests.length === 0 ? (
                         <p className="px-4 py-6 text-sm text-gray-400 text-center">No pending approvals</p>
                       ) : (
@@ -198,7 +199,7 @@ export function DataMarketLayout({ currentPage, onNavigate, children }) {
                   onClick={() => { setUserMenuOpen(!userMenuOpen); setPersonaMenuOpen(false) }}
                   className="flex items-center gap-2 text-white/90 hover:text-white px-2 py-1 rounded hover:bg-white/10 transition-colors"
                 >
-                  <div className={`w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold ${personaBadgeColors[currentPersona]}`}>
+                  <div className={`w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold ${avatarBadgeClass}`}>
                     {persona.avatar}
                   </div>
                   <span className="text-sm hidden sm:block">{persona.name}</span>
@@ -210,7 +211,7 @@ export function DataMarketLayout({ currentPage, onNavigate, children }) {
                     {/* Current user info */}
                     <div className="px-4 py-3 border-b border-gray-100">
                       <div className="flex items-center gap-3">
-                        <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-bold ${personaBadgeColors[currentPersona]}`}>
+                        <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-bold ${avatarBadgeClass}`}>
                           {persona.avatar}
                         </div>
                         <div>
@@ -223,10 +224,10 @@ export function DataMarketLayout({ currentPage, onNavigate, children }) {
 
                     {/* Quick links */}
                     <div className="py-1 border-b border-gray-100">
-                      <button onClick={() => { onNavigate('my-access'); setUserMenuOpen(false) }} className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">My Data</button>
-                      {currentPersona === 'admin' && (
+                      <button onClick={() => { onNavigate('my-access'); setUserMenuOpen(false) }} className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">{isAdmin ? 'Manage' : 'My Data'}</button>
+                      {isAdmin && (
                         <button onClick={() => { onNavigate('my-access'); setUserMenuOpen(false) }} className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center justify-between">
-                          Manage
+                          Approvals
                           {pendingRequests.length > 0 && <span className="bg-red-100 text-red-700 text-xs font-medium px-2 py-0.5 rounded-full">{pendingRequests.length}</span>}
                         </button>
                       )}

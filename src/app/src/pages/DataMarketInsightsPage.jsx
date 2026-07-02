@@ -8,8 +8,7 @@ import { usePersona } from '../context/PersonaContext'
 
 const DataMarket_BLUE = '#003865'
 
-// Insight categories with their associated data domains
-const INSIGHT_CATEGORIES = ['All', 'Budget', 'HRIS', 'Payroll', 'Property Tax', 'Demographics', 'Other']
+// Category list is built dynamically from real product domains — see below
 
 // Domain → colour palette
 const domainColors = {
@@ -43,68 +42,11 @@ const typeOpenLabel = {
   Source:            'View Source',
 }
 
-// Insight-flavoured descriptions per product to make this page feel purposeful
-const insightMeta = {
-  'DP-001': {
-    headline: 'Where is budget being spent?',
-    kpis: ['$12.4B total budget', '5 departments over 90% utilization', '↑ 3.2% vs last FY'],
-    chartHint: 'bar'
-  },
-  'DP-002': {
-    headline: 'Workforce health at a glance',
-    kpis: ['4,821 total headcount', '6.4% turnover rate', '12% overtime spike in Q3'],
-    chartHint: 'line'
-  },
-  'DP-003': {
-    headline: 'Revenue from property assessments',
-    kpis: ['$2.1B assessed 2024', '98.2% collection rate', '+5.8% YoY growth'],
-    chartHint: 'bar'
-  },
-  'DP-004': {
-    headline: 'Population trends & demographics',
-    kpis: ['3.96M total population', '14 districts tracked', 'Age 25-44 largest cohort'],
-    chartHint: 'pie'
-  },
-  'DP-005': {
-    headline: 'Service delivery performance',
-    kpis: ['18,420 tickets YTD', '87% SLA compliance', '↓ 4.1% open tickets'],
-    chartHint: 'line'
-  },
-  'DP-006': {
-    headline: 'Essential service utilization',
-    kpis: ['6 core service lines', '92% capacity used', '↑ 8% demand vs last year'],
-    chartHint: 'bar'
-  },
-  'DP-007': {
-    headline: 'Compensation & payroll trends',
-    kpis: ['$680M total payroll', '3 bargaining units', '↑ 2.1% avg comp growth'],
-    chartHint: 'bar'
-  },
-  'DP-008': {
-    headline: 'Property tax collection overview',
-    kpis: ['$4.3B collected YTD', '99.1% accuracy rate', '120 districts'],
-    chartHint: 'bar'
-  },
-  'DP-009': {
-    headline: 'Population age distribution 2020',
-    kpis: ['Census 2020 data', 'By age band & district', 'Planning-grade dataset'],
-    chartHint: 'pie'
-  },
-  'DP-010': {
-    headline: 'Enterprise-wide budget analytics',
-    kpis: ['All departments', 'Multi-year comparisons', 'Live variance tracking'],
-    chartHint: 'bar'
-  },
-  'DP-011': {
-    headline: 'Audit findings & compliance',
-    kpis: ['48 open findings', '12 critical items', '↓ 18% from prior audit'],
-    chartHint: 'line'
-  },
-  'DP-012': {
-    headline: 'Infrastructure location data',
-    kpis: ['GIS-grade accuracy', '7 infrastructure types', 'Updated quarterly'],
-    chartHint: 'pie'
-  },
+// Derive chart hint from product type
+function chartHintFromType(type) {
+  if (['Dashboard', 'AI/BI Dashboard'].includes(type)) return 'bar'
+  if (['Genie Space', 'ML Model'].includes(type)) return 'line'
+  return 'bar'
 }
 
 // Mini sparkline SVG for visual decoration (not real data, just demo polish)
@@ -155,18 +97,23 @@ export function DataMarketInsightsPage({ onNavigate, onOpenProduct }) {
   const norm = (p) => ({
     ref:             p.product_ref || p.ref,
     name:            p.display_name || p.name,
-    type:            p.type || 'Dashboard',
+    type:            p.type || 'Dataset',
     domain:          p.domain || 'Other',
-    tags:            Array.isArray(p.tags) ? p.tags : (p.tags ? p.tags.replace(/[{}]/g, '').split(',') : []),
+    tags:            Array.isArray(p.tags) ? p.tags : (p.tags ? String(p.tags).replace(/[{}"]/g, '').split(',').map(t => t.trim()).filter(Boolean) : []),
     productUrl:      p.product_url || p.productUrl || null,
-    refreshFreq:     p.refresh_frequency || p.refreshFrequency || 'Weekly',
+    refreshFreq:     p.refresh_frequency || p.refreshFrequency || 'Daily',
     lastRefreshed:   p.last_refreshed || p.lastRefreshed || null,
     owner:           p.owner_name || p.owner || '',
     description:     p.description || '',
+    ucFullName:      p.uc_full_name || '',
   })
 
   const accessible = products.filter(p => hasAccess(norm(p).ref)).map(norm)
   const restricted = products.filter(p => !hasAccess(norm(p).ref)).map(norm)
+
+  // Build categories dynamically from real domains
+  const allDomains = [...new Set(products.map(p => p.domain || 'Other').filter(Boolean))].sort()
+  const insightCategories = ['All', ...allDomains]
 
   const filterByCategory = (list) =>
     activeCategory === 'All' ? list : list.filter(p => p.domain === activeCategory || p.tags.includes(activeCategory))
@@ -232,10 +179,10 @@ export function DataMarketInsightsPage({ onNavigate, onOpenProduct }) {
         </div>
       )}
 
-      {/* Category filter */}
+      {/* Category filter — built from real product domains */}
       <div className="flex items-center gap-2 flex-wrap">
         <Filter className="h-3.5 w-3.5 text-gray-400 shrink-0" />
-        {INSIGHT_CATEGORIES.map(cat => (
+        {insightCategories.map(cat => (
           <button
             key={cat}
             onClick={() => setActiveCategory(cat)}
@@ -266,10 +213,13 @@ export function DataMarketInsightsPage({ onNavigate, onOpenProduct }) {
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
             {visibleAccessible.map(product => {
-              const meta = insightMeta[product.ref] || {}
               const colors = domainColors[product.domain] || domainColors.Other
-              const Icon = typeIcons[product.type] || LayoutDashboard
-              const chartType = meta.chartHint || 'bar'
+              const Icon = typeIcons[product.type] || Database
+              const chartType = chartHintFromType(product.type)
+              // Use real tags as KPI chips; fall back to UC table name if no tags
+              const chips = product.tags.length > 0
+                ? product.tags.slice(0, 4)
+                : product.ucFullName ? [product.ucFullName.split('.').pop()] : []
 
               return (
                 <div
@@ -280,7 +230,7 @@ export function DataMarketInsightsPage({ onNavigate, onOpenProduct }) {
                   <div className={`${colors.bg} px-4 pt-4 pb-3`}>
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex items-center gap-2 min-w-0">
-                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 bg-white/70`}>
+                        <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 bg-white/70">
                           <Icon className={`h-4 w-4 ${colors.icon}`} />
                         </div>
                         <div className="min-w-0">
@@ -288,19 +238,19 @@ export function DataMarketInsightsPage({ onNavigate, onOpenProduct }) {
                           <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${colors.badge}`}>{product.domain}</span>
                         </div>
                       </div>
-                      <MiniChart type={chartType} color={colors.icon.replace('text-', '').includes('blue') ? '#3B82F6' : colors.icon.includes('indigo') ? '#6366F1' : colors.icon.includes('orange') ? '#F97316' : colors.icon.includes('amber') ? '#D97706' : colors.icon.includes('rose') ? '#F43F5E' : '#6B7280'} />
+                      <MiniChart type={chartType} color={colors.icon.includes('blue') ? '#3B82F6' : colors.icon.includes('indigo') ? '#6366F1' : colors.icon.includes('orange') ? '#F97316' : colors.icon.includes('amber') ? '#D97706' : colors.icon.includes('rose') ? '#F43F5E' : '#6B7280'} />
                     </div>
-                    {meta.headline && (
-                      <p className="text-xs text-gray-500 mt-2 italic">"{meta.headline}"</p>
+                    {product.description && (
+                      <p className="text-xs text-gray-500 mt-2 italic line-clamp-2">"{product.description}"</p>
                     )}
                   </div>
 
-                  {/* KPI chips */}
-                  {meta.kpis && (
+                  {/* Tag chips from real data */}
+                  {chips.length > 0 && (
                     <div className="px-4 py-2.5 flex flex-wrap gap-1.5 border-b border-gray-100">
-                      {meta.kpis.map((kpi, i) => (
+                      {chips.map((chip, i) => (
                         <span key={i} className="text-[11px] text-gray-600 bg-gray-50 border border-gray-200 px-2 py-0.5 rounded font-medium">
-                          {kpi}
+                          {chip}
                         </span>
                       ))}
                     </div>
@@ -345,8 +295,8 @@ export function DataMarketInsightsPage({ onNavigate, onOpenProduct }) {
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {visibleRestricted.map(product => {
-              const meta = insightMeta[product.ref] || {}
-              const Icon = typeIcons[product.type] || LayoutDashboard
+              const meta = {}
+              const Icon = typeIcons[product.type] || Database
               return (
                 <div
                   key={product.ref}
@@ -358,8 +308,8 @@ export function DataMarketInsightsPage({ onNavigate, onOpenProduct }) {
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-semibold text-gray-800 leading-tight">{product.name}</p>
                     <p className="text-xs text-gray-400 mt-0.5">{product.domain} · {product.type}</p>
-                    {meta.headline && (
-                      <p className="text-xs text-gray-500 mt-1 line-clamp-1 italic">"{meta.headline}"</p>
+                    {product.description && (
+                      <p className="text-xs text-gray-500 mt-1 line-clamp-1 italic">"{product.description}"</p>
                     )}
                     <button
                       onClick={() => onOpenProduct(product)}

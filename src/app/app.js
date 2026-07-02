@@ -59,7 +59,7 @@ function isPat(token) {
   return typeof token === 'string' && token.startsWith('dapi');
 }
 
-function httpsJsonRequest({ hostname, path, method = 'GET', headers = {}, body = null }) {
+function httpsJsonRequest({ hostname, path, method = 'GET', headers = {}, body = null, timeoutMs = 12000 }) {
   return new Promise((resolve, reject) => {
     const req = https.request({ hostname, path, method, headers }, (res) => {
       let data = '';
@@ -71,6 +71,9 @@ function httpsJsonRequest({ hostname, path, method = 'GET', headers = {}, body =
           reject(new Error(`Bad JSON response from ${path}`));
         }
       });
+    });
+    req.setTimeout(timeoutMs, () => {
+      req.destroy(new Error(`Request to ${path} timed out after ${timeoutMs}ms`));
     });
     req.on('error', reject);
     if (body) req.write(body);
@@ -364,8 +367,38 @@ async function fetchUcSchema(ucFullName) {
 // ─── Schema migration — run at startup ───────────────────────────────────────
 // DDL lives in schema/schema.sql (applied by deploy.sh). The app SP has DML grants
 // but not table ownership, so avoid ALTER TABLE here — use UPDATE/INSERT only.
+
+// Cache which optional columns exist — populated once on first products query
+let _productCols = null;
+async function getProductCols() {
+  if (_productCols) return _productCols;
+  try {
+    const { rows } = await query(
+      `SELECT column_name FROM information_schema.columns
+       WHERE table_schema = 'datamarket' AND table_name = 'data_products'
+         AND column_name IN ('source_type','product_url','report_url')`
+    );
+    _productCols = new Set(rows.map(r => r.column_name));
+  } catch (_) {
+    _productCols = new Set();
+  }
+  return _productCols;
+}
 async function runMigrations() {
   try {
+    // ── Add any columns that may be missing from older schemas ────────────────
+    // These run as the table owner (via the schema-owner role), not the app SP.
+    // We use individual try/catch so one failure doesn't abort the rest.
+    const addColumnIfMissing = async (col, definition) => {
+      try {
+        await query(`ALTER TABLE data_products ADD COLUMN IF NOT EXISTS ${col} ${definition}`);
+      } catch (_) { /* column may already exist or SP lacks DDL — safe to ignore */ }
+    };
+    await addColumnIfMissing('source_type',  "VARCHAR(20) DEFAULT 'Databricks'");
+    await addColumnIfMissing('product_url',  'TEXT');
+    await addColumnIfMissing('report_url',   'TEXT');
+    await addColumnIfMissing('data_classification', "VARCHAR(50) DEFAULT 'Internal'");
+
     // Mark all existing rows as Published so they stay visible
     await query(`UPDATE data_products SET status = 'Published' WHERE status IS NULL`);
     // Seed last_refreshed with plausible values based on refresh_frequency
@@ -377,7 +410,7 @@ async function runMigrations() {
         ELSE                NOW() - (RANDOM() * INTERVAL '365 days')
       END
       WHERE last_refreshed IS NULL AND refresh_frequency IS NOT NULL`);
-    await query(`UPDATE data_products SET source_type = 'Databricks' WHERE source_type IS NULL`);
+    await query(`UPDATE data_products SET source_system = 'Databricks' WHERE source_system IS NULL`);
     // Always ensure the three core demo users exist — safe upsert, never overwrites existing rows
     await query(`
       INSERT INTO users (email, display_name, role, department) VALUES
@@ -386,6 +419,34 @@ async function runMigrations() {
         ('datasteward@example.org', 'Dana Steward',   'data_steward', 'Data Governance')
       ON CONFLICT (email) DO NOTHING
     `);
+
+    // Create portal_groups table if it doesn't exist (group-based role assignment)
+    await query(`
+      CREATE TABLE IF NOT EXISTS portal_groups (
+        group_id    SERIAL PRIMARY KEY,
+        group_name  VARCHAR(255) NOT NULL,
+        scim_id     VARCHAR(100),
+        role        VARCHAR(50) DEFAULT 'analyst',
+        department  VARCHAR(100) DEFAULT 'General',
+        created_at  TIMESTAMPTZ DEFAULT NOW(),
+        UNIQUE(group_name)
+      )
+    `);
+
+    // When running in production mode, remove any leftover demo placeholder products
+    // (products seeded with fake uc_full_name like 'your_catalog.your_schema.*')
+    if (!DEMO_MODE) {
+      // Delete access_requests first (FK constraint)
+      await query(
+        `DELETE FROM access_requests WHERE product_id IN (
+           SELECT product_id FROM data_products WHERE uc_full_name LIKE 'your_catalog.your_schema.%'
+         )`
+      );
+      const { rowCount } = await query(
+        `DELETE FROM data_products WHERE uc_full_name LIKE 'your_catalog.your_schema.%'`
+      );
+      if (rowCount > 0) console.log(`[Lakebase] Removed ${rowCount} demo placeholder product(s) (DEMO_MODE=false)`);
+    }
 
     // Auto-seed demo data products if catalog is empty and DEMO_MODE is on
     if (DEMO_MODE) {
@@ -535,18 +596,37 @@ app.put('/api/portal/settings', async (req, res) => {
 app.get('/api/portal/products', async (req, res) => {
   try {
     const { domain, type, q, includeAll } = req.query;
+    const cols = await getProductCols();
+
+    // Build SELECT — only include optional columns if they exist in this schema
+    const optionalCols = [
+      cols.has('source_type')  ? "COALESCE(source_type, source_system, 'Databricks') AS source_type"
+                               : "COALESCE(source_system,'Databricks') AS source_type",
+      cols.has('product_url')  ? "COALESCE(product_url,'')  AS product_url"  : "'' AS product_url",
+      cols.has('report_url')   ? "COALESCE(report_url,'')   AS report_url"   : "'' AS report_url",
+    ].join(', ');
+
     let sql = `SELECT product_id, product_ref, uc_full_name, display_name, description, type, domain,
                       tags, source_system, refresh_frequency, owner_email, classification, is_active,
                       COALESCE(status,'Published') AS status, created_at, updated_at, last_refreshed,
-                      product_url, COALESCE(source_type,'Databricks') AS source_type, report_url
+                      ${optionalCols}
                FROM data_products WHERE (is_active = TRUE OR COALESCE(status,'Published') = 'Pending')`;
-    // Non-admin users only see active/published
-    if (!includeAll) sql = sql.replace("(is_active = TRUE OR COALESCE(status,'Published') = 'Pending')", "is_active = TRUE AND COALESCE(status,'Published') = 'Published'");
+
+    if (!includeAll) sql = sql.replace(
+      "(is_active = TRUE OR COALESCE(status,'Published') = 'Pending')",
+      "is_active = TRUE AND COALESCE(status,'Published') = 'Published'"
+    );
+    // When includeAll=true (admin view), remove all status/active filters — show everything
+    if (includeAll) sql = sql.replace(
+      "WHERE (is_active = TRUE OR COALESCE(status,'Published') = 'Pending')",
+      'WHERE TRUE'
+    );
     const params = [];
     if (domain) { params.push(domain); sql += ` AND domain = $${params.length}`; }
     if (type)   { params.push(type);   sql += ` AND type = $${params.length}`; }
     if (q)      { params.push(`%${q}%`); sql += ` AND (display_name ILIKE $${params.length} OR description ILIKE $${params.length})`; }
     sql += ' ORDER BY display_name';
+
     const { rows } = await query(sql, params);
     res.json(rows);
   } catch (e) {
@@ -555,7 +635,23 @@ app.get('/api/portal/products', async (req, res) => {
   }
 });
 
-// ─── Register Product (producer submits for review) ──────────────────────────
+// ─── Products debug ────────────────────────────────────────────────────────────
+app.get('/api/portal/products/debug', async (req, res) => {
+  try {
+    const cols = await getProductCols();
+    const { rows: countRows } = await query('SELECT COUNT(*) as total FROM data_products');
+    const { rows: sample } = await query(
+      `SELECT product_ref, display_name, is_active, status FROM data_products LIMIT 5`
+    );
+    res.json({
+      detected_optional_cols: [...cols],
+      total_products: countRows[0]?.total,
+      sample,
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
 app.post('/api/portal/products', async (req, res) => {
   try {
     const { name, description, type, source, tags, refreshFrequency,
@@ -986,32 +1082,55 @@ app.get('/api/portal/products/:ref/schema', async (req, res) => {
 app.get('/api/portal/identity', async (req, res) => {
   if (DEMO_MODE) return res.json({ mode: 'demo' });
 
-  // In Databricks Apps, SSO identity is injected via request headers
   const email = req.headers['x-forwarded-email'] || req.headers['x-forwarded-user'] || '';
   if (!email) return res.json({ mode: 'demo', reason: 'no_sso_header' });
 
-  // Emails that always get admin role — deployer + any explicitly listed admins
   const ADMIN_EMAILS = (process.env.ADMIN_EMAIL || process.env.DATABRICKS_USER || '')
     .split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
-  const isAdmin = ADMIN_EMAILS.includes(email.toLowerCase());
+  const isHardcodedAdmin = ADMIN_EMAILS.includes(email.toLowerCase());
 
   try {
+    // Helper: look up user's SCIM groups and resolve role from portal_groups
+    const resolveGroupRole = async () => {
+      try {
+        const { host, token } = await getUcAuth();
+        const filter = encodeURIComponent(`userName eq "${email}"`);
+        const scimData = await ucApiRequest(host, token,
+          `/api/2.0/preview/scim/v2/Users?filter=${filter}&count=1&attributes=groups,displayName`);
+        const scimUser = (scimData.Resources || [])[0];
+        if (!scimUser?.groups?.length) return null;
+        const groupNames = scimUser.groups.map(g => g.display).filter(Boolean);
+        const { rows: matched } = await query(
+          `SELECT role FROM portal_groups WHERE group_name = ANY($1) ORDER BY
+             CASE role WHEN 'admin' THEN 1 WHEN 'steward' THEN 2 WHEN 'manager' THEN 3 ELSE 4 END LIMIT 1`,
+          [groupNames]
+        );
+        return matched[0]?.role || null;
+      } catch (_) { return null; }
+    };
+
     const { rows: [user] } = await query(
       `SELECT user_id, email, display_name, role, department FROM users WHERE email = $1`, [email]);
 
-    // If user exists but is not yet admin and should be, promote them
     if (user) {
-      if (isAdmin && user.role !== 'admin') {
+      if (isHardcodedAdmin && user.role !== 'admin') {
         await query(`UPDATE users SET role = 'admin' WHERE email = $1`, [email]);
         user.role = 'admin';
-        console.info(`[identity] Promoted ${email} to admin (matches ADMIN_EMAIL)`);
+        console.info(`[identity] Promoted ${email} to admin (ADMIN_EMAIL match)`);
       }
       return res.json({ mode: 'sso', user });
     }
 
-    // Auto-create new user on first login
+    // New user — resolve role from hardcoded admin list, then group membership
+    let role = 'analyst';
+    if (isHardcodedAdmin) {
+      role = 'admin';
+    } else {
+      const groupRole = await resolveGroupRole();
+      if (groupRole) { role = groupRole; console.info(`[identity] ${email} → role '${role}' via group`); }
+    }
+
     const displayName = email.split('@')[0].replace(/[._]/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-    const role = isAdmin ? 'admin' : 'analyst';
     const { rows: [newUser] } = await query(
       `INSERT INTO users (email, display_name, role, department)
        VALUES ($1, $2, $3, 'General') RETURNING *`, [email, displayName, role]);
@@ -1062,6 +1181,80 @@ app.post('/api/portal/admin/users', async (req, res) => {
   }
 });
 
+// ─── SCIM user search — proxies Databricks workspace SCIM API ────────────────
+app.get('/api/portal/admin/scim-search', async (req, res) => {
+  try {
+    const { q = '' } = req.query;
+    if (!q || q.length < 2) return res.json([]);
+
+    const { host, token } = await getUcAuth();
+    const filter = encodeURIComponent(`displayName co "${q}" or userName co "${q}"`);
+    const scimData = await ucApiRequest(host, token,
+      `/api/2.0/preview/scim/v2/Users?filter=${filter}&count=10&attributes=displayName,userName,emails`);
+
+    const users = (scimData.Resources || []).map(u => ({
+      display_name: u.displayName || u.userName,
+      email: (u.emails?.find(e => e.primary)?.value) || u.userName,
+    })).filter(u => u.email);
+
+    res.json(users);
+  } catch (e) {
+    console.warn('[SCIM search]', e.message);
+    res.json([]);
+  }
+});
+
+// ─── SCIM Group search ────────────────────────────────────────────────────────
+app.get('/api/portal/admin/scim-groups-search', async (req, res) => {
+  try {
+    const { q = '' } = req.query;
+    if (!q || q.length < 1) return res.json([]);
+    const { host, token } = await getUcAuth();
+    const filter = encodeURIComponent(`displayName co "${q}"`);
+    const scimData = await ucApiRequest(host, token,
+      `/api/2.0/preview/scim/v2/Groups?filter=${filter}&count=20&attributes=displayName,id,members`);
+    const groups = (scimData.Resources || []).map(g => ({
+      scim_id:    g.id,
+      group_name: g.displayName,
+      member_count: (g.members || []).length,
+    }));
+    res.json(groups);
+  } catch (e) {
+    console.warn('[SCIM groups search]', e.message);
+    res.json([]);
+  }
+});
+
+// ─── Portal Groups CRUD ───────────────────────────────────────────────────────
+app.get('/api/portal/admin/groups', async (req, res) => {
+  try {
+    const { rows } = await query(`SELECT * FROM portal_groups ORDER BY group_name`);
+    res.json(rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/portal/admin/groups', async (req, res) => {
+  try {
+    const { group_name, scim_id, role, department } = req.body;
+    if (!group_name) return res.status(400).json({ error: 'group_name required' });
+    const { rows: [g] } = await query(
+      `INSERT INTO portal_groups (group_name, scim_id, role, department)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (group_name) DO UPDATE SET role=$3, department=$4, scim_id=$2
+       RETURNING *`,
+      [group_name, scim_id || null, role || 'analyst', department || 'General']
+    );
+    res.json(g);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete('/api/portal/admin/groups/:id', async (req, res) => {
+  try {
+    await query(`DELETE FROM portal_groups WHERE group_id = $1`, [req.params.id]);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 app.put('/api/portal/admin/users/:id', async (req, res) => {
   try {
     const { id } = req.params;
@@ -1086,16 +1279,22 @@ app.put('/api/portal/admin/users/:id', async (req, res) => {
 app.put('/api/portal/products/:ref', async (req, res) => {
   try {
     const { ref } = req.params;
-    const { uc_full_name, source_type, refresh_frequency, report_url, domain, description, display_name } = req.body;
+    const {
+      uc_full_name, source_type, refresh_frequency, report_url, domain,
+      description, display_name, owner_email, data_classification, tags
+    } = req.body;
     const sets = [];
     const params = [];
-    if (uc_full_name !== undefined)    { params.push(uc_full_name);    sets.push(`uc_full_name = $${params.length}`); }
-    if (source_type !== undefined)     { params.push(source_type);     sets.push(`source_type = $${params.length}`); }
-    if (refresh_frequency !== undefined){ params.push(refresh_frequency); sets.push(`refresh_frequency = $${params.length}`); }
-    if (report_url !== undefined)      { params.push(report_url);      sets.push(`report_url = $${params.length}`); }
-    if (domain !== undefined)          { params.push(domain);          sets.push(`domain = $${params.length}`); }
-    if (description !== undefined)     { params.push(description);     sets.push(`description = $${params.length}`); }
-    if (display_name !== undefined)    { params.push(display_name);    sets.push(`display_name = $${params.length}`); }
+    if (uc_full_name !== undefined)        { params.push(uc_full_name);          sets.push(`uc_full_name = $${params.length}`); }
+    if (source_type !== undefined)         { params.push(source_type);            sets.push(`source_system = $${params.length}`); }
+    if (refresh_frequency !== undefined)   { params.push(refresh_frequency);      sets.push(`refresh_frequency = $${params.length}`); }
+    if (report_url !== undefined)          { params.push(report_url);             sets.push(`report_url = $${params.length}`); }
+    if (domain !== undefined)              { params.push(domain);                 sets.push(`domain = $${params.length}`); }
+    if (description !== undefined)         { params.push(description);            sets.push(`description = $${params.length}`); }
+    if (display_name !== undefined)        { params.push(display_name);           sets.push(`display_name = $${params.length}`); }
+    if (owner_email !== undefined)         { params.push(owner_email);            sets.push(`owner_email = $${params.length}`); }
+    if (data_classification !== undefined) { params.push(data_classification);    sets.push(`data_classification = $${params.length}`); }
+    if (tags !== undefined)                { params.push(JSON.stringify(tags));   sets.push(`tags = $${params.length}`); }
     if (sets.length === 0) return res.status(400).json({ error: 'Nothing to update' });
     sets.push('updated_at = NOW()');
     params.push(ref);
@@ -1225,9 +1424,9 @@ app.post('/api/portal/admin/import-uc', async (req, res) => {
         `INSERT INTO data_products
            (product_ref, display_name, description, type, domain, tags, source_system,
             refresh_frequency, owner_email, classification, uc_full_name, is_active, status,
-            source_type, last_refreshed)
+            last_refreshed)
          VALUES ($1, $2, $3, 'Dataset', $4, $5, 'Unity Catalog', 'Daily',
-                 $6, 'Internal', $7, TRUE, 'Published', 'Databricks', NOW())
+                 $6, 'Internal', $7, TRUE, 'Published', NOW())
          ON CONFLICT (product_ref) DO NOTHING RETURNING *`,
         [ref, t.display_name || displayName, t.description || `Imported from Unity Catalog: ${t.full_name}`,
          t.domain || 'Other', `{${(t.domain || 'UC Import').replace(/'/g, '')}}`,

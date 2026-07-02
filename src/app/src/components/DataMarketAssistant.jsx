@@ -36,7 +36,7 @@ function buildResponse(input, persona, myRequests, pendingRequests, hasAccess, a
 
   // ── Admin: approvals queue (must come before status check) ───────────────
   if (/approval|waiting on me|pending approval|queue|review|need.*approve/.test(q)) {
-    if (persona.id !== 'admin') {
+    if (!isAdmin) {
       return {
         text: `Only Data Stewards can view the approval queue. You can check the status of your own requests instead.`,
         chips: ['Check my request status']
@@ -162,7 +162,7 @@ function buildResponse(input, persona, myRequests, pendingRequests, hasAccess, a
   // ── Greetings ─────────────────────────────────────────────────────────────
   if (/^(hi|hello|hey|help|what can you|what do you)/.test(q)) {
     const pending = myRequests.filter(r => r.status === 'Pending')
-    if (persona.id === 'admin') {
+    if (isAdmin) {
       return {
         text: `Hi ${persona.name}! As Data Steward I can help you:`,
         chips: ['Approvals waiting on me', 'Show all pending requests', 'Who has access to what?', 'How does approval work?']
@@ -310,7 +310,7 @@ export function DataMarketAssistant({ onNavigate }) {
   const [unread, setUnread] = useState(0)
   const bottomRef = useRef(null)
   const inputRef = useRef(null)
-  const { persona, myRequests, pendingRequests, hasAccess, apiAvailable } = usePersona()
+  const { persona, myRequests, pendingRequests, hasAccess, apiAvailable, isAdmin } = usePersona()
 
   const buildGreeting = (p, myReqs, pendingReqs) => {
     if (p.id === 'admin') {
