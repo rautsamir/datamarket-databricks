@@ -190,12 +190,20 @@ function DemoControlsPanel() {
 
 function SettingsPanel() {
   const { appName, appSubtitle, appLogoUrl, genieSpaceId, sqlWarehouseId, rfaEnabled, setupComplete, demoMode, refreshConfig,
-          autoDiscoverEnabled, autoDiscoverPrefix, navLinks: configNavLinks } = useAppConfig()
+          autoDiscoverEnabled, autoDiscoverPrefix, navLinks: configNavLinks,
+          aboutText: configAboutText, contactName: configContactName,
+          contactEmail: configContactEmail, contactNote: configContactNote,
+          faqItems: configFaqItems } = useAppConfig()
 
   const DEFAULT_NAV_LINKS = [
-    { label: 'About',   url: '', visible: true },
-    { label: 'FAQ',     url: '', visible: true },
-    { label: 'Contact', url: '', visible: true },
+    { label: 'About',   visible: true },
+    { label: 'FAQ',     visible: true },
+    { label: 'Contact', visible: true },
+  ]
+  const DEFAULT_FAQ = [
+    { q: 'What is a data product?', a: 'A certified, documented dataset made available for discovery and access through this portal.' },
+    { q: 'How do I request access?', a: 'Open a product from the Discover page and click "Request Access". A data steward will review your request.' },
+    { q: 'How long does approval take?', a: 'Once approved, Unity Catalog permissions are granted immediately.' },
   ]
 
   const [form, setForm] = useState({
@@ -207,8 +215,13 @@ function SettingsPanel() {
     rfa_enabled:     String(rfaEnabled),
     auto_discover_enabled: String(autoDiscoverEnabled),
     auto_discover_prefix:  autoDiscoverPrefix || '',
+    about_text:      configAboutText || '',
+    contact_name:    configContactName || '',
+    contact_email:   configContactEmail || '',
+    contact_note:    configContactNote || '',
   })
   const [navLinks, setNavLinks] = useState(configNavLinks?.length ? configNavLinks : DEFAULT_NAV_LINKS)
+  const [faqItems, setFaqItems] = useState(configFaqItems?.length ? configFaqItems : DEFAULT_FAQ)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved]   = useState(false)
   const [error, setError]   = useState('')
@@ -223,9 +236,15 @@ function SettingsPanel() {
       rfa_enabled:     String(rfaEnabled),
       auto_discover_enabled: String(autoDiscoverEnabled),
       auto_discover_prefix:  autoDiscoverPrefix || '',
+      about_text:      configAboutText || '',
+      contact_name:    configContactName || '',
+      contact_email:   configContactEmail || '',
+      contact_note:    configContactNote || '',
     })
     setNavLinks(configNavLinks?.length ? configNavLinks : DEFAULT_NAV_LINKS)
-  }, [appName, appSubtitle, appLogoUrl, genieSpaceId, sqlWarehouseId, rfaEnabled, autoDiscoverEnabled, autoDiscoverPrefix, configNavLinks])
+    setFaqItems(configFaqItems?.length ? configFaqItems : DEFAULT_FAQ)
+  }, [appName, appSubtitle, appLogoUrl, genieSpaceId, sqlWarehouseId, rfaEnabled, autoDiscoverEnabled, autoDiscoverPrefix,
+      configNavLinks, configAboutText, configContactName, configContactEmail, configContactNote, configFaqItems])
 
   const handleSave = async () => {
     setSaving(true); setSaved(false); setError('')
@@ -233,7 +252,12 @@ function SettingsPanel() {
       const r = await fetch('/api/portal/settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...form, setup_complete: 'true', nav_links: JSON.stringify(navLinks) }),
+        body: JSON.stringify({
+          ...form,
+          setup_complete: 'true',
+          nav_links:  JSON.stringify(navLinks),
+          faq_items:  JSON.stringify(faqItems),
+        }),
       })
       if (!r.ok) throw new Error(await r.text())
       setSaved(true)
@@ -277,6 +301,73 @@ function SettingsPanel() {
         {field('Tagline', 'app_subtitle', 'Data Discovery & Access', 'Subtitle shown under the portal name')}
         {field('Logo URL', 'app_logo_url', '/your-logo.png', 'Path or full URL. Leave empty to hide.')}
       </div>
+      {/* Page Content */}
+      <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-5">
+        <h3 className="font-semibold text-gray-900 text-sm uppercase tracking-wide">Page Content</h3>
+
+        {/* About */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">About — description text</label>
+          <textarea rows={3} value={form.about_text}
+            onChange={e => setForm(f => ({ ...f, about_text: e.target.value }))}
+            placeholder="Describe this portal in 2–3 sentences. Leave blank to show the default description."
+            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 resize-none" />
+        </div>
+
+        {/* Contact */}
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Contact name</label>
+            <input type="text" value={form.contact_name}
+              onChange={e => setForm(f => ({ ...f, contact_name: e.target.value }))}
+              placeholder="Samir Raut"
+              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Contact email</label>
+            <input type="email" value={form.contact_email}
+              onChange={e => setForm(f => ({ ...f, contact_email: e.target.value }))}
+              placeholder="you@databricks.com"
+              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+          </div>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Contact note <span className="text-gray-400 font-normal">(optional)</span></label>
+          <input type="text" value={form.contact_note}
+            onChange={e => setForm(f => ({ ...f, contact_note: e.target.value }))}
+            placeholder="Slack: #data-platform · Response time: 1 business day"
+            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+        </div>
+
+        {/* FAQ editor */}
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <label className="block text-sm font-medium text-gray-700">FAQ items</label>
+            <button onClick={() => setFaqItems(f => [...f, { q: '', a: '' }])}
+              className="text-xs text-blue-600 hover:underline flex items-center gap-1">
+              + Add question
+            </button>
+          </div>
+          <div className="space-y-3">
+            {faqItems.map((item, i) => (
+              <div key={i} className="border border-gray-100 rounded-lg p-3 space-y-2 bg-gray-50">
+                <div className="flex items-start gap-2">
+                  <input type="text" value={item.q} placeholder="Question"
+                    onChange={e => setFaqItems(f => f.map((x, idx) => idx === i ? { ...x, q: e.target.value } : x))}
+                    className="flex-1 px-3 py-1.5 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white" />
+                  <button onClick={() => setFaqItems(f => f.filter((_, idx) => idx !== i))}
+                    className="text-red-400 hover:text-red-600 text-xs px-2 py-1.5 shrink-0">✕</button>
+                </div>
+                <textarea rows={2} value={item.a} placeholder="Answer"
+                  onChange={e => setFaqItems(f => f.map((x, idx) => idx === i ? { ...x, a: e.target.value } : x))}
+                  className="w-full px-3 py-1.5 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-400 resize-none bg-white" />
+              </div>
+            ))}
+          </div>
+          <p className="text-xs text-gray-400 mt-1.5">Items save with the rest of settings — no redeploy needed.</p>
+        </div>
+      </div>
+
       <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-4">
         <h3 className="font-semibold text-gray-900 text-sm uppercase tracking-wide">Integrations</h3>
         {field('Genie Space ID', 'genie_space_id', '01f3a...', 'Powers the Ask AI page. Find it in Databricks → AI/BI → Genie.')}
@@ -346,19 +437,12 @@ function SettingsPanel() {
               >
                 <span className={`block h-4 w-4 rounded-full bg-white shadow transition-transform ${link.visible ? 'translate-x-4' : 'translate-x-0'}`} />
               </button>
-              <span className="text-sm font-medium text-gray-700 w-16 shrink-0">{link.label}</span>
-              <input
-                type="text"
-                placeholder="https://... (optional)"
-                value={link.url}
-                onChange={e => setNavLinks(ls => ls.map((l, idx) => idx === i ? { ...l, url: e.target.value } : l))}
-                disabled={!link.visible}
-                className="flex-1 px-3 py-1.5 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-400 disabled:opacity-40 bg-white"
-              />
+              <span className="text-sm font-medium text-gray-700">{link.label}</span>
+              <span className="text-xs text-gray-400 ml-auto">in-app page</span>
             </div>
           ))}
         </div>
-        <p className="text-xs text-gray-400">Changes apply after saving below. All three hidden = footer nav disappears entirely.</p>
+        <p className="text-xs text-gray-400">Each is an in-app page. Content is editable in the Page Content section above. All hidden = footer nav disappears.</p>
       </div>
 
       <div className="flex items-center gap-3">

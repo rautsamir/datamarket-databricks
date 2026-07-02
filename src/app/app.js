@@ -613,10 +613,19 @@ app.get('/api/portal/config', async (req, res) => {
       const raw = getSetting('nav_links', '');
       if (raw) { try { return JSON.parse(raw); } catch (_) {} }
       return [
-        { label: 'About',   url: '', visible: true },
-        { label: 'FAQ',     url: '', visible: true },
-        { label: 'Contact', url: '', visible: true },
+        { label: 'About',   visible: true },
+        { label: 'FAQ',     visible: true },
+        { label: 'Contact', visible: true },
       ];
+    })(),
+    aboutText:    getSetting('about_text', ''),
+    contactName:  getSetting('contact_name', ''),
+    contactEmail: getSetting('contact_email', process.env.ADMIN_EMAIL || process.env.DATABRICKS_USER || ''),
+    contactNote:  getSetting('contact_note', ''),
+    faqItems: (() => {
+      const raw = getSetting('faq_items', '');
+      if (raw) { try { return JSON.parse(raw); } catch (_) {} }
+      return [];
     })(),
   });
 });

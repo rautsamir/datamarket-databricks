@@ -301,10 +301,11 @@ export function DataMarketLayout({ currentPage, onNavigate, children }) {
           {navLinks?.some(l => l.visible) && (
             <nav className="flex items-center gap-6">
               {(navLinks || []).filter(l => l.visible).map(link => (
-                link.url
-                  ? <a key={link.label} href={link.url} target="_blank" rel="noopener noreferrer"
-                       className="text-sm text-gray-500 hover:text-gray-900 transition-colors">{link.label}</a>
-                  : <button key={link.label} className="text-sm text-gray-500 hover:text-gray-900 transition-colors">{link.label}</button>
+                <button key={link.label}
+                  onClick={() => onNavigate?.(link.label.toLowerCase())}
+                  className="text-sm text-gray-500 hover:text-gray-900 transition-colors">
+                  {link.label}
+                </button>
               ))}
             </nav>
           )}
