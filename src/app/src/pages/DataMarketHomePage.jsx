@@ -128,16 +128,10 @@ export function DataMarketHomePage({ onNavigate, onOpenProduct }) {
     setRecentlyAccessed(approved)
   }, [myRequests])
 
-  const isAI = isNaturalLanguage(searchQuery)
-
   const handleSearch = (e) => {
     e.preventDefault()
     if (!searchQuery.trim()) return
-    if (isAI) {
-      onNavigate('ask-ai', { question: searchQuery })
-    } else {
-      onNavigate('discover', { search: searchQuery })
-    }
+    onNavigate('ask-ai', { question: searchQuery })
   }
 
   const launchChip = (text) => {
@@ -158,29 +152,21 @@ export function DataMarketHomePage({ onNavigate, onOpenProduct }) {
 
         <div className="max-w-2xl mx-auto mt-6">
           <form onSubmit={handleSearch} className="relative">
-            {isAI
-              ? <Sparkles className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-blue-500" />
-              : <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
-            }
+            <Sparkles className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-blue-500" />
             <input
               type="text"
-              placeholder="Search products or ask: show me headcount by department..."
-              className="w-full pl-12 pr-36 py-4 text-base border-2 rounded-xl focus:outline-none shadow-sm transition-colors"
-              style={{ borderColor: isAI ? '#3B82F6' : (searchQuery ? DataMarket_BLUE : '#E5E7EB') }}
+              placeholder="Describe what you're looking for — e.g. fire incident data, budget reports..."
+              className="w-full pl-12 pr-28 py-4 text-base border-2 rounded-xl focus:outline-none shadow-sm transition-colors"
+              style={{ borderColor: searchQuery ? '#3B82F6' : '#E5E7EB' }}
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
             />
-            {/* Live mode badge */}
-            <span className={`absolute right-14 top-1/2 -translate-y-1/2 text-[10px] font-semibold px-2 py-1 rounded-full transition-all ${
-              isAI ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-400'
-            }`}>
-              {isAI ? '✦ Ask AI' : 'Search'}
+            <span className="absolute right-14 top-1/2 -translate-y-1/2 text-[10px] font-semibold px-2 py-1 rounded-full bg-blue-50 text-blue-600">
+              ✦ Ask AI
             </span>
-            <button
-              type="submit"
+            <button type="submit"
               className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-lg text-white"
-              style={{ backgroundColor: isAI ? '#3B82F6' : DataMarket_BLUE }}
-            >
+              style={{ backgroundColor: '#3B82F6' }}>
               <ArrowRight className="h-4 w-4" />
             </button>
           </form>
@@ -196,7 +182,7 @@ export function DataMarketHomePage({ onNavigate, onOpenProduct }) {
               ))}
             </div>
           )}
-          <p className="text-xs text-gray-400 mt-2">Type a short keyword to search the catalog · Ask a full question to explore with AI</p>
+          <p className="text-xs text-gray-400 mt-2">Type anything — a keyword, a topic, or a full question. Use <button onClick={() => onNavigate('discover')} className="underline hover:text-gray-600">Discover</button> to browse and filter the full catalog.</p>
         </div>
       </div>
 
