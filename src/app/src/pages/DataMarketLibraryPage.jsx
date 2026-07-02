@@ -193,7 +193,7 @@ function SettingsPanel() {
           autoDiscoverEnabled, autoDiscoverPrefix, navLinks: configNavLinks, askAiEnabled: cfgAskAi, insightsEnabled: cfgInsights,
           aboutText: configAboutText, contactName: configContactName,
           contactEmail: configContactEmail, contactNote: configContactNote,
-          faqItems: configFaqItems } = useAppConfig()
+          faqItems: configFaqItems, searchChips: configSearchChips } = useAppConfig()
 
   const DEFAULT_NAV_LINKS = [
     { label: 'About',   visible: true },
@@ -223,6 +223,7 @@ function SettingsPanel() {
   })
   const [navLinks, setNavLinks] = useState(configNavLinks?.length ? configNavLinks : DEFAULT_NAV_LINKS)
   const [faqItems, setFaqItems] = useState(configFaqItems?.length ? configFaqItems : DEFAULT_FAQ)
+  const [searchChips, setSearchChips] = useState(configSearchChips || [])
   const [saving, setSaving] = useState(false)
   const [saved, setSaved]   = useState(false)
   const [error, setError]   = useState('')
@@ -245,8 +246,9 @@ function SettingsPanel() {
     })
     setNavLinks(configNavLinks?.length ? configNavLinks : DEFAULT_NAV_LINKS)
     setFaqItems(configFaqItems?.length ? configFaqItems : DEFAULT_FAQ)
+    setSearchChips(configSearchChips || [])
   }, [appName, appSubtitle, appLogoUrl, cfgWarehouse, rfaEnabled, cfgAskAi, cfgInsights, autoDiscoverEnabled, autoDiscoverPrefix,
-      configNavLinks, configAboutText, configContactName, configContactEmail, configContactNote, configFaqItems])
+      configNavLinks, configAboutText, configContactName, configContactEmail, configContactNote, configFaqItems, configSearchChips])
 
   const handleSave = async () => {
     setSaving(true); setSaved(false); setError('')
@@ -257,8 +259,9 @@ function SettingsPanel() {
         body: JSON.stringify({
           ...form,
           setup_complete: 'true',
-          nav_links:  JSON.stringify(navLinks),
-          faq_items:  JSON.stringify(faqItems),
+          nav_links:    JSON.stringify(navLinks),
+          faq_items:    JSON.stringify(faqItems),
+          search_chips: JSON.stringify(searchChips),
         }),
       })
       if (!r.ok) throw new Error(await r.text())
@@ -340,6 +343,39 @@ function SettingsPanel() {
               <span className="text-xs text-gray-400">in-app page · content editable in Page Content below</span>
             </div>
           ))}
+        </div>
+
+        <div className="border-t border-gray-100 pt-4">
+          <div className="flex items-center justify-between mb-1">
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Search chips</p>
+            <button onClick={() => setSearchChips(c => [...c, { label: '', q: '' }])}
+              className="text-xs text-blue-600 hover:underline">+ Add chip</button>
+          </div>
+          <p className="text-xs text-gray-400 mb-3">
+            Shortcut buttons below the home search bar. Leave empty to auto-generate from your catalog domains.
+          </p>
+          {searchChips.length === 0 ? (
+            <p className="text-xs text-gray-400 italic">Auto-generating from catalog domains. Add chips above to override.</p>
+          ) : (
+            <div className="space-y-2">
+              {searchChips.map((chip, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <input type="text" value={chip.label} placeholder="Label (e.g. ✦ Fire data)"
+                    onChange={e => setSearchChips(c => c.map((x, idx) => idx === i ? { ...x, label: e.target.value } : x))}
+                    className="w-40 px-3 py-1.5 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-400" />
+                  <input type="text" value={chip.q} placeholder="AI question (e.g. Show me fire incident data)"
+                    onChange={e => setSearchChips(c => c.map((x, idx) => idx === i ? { ...x, q: e.target.value } : x))}
+                    className="flex-1 px-3 py-1.5 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-400" />
+                  <button onClick={() => setSearchChips(c => c.filter((_, idx) => idx !== i))}
+                    className="text-red-400 hover:text-red-600 text-xs px-1.5 shrink-0">✕</button>
+                </div>
+              ))}
+              <button onClick={() => setSearchChips([])}
+                className="text-xs text-gray-400 hover:text-gray-600 underline mt-1">
+                Clear all (revert to auto)
+              </button>
+            </div>
+          )}
         </div>
       </div>
       {/* ── Integrations ──────────────────────────────────────────────── */}

@@ -605,6 +605,11 @@ app.get('/api/portal/config', async (req, res) => {
     sqlWarehouseId:   getSetting('sql_warehouse_id', SQL_WAREHOUSE_ID),
     askAiEnabled:     getSetting('ask_ai_enabled',   'true') !== 'false',
     insightsEnabled:  getSetting('insights_enabled', 'true') !== 'false',
+    searchChips: (() => {
+      const raw = getSetting('search_chips', '');
+      if (raw) { try { return JSON.parse(raw); } catch (_) {} }
+      return [];
+    })(),
     rfaEnabled:       getSetting('rfa_enabled', String(RFA_ENABLED)) === 'true',
     setupComplete:    getSetting('setup_complete', '') === 'true',
     autoDiscoverEnabled: getSetting('auto_discover_enabled', 'false') === 'true',

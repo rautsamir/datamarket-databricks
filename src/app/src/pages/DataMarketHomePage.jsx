@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { Search, ArrowRight, Clock, Sparkles, BarChart3, FileText, Database, Lock, Bot, LayoutDashboard, AppWindow, Cpu, Layers } from 'lucide-react'
 import { usePersona } from '../context/PersonaContext'
+import { useAppConfig } from '../context/AppConfigContext'
 
 // Heuristic: treat input as a natural-language question if it looks conversational
 function isNaturalLanguage(q) {
@@ -58,7 +59,9 @@ export function DataMarketHomePage({ onNavigate, onOpenProduct }) {
   const [searchQuery, setSearchQuery] = useState('')
   const [featuredProducts, setFeaturedProducts] = useState([])
   const [recentlyAccessed, setRecentlyAccessed] = useState([])
+  const [chips, setChips] = useState([])
   const { persona, hasAccess, myRequests } = usePersona()
+  const { searchChips: configChips } = useAppConfig()
 
   // Load featured (3 most recently published products)
   useEffect(() => {
@@ -85,6 +88,27 @@ export function DataMarketHomePage({ onNavigate, onOpenProduct }) {
       })
       .catch(() => {})
   }, [])
+
+  // Chips: use admin-configured if present, otherwise auto-generate from catalog domains
+  useEffect(() => {
+    if (configChips?.length) {
+      setChips(configChips)
+      return
+    }
+    fetch('/api/portal/products?includeAll=false')
+      .then(r => r.json())
+      .then(products => {
+        if (!Array.isArray(products)) return
+        const counts = {}
+        products.forEach(p => { const d = p.domain || 'Other'; counts[d] = (counts[d] || 0) + 1 })
+        const topDomains = Object.entries(counts)
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 5)
+          .map(([domain]) => ({ label: `✦ ${domain}`, q: `Show me ${domain} data products` }))
+        setChips(topDomains)
+      })
+      .catch(() => {})
+  }, [configChips])
 
   // Derive recently accessed from approved requests (most recent first)
   useEffect(() => {
@@ -161,23 +185,17 @@ export function DataMarketHomePage({ onNavigate, onOpenProduct }) {
             </button>
           </form>
 
-          {/* Suggestion chips — always AI queries */}
-          <div className="flex flex-wrap gap-2 mt-3 justify-center">
-            {[
-              { label: '✦ Budget by department', q: 'Show me budget by department' },
-              { label: '✦ Compensation by department', q: 'Show me headcount and compensation by department' },
-              { label: '✦ Vendor fraud flags', q: 'Show me vendor fraud flags' },
-              { label: '✦ Property tax revenue', q: 'Show me property tax revenue' },
-            ].map(({ label, q }) => (
-              <button
-                key={q}
-                onClick={() => launchChip(q)}
-                className="text-xs text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 px-3 py-1 rounded-full transition-colors border border-blue-100"
-              >
-                {label}
-              </button>
-            ))}
-          </div>
+          {/* Suggestion chips — auto-generated from domains or admin-configured */}
+          {chips.length > 0 && (
+            <div className="flex flex-wrap gap-2 mt-3 justify-center">
+              {chips.map(({ label, q }) => (
+                <button key={q} onClick={() => launchChip(q)}
+                  className="text-xs text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 px-3 py-1 rounded-full transition-colors border border-blue-100">
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
           <p className="text-xs text-gray-400 mt-2">Type a short keyword to search the catalog · Ask a full question to explore with AI</p>
         </div>
       </div>
