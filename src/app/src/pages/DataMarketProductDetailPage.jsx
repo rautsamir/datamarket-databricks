@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
-import { ArrowLeft, BarChart3, FileText, Database, X, Calendar, User, RefreshCw, Tag, Lock, ExternalLink, CheckCircle2, Clock, Eye, EyeOff, ShieldAlert, ShieldCheck, Shield, Bot, LayoutDashboard, AppWindow, Cpu, Layers, Edit3 } from 'lucide-react'
+import { ArrowLeft, BarChart3, FileText, Database, X, Calendar, User, RefreshCw, Tag, Lock, ExternalLink, CheckCircle2, Clock, Eye, EyeOff, ShieldAlert, ShieldCheck, Shield, Bot, LayoutDashboard, AppWindow, Cpu, Layers, Edit3, ClipboardList, Check } from 'lucide-react'
 import { usePersona } from '../context/PersonaContext'
+import { useAppConfig } from '../context/AppConfigContext'
 
 const DataMarket_BLUE = '#003865'
 
@@ -592,6 +593,8 @@ function AccessRequestModal({ product, onClose }) {
 export function DataMarketProductDetailPage({ product, onBack, onNavigate }) {
   const [showModal, setShowModal] = useState(false)
   const { hasAccess, myRequests, isAdmin } = usePersona()
+  const { databricksHost } = useAppConfig()
+  const [copied, setCopied] = useState(false)
   const Icon = typeIcons[product.type] || BarChart3
   // Use product_ref as the canonical identifier — falls back to numeric id for static products
   const productRef = product.product_ref || product.id
@@ -670,6 +673,32 @@ export function DataMarketProductDetailPage({ product, onBack, onNavigate }) {
                   <Lock className="h-4 w-4" /> Request Access
                 </button>
               )}
+
+              {/* Query shortcuts — show for anyone with access on UC-backed tables */}
+              {accessGranted && product.ucFullName && (() => {
+                const parts = (product.ucFullName || product.uc_full_name || '').split('.')
+                const fullName = parts.join('.')
+                const explorerUrl = databricksHost
+                  ? `${databricksHost}/explore/data/${parts.join('/')}`
+                  : null
+                const starterQuery = `SELECT *\nFROM ${fullName}\nLIMIT 100`
+                return (
+                  <>
+                    {explorerUrl && (
+                      <a href={explorerUrl} target="_blank" rel="noopener noreferrer"
+                        className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 transition-colors">
+                        <ExternalLink className="h-4 w-4" /> Explore in UC
+                      </a>
+                    )}
+                    <button
+                      onClick={() => navigator.clipboard.writeText(starterQuery).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000) })}
+                      className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium border transition-colors ${copied ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'border-gray-200 text-gray-700 hover:bg-gray-50'}`}
+                    >
+                      {copied ? <><Check className="h-4 w-4" /> Copied!</> : <><ClipboardList className="h-4 w-4" /> Copy SQL</>}
+                    </button>
+                  </>
+                )
+              })()}
 
               {accessGranted && product.productUrl && (
                 <a

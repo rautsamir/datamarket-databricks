@@ -912,6 +912,7 @@ export function DataMarketLibraryPage({ onNavigate, onOpenProduct, initialTab })
         { id: 'Manage Approvals', icon: ShieldCheck,   label: 'Manage Approvals', desc: 'Review access requests',      activeColor: 'bg-amber-500 text-white border-amber-500',  countColor: 'bg-red-500 text-white' },
         { id: 'Users',            icon: Users,         label: 'Users',            desc: 'Manage user roles',           activeColor: 'bg-purple-600 text-white border-purple-600',countColor: 'bg-purple-500 text-white' },
         { id: 'Settings',         icon: Settings,      label: 'Settings',         desc: 'Configure portal',            activeColor: 'bg-gray-700 text-white border-gray-700',    countColor: 'bg-gray-500 text-white' },
+        { id: 'My Data',          icon: FolderOpen,    label: 'My Data',          desc: 'Your personal access & products', activeColor: 'bg-emerald-600 text-white border-emerald-600', countColor: 'bg-emerald-500 text-white' },
         ...(demoMode ? [{ id: 'Demo Controls', icon: RotateCcw, label: 'Demo Controls', desc: 'Reset or reload demo data', activeColor: 'bg-rose-600 text-white border-rose-600', countColor: 'bg-rose-500 text-white' }] : []),
       ]
     : [
@@ -1157,7 +1158,7 @@ export function DataMarketLibraryPage({ onNavigate, onOpenProduct, initialTab })
       )}
 
       {/* ── Analyst View ──────────────────────────────────────────────────────── */}
-      {!isSteward && (activeTab === 'Data Product' || activeTab === 'Request') && (
+      {(!isSteward || activeTab === 'My Data') && (activeTab === 'Data Product' || activeTab === 'Request' || activeTab === 'My Data') && (
         <>
           <div className="relative mb-4 max-w-sm">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
@@ -1176,14 +1177,14 @@ export function DataMarketLibraryPage({ onNavigate, onOpenProduct, initialTab })
                     <th className="text-left py-3 px-4 font-medium text-gray-500 text-xs uppercase tracking-wide">Frequency</th>
                     <th className="text-left py-3 px-4 font-medium text-gray-500 text-xs uppercase tracking-wide">Owner</th>
                     <th className="text-center py-3 px-4 font-medium text-gray-500 text-xs uppercase tracking-wide">Status</th>
-                    {activeTab === 'Data Product' && (
+                    {(activeTab === 'Data Product' || activeTab === 'My Data') && (
                       <th className="text-center py-3 px-4 font-medium text-gray-500 text-xs uppercase tracking-wide">Query</th>
                     )}
                   </tr>
                 </thead>
                 <tbody>
                   {filteredAnalyst
-                    .filter(item => activeTab === 'Data Product' ? item.status === 'Approved' : true)
+                    .filter(item => (activeTab === 'Data Product' || activeTab === 'My Data') ? item.status === 'Approved' : true)
                     .map(item => {
                       const Icon = { Dashboard: BarChart3, Report: FileText, Dataset: Database }[item.type] || Database
                       const ucFullName = item.uc_full_name
@@ -1219,7 +1220,7 @@ export function DataMarketLibraryPage({ onNavigate, onOpenProduct, initialTab })
                               {item.status}
                             </span>
                           </td>
-                          {activeTab === 'Data Product' && (
+                          {(activeTab === 'Data Product' || activeTab === 'My Data') && (
                             <td className="py-3 px-4">
                               {item.status === 'Approved' && ucFullName ? (
                                 <div className="flex items-center gap-1 justify-center">
@@ -1245,7 +1246,7 @@ export function DataMarketLibraryPage({ onNavigate, onOpenProduct, initialTab })
                 </tbody>
               </table>
             </div>
-            {filteredAnalyst.filter(item => activeTab === 'Data Product' ? item.status === 'Approved' : true).length === 0 && (
+            {filteredAnalyst.filter(item => (activeTab === 'Data Product' || activeTab === 'My Data') ? item.status === 'Approved' : true).length === 0 && (
               <div className="py-16 text-center text-gray-400">
                 <BookmarkCheck className="h-10 w-10 mx-auto mb-2 opacity-30" />
                 <p className="text-sm">No items found.</p>

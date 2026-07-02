@@ -42,6 +42,7 @@ function normalizeProduct(p) {
     owner: p.owner_email || p.owner || '-',
     lastUpdated: p.updated_at ? new Date(p.updated_at).toLocaleDateString() : p.lastUpdated || '-',
     lastRefreshed: p.last_refreshed ? new Date(p.last_refreshed) : null,
+    ucFullName: p.uc_full_name || p.ucFullName || null,
     productUrl: p.product_url || null,
     sourceType: p.source_type || 'Databricks',
     reportUrl: p.report_url || null,
