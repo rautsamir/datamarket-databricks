@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { ChevronUp, Plus, X, Lightbulb, MapPin, CheckCircle2, XCircle, Clock } from 'lucide-react'
+import { ChevronUp, Plus, X, Lightbulb, MapPin, CheckCircle2 } from 'lucide-react'
 import { usePersona } from '@/context/PersonaContext'
 
 const DataMarket_BLUE = '#003865'
@@ -44,9 +44,13 @@ export function FeatureRequestPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ requester_email: persona?.email || '' })
       })
-      if (r.ok) load()
-    } catch (_) {}
-    finally { setVotingId(null) }
+      if (!r.ok) console.error('Vote failed:', r.status)
+    } catch (e) {
+      console.error('Vote error:', e)
+    } finally {
+      setVotingId(null)
+      load() // always reload so button state reflects server truth
+    }
   }
 
   const handleSubmit = async () => {
