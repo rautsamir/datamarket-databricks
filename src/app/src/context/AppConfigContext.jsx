@@ -9,6 +9,9 @@ const defaults = {
   sqlWarehouseId:'',
   rfaEnabled:    false,
   setupComplete: false,
+  autoDiscoverEnabled: false,
+  autoDiscoverPrefix:  '',
+  databricksHost: '',
 }
 
 const AppConfigContext = createContext({ ...defaults, refreshConfig: () => {} })
