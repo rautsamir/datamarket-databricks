@@ -48,7 +48,7 @@ function AppInner() {
       case 'library':
       case 'my-library':   return <DataMarketLibraryPage onNavigate={navigate} onOpenProduct={openProduct} />
       case 'admin':        return <DataMarketLibraryPage onNavigate={navigate} onOpenProduct={openProduct} initialTab="Manage Approvals" />
-      case 'register':     return <DataMarketRegisterPage onNavigate={navigate} />
+      case 'register':     return <DataMarketRegisterPage onNavigate={navigate} editProduct={pageProps.editProduct || null} />
       default:             return <DataMarketHomePage onNavigate={navigate} onOpenProduct={openProduct} />
     }
   }

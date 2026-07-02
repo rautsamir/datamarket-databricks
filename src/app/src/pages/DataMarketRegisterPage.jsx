@@ -18,31 +18,48 @@ const tagOptions = ['Budget', 'Financial', 'ERP', 'Payroll', 'HR', 'Property Tax
 const classificationOptions = ['Public', 'Internal', 'Confidential', 'Restricted']
 const accessLevelOptions = ['Read Only', 'Read + Export', 'Read + Write', 'Admin']
 
-export function DataMarketRegisterPage({ onNavigate }) {
+export function DataMarketRegisterPage({ onNavigate, editProduct = null }) {
   const { persona } = usePersona()
   const { demoMode } = useAppConfig()
+  const isEditMode = !!editProduct
   const [currentStep, setCurrentStep] = useState(1)
   const [submitted, setSubmitted] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState(null)
-  const [form, setForm] = useState({
-    name: '',
-    description: '',
-    type: 'Dashboard',
-    source: '',
-    tags: [],
-    refreshFrequency: 'Daily',
-    productUrl: '',
-    usageDescription: '',
-    useCases: '',
-    sla: '',
-    dataOwner: '',
-    steward: '',
-    contributors: [],
-    classification: 'Internal',
-    accessLevel: 'Read Only',
-    hasPII: false,
-    retentionYears: '7',
+
+  const blankForm = {
+    name: '', description: '', type: 'Dashboard', source: '', tags: [],
+    refreshFrequency: 'Daily', productUrl: '', usageDescription: '', useCases: '',
+    sla: '', dataOwner: '', steward: '', contributors: [],
+    classification: 'Internal', accessLevel: 'Read Only', hasPII: false, retentionYears: '7',
+  }
+
+  const [form, setForm] = useState(() => {
+    if (!editProduct) return blankForm
+    const tags = Array.isArray(editProduct.tags)
+      ? editProduct.tags
+      : typeof editProduct.tags === 'string'
+        ? JSON.parse(editProduct.tags || '[]')
+        : []
+    return {
+      name: editProduct.display_name || editProduct.name || '',
+      description: editProduct.description || '',
+      type: editProduct.source_type || editProduct.type || 'Dashboard',
+      source: editProduct.domain || editProduct.source || '',
+      tags,
+      refreshFrequency: editProduct.refresh_frequency || 'Daily',
+      productUrl: editProduct.report_url || editProduct.productUrl || '',
+      usageDescription: editProduct.usageDescription || '',
+      useCases: editProduct.useCases || '',
+      sla: editProduct.sla || '',
+      dataOwner: editProduct.owner_email || '',
+      steward: editProduct.steward || '',
+      contributors: editProduct.contributors || [],
+      classification: editProduct.data_classification || 'Internal',
+      accessLevel: editProduct.accessLevel || 'Read Only',
+      hasPII: editProduct.has_pii || false,
+      retentionYears: editProduct.retentionYears || '7',
+    }
   })
 
   const loadDemoData = () => setForm({
@@ -77,17 +94,22 @@ export function DataMarketRegisterPage({ onNavigate }) {
         <div className="w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6" style={{ backgroundColor: '#E8F0F7' }}>
           <CheckCircle2 className="h-10 w-10" style={{ color: DataMarket_BLUE }} />
         </div>
-        <h2 className="text-2xl font-bold text-gray-900 mb-2">Data Product Registered</h2>
+        <h2 className="text-2xl font-bold text-gray-900 mb-2">{isEditMode ? 'Data Product Updated' : 'Data Product Registered'}</h2>
         <p className="text-gray-500 max-w-md mx-auto mb-8">
-          <strong>{form.name || 'Your data product'}</strong> has been submitted for review. It will appear in the catalog once approved by the data governance team.
+          {isEditMode
+            ? <><strong>{form.name}</strong> has been updated successfully.</>
+            : <><strong>{form.name || 'Your data product'}</strong> has been submitted for review. It will appear in the catalog once approved by the data governance team.</>
+          }
         </p>
         <div className="flex justify-center gap-3">
           <button onClick={() => onNavigate('discover')} className="px-6 py-2.5 rounded-lg text-sm font-medium text-white" style={{ backgroundColor: DataMarket_BLUE }}>
             Browse Catalog
           </button>
-          <button onClick={() => { setSubmitted(false); setCurrentStep(1); setForm({ name: '', description: '', type: 'Dashboard', source: '', tags: [], refreshFrequency: 'Daily', productUrl: '', usageDescription: '', useCases: '', sla: '', dataOwner: '', steward: '', contributors: [], classification: 'Internal', accessLevel: 'Read Only', hasPII: false, retentionYears: '7' }) }} className="px-6 py-2.5 border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50">
-            Register Another
-          </button>
+          {!isEditMode && (
+            <button onClick={() => { setSubmitted(false); setCurrentStep(1); setForm(blankForm) }} className="px-6 py-2.5 border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50">
+              Register Another
+            </button>
+          )}
         </div>
       </div>
     )
@@ -379,7 +401,10 @@ export function DataMarketRegisterPage({ onNavigate }) {
   return (
     <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8">
       <div className="mb-8">
-        <h1 className="text-2xl font-bold text-gray-900">Register Data</h1>
+        <h1 className="text-2xl font-bold text-gray-900">{isEditMode ? 'Edit Data Product' : 'Register Data'}</h1>
+        {isEditMode && (
+          <p className="text-sm text-gray-500 mt-1">Updating <strong>{editProduct.display_name || editProduct.name}</strong> · {editProduct.product_ref}</p>
+        )}
       </div>
 
       {/* Step Indicator */}
@@ -456,24 +481,43 @@ export function DataMarketRegisterPage({ onNavigate }) {
                 setSubmitting(true)
                 setSubmitError(null)
                 try {
-                  const res = await fetch('/api/portal/products', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                      name: form.name,
-                      description: form.description,
-                      type: form.type,
-                      source: form.source,
-                      tags: form.tags,
-                      refreshFrequency: form.refreshFrequency,
-                      productUrl: form.productUrl,
-                      ownerEmail: form.dataOwner || persona.email,
-                      classification: form.classification,
-                      domain: form.source,
-                      hasPII: form.hasPII,
-                      submittedBy: persona.email
+                  let res
+                  if (isEditMode) {
+                    res = await fetch(`/api/portal/products/${editProduct.product_ref}`, {
+                      method: 'PUT',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        display_name: form.name,
+                        description: form.description,
+                        source_type: form.type,
+                        domain: form.source,
+                        tags: form.tags,
+                        refresh_frequency: form.refreshFrequency,
+                        report_url: form.productUrl,
+                        owner_email: form.dataOwner || persona.email,
+                        data_classification: form.classification,
+                      })
                     })
-                  })
+                  } else {
+                    res = await fetch('/api/portal/products', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        name: form.name,
+                        description: form.description,
+                        type: form.type,
+                        source: form.source,
+                        tags: form.tags,
+                        refreshFrequency: form.refreshFrequency,
+                        productUrl: form.productUrl,
+                        ownerEmail: form.dataOwner || persona.email,
+                        classification: form.classification,
+                        domain: form.source,
+                        hasPII: form.hasPII,
+                        submittedBy: persona.email
+                      })
+                    })
+                  }
                   if (!res.ok) throw new Error(await res.text())
                   setSubmitted(true)
                 } catch (e) {
@@ -487,7 +531,7 @@ export function DataMarketRegisterPage({ onNavigate }) {
               style={{ backgroundColor: DataMarket_BLUE }}
             >
               {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
-              Submit for Review
+              {isEditMode ? 'Save Changes' : 'Submit for Review'}
             </button>
           )}
         </div>

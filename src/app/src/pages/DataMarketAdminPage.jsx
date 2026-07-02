@@ -67,7 +67,7 @@ function norm(r) {
 }
 
 export function DataMarketAdminPage({ embedded = false }) {
-  const { requests, approveRequest, denyRequest, revokeRequest, currentPersona } = usePersona()
+  const { requests, approveRequest, denyRequest, revokeRequest, currentPersona, isAdmin } = usePersona()
   const { demoMode } = useAppConfig()
   const [filter, setFilter] = useState('Pending')
   const [activeView, setActiveView] = useState('access') // 'access' | 'products'
@@ -116,7 +116,7 @@ export function DataMarketAdminPage({ embedded = false }) {
     } catch (e) { console.error(e) }
   }
 
-  if (currentPersona !== 'admin') {
+  if (!isAdmin) {
     return (
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-16 text-center">
         <ShieldCheck className="h-16 w-16 text-gray-200 mx-auto mb-4" />

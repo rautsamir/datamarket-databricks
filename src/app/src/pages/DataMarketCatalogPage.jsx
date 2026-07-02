@@ -6,8 +6,8 @@ import { ImportUCModal } from '../components/ImportUCModal'
 
 const DataMarket_BLUE = '#003865'
 
-const types = ['All', 'Dashboard', 'AI/BI Dashboard', 'Genie Space', 'Dataset', 'Report', 'App', 'ML Model']
-const sourceTypes = ['All', 'Databricks', 'Power BI']
+// Type options — the supported product types (these are a fixed taxonomy)
+const ALL_TYPES = ['All', 'Dashboard', 'AI/BI Dashboard', 'Genie Space', 'Dataset', 'Report', 'App', 'ML Model']
 
 // Static fallback — shown if Lakebase is unavailable
 const staticProducts = [
@@ -88,7 +88,7 @@ const typeIcons = {
 const PAGE_SIZE = 6
 
 export function DataMarketCatalogPage({ onOpenProduct, onNavigate, initialSearch = '' }) {
-  const { currentPersona } = usePersona()
+  const { currentPersona, isAdmin } = usePersona()
   const { demoMode } = useAppConfig()
   const [search, setSearch] = useState(initialSearch)
   const [selectedCategory, setSelectedCategory] = useState('All')
@@ -107,8 +107,19 @@ export function DataMarketCatalogPage({ onOpenProduct, onNavigate, initialSearch
     return ['All', ...cats]
   }, [allProducts])
 
+  // Only show type options that actually exist in the current product set
+  const types = useMemo(() => {
+    const used = new Set(allProducts.map(p => p.type).filter(Boolean))
+    return ['All', ...ALL_TYPES.slice(1).filter(t => used.has(t))]
+  }, [allProducts])
+
+  // Derive source options from real data
+  const sourceTypes = useMemo(() => {
+    const sources = [...new Set(allProducts.map(p => p.sourceType || p.source_system || '').filter(Boolean))].sort()
+    return ['All', ...sources]
+  }, [allProducts])
+
   const loadProducts = () => {
-    const isAdmin = currentPersona === 'admin'
     fetch(`/api/portal/products${isAdmin ? '?includeAll=true' : ''}`)
       .then(r => r.json())
       .then(rows => {
@@ -162,7 +173,7 @@ export function DataMarketCatalogPage({ onOpenProduct, onNavigate, initialSearch
           </p>
         </div>
         <div className="flex items-center gap-3">
-          {currentPersona === 'admin' && (
+          {isAdmin && (
             <button
               onClick={() => setShowImport(true)}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white"
@@ -259,8 +270,6 @@ export function DataMarketCatalogPage({ onOpenProduct, onNavigate, initialSearch
                   }`}
                   style={selectedSource === s ? { backgroundColor: DataMarket_BLUE } : {}}
                 >
-                  {s === 'Power BI' && <span className="text-[10px]">📊</span>}
-                  {s === 'Databricks' && <span className="text-[10px]">⚡</span>}
                   {s}
                 </button>
               ))}
@@ -283,7 +292,7 @@ export function DataMarketCatalogPage({ onOpenProduct, onNavigate, initialSearch
           </div>
 
           {/* First-run onboarding banner — shown only when catalog is empty */}
-          {lakebaseEmpty && currentPersona === 'admin' && (
+          {lakebaseEmpty && isAdmin && (
             <div className="rounded-2xl border-2 border-dashed border-blue-200 bg-blue-50/40 p-10 mb-6 text-center">
               <div className="w-16 h-16 rounded-full bg-white shadow-sm flex items-center justify-center mx-auto mb-4">
                 <Sparkles className="h-8 w-8 text-blue-500" />
