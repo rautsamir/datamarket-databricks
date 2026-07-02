@@ -33,7 +33,7 @@ export function DataMarketLayout({ currentPage, onNavigate, children }) {
   const [personaMenuOpen, setPersonaMenuOpen] = useState(false)
   const [notifOpen, setNotifOpen] = useState(false)
   const { persona, currentPersona, setCurrentPersona, pendingRequests, notifications, unreadNotificationCount, isAdmin, demoMode } = usePersona()
-  const { appName, appSubtitle, appLogoUrl, navLinks, askAiEnabled, insightsEnabled } = useAppConfig()
+  const { appName, appSubtitle, appLogoUrl, navLinks, askAiEnabled, insightsEnabled, featureRequestsEnabled } = useAppConfig()
 
   const personaColor = isAdmin ? '#7C3AED' : currentPersona === 'james' ? '#059669' : '#3B82F6'
   const avatarBadgeClass = isAdmin ? 'bg-purple-600' : currentPersona === 'james' ? 'bg-emerald-500' : 'bg-blue-500'
@@ -43,15 +43,17 @@ export function DataMarketLayout({ currentPage, onNavigate, children }) {
     { id: 'discover',  label: 'Discover' },
     ...(askAiEnabled  ? [{ id: 'ask-ai',   label: 'Ask AI' }]   : []),
     ...(insightsEnabled ? [{ id: 'insights', label: 'Insights' }] : []),
+    ...(featureRequestsEnabled ? [{ id: 'feature-requests', label: 'Requests' }] : []),
     { id: 'my-access', label: isAdmin ? 'Manage' : 'My Data' },
   ]
 
   const isActive = (id) => {
-    if (id === 'home')      return currentPage === 'home'
-    if (id === 'discover')  return ['discover', 'data', 'catalog', 'detail'].includes(currentPage)
-    if (id === 'ask-ai')    return ['ask-ai', 'ai-explorer'].includes(currentPage)
-    if (id === 'insights')  return currentPage === 'insights'
-    if (id === 'my-access') return ['my-access', 'library', 'my-library', 'register', 'admin'].includes(currentPage)
+    if (id === 'home')             return currentPage === 'home'
+    if (id === 'discover')         return ['discover', 'data', 'catalog', 'detail'].includes(currentPage)
+    if (id === 'ask-ai')           return ['ask-ai', 'ai-explorer'].includes(currentPage)
+    if (id === 'insights')         return currentPage === 'insights'
+    if (id === 'feature-requests') return currentPage === 'feature-requests'
+    if (id === 'my-access')        return ['my-access', 'library', 'my-library', 'register', 'admin'].includes(currentPage)
     return false
   }
 

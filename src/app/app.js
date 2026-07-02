@@ -442,6 +442,30 @@ async function runMigrations() {
       )
     `);
 
+    // Feature requests + votes
+    await query(`
+      CREATE TABLE IF NOT EXISTS feature_requests (
+        request_id       SERIAL PRIMARY KEY,
+        title            VARCHAR(500) NOT NULL,
+        description      TEXT,
+        requester_email  VARCHAR(255),
+        requester_name   VARCHAR(255),
+        status           VARCHAR(50) DEFAULT 'open',
+        upvotes          INTEGER DEFAULT 1,
+        created_at       TIMESTAMPTZ DEFAULT NOW(),
+        updated_at       TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    await query(`
+      CREATE TABLE IF NOT EXISTS feature_request_votes (
+        vote_id      SERIAL PRIMARY KEY,
+        request_id   INTEGER REFERENCES feature_requests(request_id) ON DELETE CASCADE,
+        voter_email  VARCHAR(255) NOT NULL,
+        created_at   TIMESTAMPTZ DEFAULT NOW(),
+        UNIQUE(request_id, voter_email)
+      )
+    `);
+
     // When running in production mode, remove any leftover demo placeholder products
     // (products seeded with fake uc_full_name like 'your_catalog.your_schema.*')
     if (!DEMO_MODE) {
@@ -603,8 +627,10 @@ app.get('/api/portal/config', async (req, res) => {
     appLogoUrl: getSetting('app_logo_url', APP_LOGO_URL),
     demoMode:   DEMO_MODE,
     sqlWarehouseId:   getSetting('sql_warehouse_id', SQL_WAREHOUSE_ID),
-    askAiEnabled:     getSetting('ask_ai_enabled',   'true') !== 'false',
-    insightsEnabled:  getSetting('insights_enabled', 'true') !== 'false',
+    askAiEnabled:            getSetting('ask_ai_enabled',            'true') !== 'false',
+    insightsEnabled:         getSetting('insights_enabled',         'true') !== 'false',
+    featureRequestsEnabled:  getSetting('feature_requests_enabled', 'false') === 'true',
+    contributeUrl:           getSetting('contribute_url',           ''),
     searchChips: (() => {
       const raw = getSetting('search_chips', '');
       if (raw) { try { return JSON.parse(raw); } catch (_) {} }
@@ -1510,6 +1536,83 @@ app.post('/api/portal/admin/import-uc', async (req, res) => {
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
+});
+
+// ─── Feature Requests (Loop 1 — data demand signal) ─────────────────────────
+// Helper: resolve caller email from SSO header or request body (demo mode fallback)
+function callerEmail(req) {
+  return req.headers['x-forwarded-email'] || req.headers['x-forwarded-user'] || req.body?.requester_email || 'anonymous';
+}
+function callerName(req) {
+  const email = callerEmail(req);
+  return req.body?.requester_name || email.split('@')[0].replace(/[._]/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
+
+app.get('/api/portal/feature-requests', async (req, res) => {
+  try {
+    const email = callerEmail(req);
+    const { rows } = await query(`
+      SELECT fr.*,
+             COALESCE(v.voter_emails, ARRAY[]::text[]) AS voter_emails,
+             (fr.requester_email = $1 OR $1 = ANY(COALESCE(v.voter_emails, ARRAY[]::text[]))) AS user_voted
+      FROM feature_requests fr
+      LEFT JOIN (
+        SELECT request_id, array_agg(voter_email) AS voter_emails
+        FROM feature_request_votes GROUP BY request_id
+      ) v ON v.request_id = fr.request_id
+      ORDER BY fr.upvotes DESC, fr.created_at DESC
+    `, [email]);
+    res.json(rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/portal/feature-requests', async (req, res) => {
+  try {
+    const { title, description } = req.body;
+    if (!title?.trim()) return res.status(400).json({ error: 'title required' });
+    const email = callerEmail(req);
+    const name  = callerName(req);
+    const { rows: [fr] } = await query(`
+      INSERT INTO feature_requests (title, description, requester_email, requester_name, upvotes)
+      VALUES ($1, $2, $3, $4, 1) RETURNING *
+    `, [title.trim(), description?.trim() || null, email, name]);
+    // Auto-vote by requester
+    await query(`
+      INSERT INTO feature_request_votes (request_id, voter_email) VALUES ($1, $2) ON CONFLICT DO NOTHING
+    `, [fr.request_id, email]);
+    res.json(fr);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/portal/feature-requests/:id/vote', async (req, res) => {
+  try {
+    const id    = parseInt(req.params.id);
+    const email = callerEmail(req);
+    // Toggle: if already voted remove, else add
+    const { rows: existing } = await query(
+      `SELECT vote_id FROM feature_request_votes WHERE request_id=$1 AND voter_email=$2`, [id, email]);
+    if (existing.length) {
+      await query(`DELETE FROM feature_request_votes WHERE request_id=$1 AND voter_email=$2`, [id, email]);
+      await query(`UPDATE feature_requests SET upvotes = GREATEST(0, upvotes-1), updated_at=NOW() WHERE request_id=$1`, [id]);
+      return res.json({ voted: false });
+    } else {
+      await query(`INSERT INTO feature_request_votes (request_id, voter_email) VALUES ($1, $2)`, [id, email]);
+      await query(`UPDATE feature_requests SET upvotes = upvotes+1, updated_at=NOW() WHERE request_id=$1`, [id]);
+      return res.json({ voted: true });
+    }
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.put('/api/portal/feature-requests/:id/status', async (req, res) => {
+  try {
+    const { status } = req.body;
+    const allowed = ['open', 'on_roadmap', 'done', 'declined'];
+    if (!allowed.includes(status)) return res.status(400).json({ error: 'invalid status' });
+    const { rows: [fr] } = await query(
+      `UPDATE feature_requests SET status=$1, updated_at=NOW() WHERE request_id=$2 RETURNING *`,
+      [status, parseInt(req.params.id)]);
+    res.json(fr);
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // ─── Ask Catalog — FMAPI semantic search over product metadata ───────────────
