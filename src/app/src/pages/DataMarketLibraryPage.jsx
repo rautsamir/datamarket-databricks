@@ -190,7 +190,13 @@ function DemoControlsPanel() {
 
 function SettingsPanel() {
   const { appName, appSubtitle, appLogoUrl, genieSpaceId, sqlWarehouseId, rfaEnabled, setupComplete, demoMode, refreshConfig,
-          autoDiscoverEnabled, autoDiscoverPrefix } = useAppConfig()
+          autoDiscoverEnabled, autoDiscoverPrefix, navLinks: configNavLinks } = useAppConfig()
+
+  const DEFAULT_NAV_LINKS = [
+    { label: 'About',   url: '', visible: true },
+    { label: 'FAQ',     url: '', visible: true },
+    { label: 'Contact', url: '', visible: true },
+  ]
 
   const [form, setForm] = useState({
     app_name:        appName,
@@ -202,6 +208,7 @@ function SettingsPanel() {
     auto_discover_enabled: String(autoDiscoverEnabled),
     auto_discover_prefix:  autoDiscoverPrefix || '',
   })
+  const [navLinks, setNavLinks] = useState(configNavLinks?.length ? configNavLinks : DEFAULT_NAV_LINKS)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved]   = useState(false)
   const [error, setError]   = useState('')
@@ -217,7 +224,8 @@ function SettingsPanel() {
       auto_discover_enabled: String(autoDiscoverEnabled),
       auto_discover_prefix:  autoDiscoverPrefix || '',
     })
-  }, [appName, appSubtitle, appLogoUrl, genieSpaceId, sqlWarehouseId, rfaEnabled, autoDiscoverEnabled, autoDiscoverPrefix])
+    setNavLinks(configNavLinks?.length ? configNavLinks : DEFAULT_NAV_LINKS)
+  }, [appName, appSubtitle, appLogoUrl, genieSpaceId, sqlWarehouseId, rfaEnabled, autoDiscoverEnabled, autoDiscoverPrefix, configNavLinks])
 
   const handleSave = async () => {
     setSaving(true); setSaved(false); setError('')
@@ -225,7 +233,7 @@ function SettingsPanel() {
       const r = await fetch('/api/portal/settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...form, setup_complete: 'true' }),
+        body: JSON.stringify({ ...form, setup_complete: 'true', nav_links: JSON.stringify(navLinks) }),
       })
       if (!r.ok) throw new Error(await r.text())
       setSaved(true)
@@ -323,6 +331,36 @@ function SettingsPanel() {
           }
         </div>
       </div>
+      {/* Navigation Links */}
+      <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-4">
+        <div>
+          <h3 className="font-semibold text-gray-900 text-sm uppercase tracking-wide">Footer Navigation</h3>
+          <p className="text-xs text-gray-400 mt-1">Show or hide links in the footer. Optionally add a URL — leave blank to show as a placeholder button.</p>
+        </div>
+        <div className="space-y-2">
+          {navLinks.map((link, i) => (
+            <div key={i} className="flex items-center gap-3 p-3 rounded-lg border border-gray-100 bg-gray-50">
+              <button
+                onClick={() => setNavLinks(ls => ls.map((l, idx) => idx === i ? { ...l, visible: !l.visible } : l))}
+                className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors ${link.visible ? 'bg-blue-600' : 'bg-gray-300'}`}
+              >
+                <span className={`block h-4 w-4 rounded-full bg-white shadow transition-transform ${link.visible ? 'translate-x-4' : 'translate-x-0'}`} />
+              </button>
+              <span className="text-sm font-medium text-gray-700 w-16 shrink-0">{link.label}</span>
+              <input
+                type="text"
+                placeholder="https://... (optional)"
+                value={link.url}
+                onChange={e => setNavLinks(ls => ls.map((l, idx) => idx === i ? { ...l, url: e.target.value } : l))}
+                disabled={!link.visible}
+                className="flex-1 px-3 py-1.5 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-400 disabled:opacity-40 bg-white"
+              />
+            </div>
+          ))}
+        </div>
+        <p className="text-xs text-gray-400">Changes apply after saving below. All three hidden = footer nav disappears entirely.</p>
+      </div>
+
       <div className="flex items-center gap-3">
         <button
           onClick={handleSave}
