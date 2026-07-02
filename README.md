@@ -8,6 +8,22 @@ A production-ready demo of a governed, self-service data product marketplace bui
 
 ---
 
+## Post-Deployment Checklist
+
+After running `deploy.sh`, complete these steps in the app before using it with customers:
+
+| # | Step | Where | Why it matters |
+|---|---|---|---|
+| 1 | Import your UC tables | **Manage → Data Products → Import from UC** | Populates the catalog — nothing shows in Discover until you do this |
+| 2 | Set SQL Warehouse ID | **Manage → Settings → Integrations** | Required for `GRANT SELECT` to actually execute when you approve access requests. Without it, approvals are logged but UC permissions are never set. |
+| 3 | Create & set Genie Space ID | **Manage → Settings → Integrations** | Powers the Ask AI page with natural language queries over your real data. Needs a Genie Space built on your specific UC tables — create one at **AI/BI → Genie → New Space** first. |
+| 4 | Set production mode | Redeploy with `--demo-mode false` | Disables the persona switcher and enables real SSO identity. Do this before any customer-facing demo. |
+| 5 | Add team members | **Manage → Users** | Add data stewards and analysts, or configure Entra ID groups under the **Groups** tab for bulk role assignment. |
+
+> Steps 1–3 take about 10 minutes total and make the difference between a skeleton and a fully working portal.
+
+---
+
 ## What It Does
 
 - **Data Catalog** — Browse and search data products (dashboards, datasets, Genie Spaces, AI/BI dashboards, apps, ML models) with domain filters, classification tags, and per-user access status
