@@ -191,6 +191,7 @@ function DemoControlsPanel() {
 function SettingsPanel() {
   const { appName, appSubtitle, appLogoUrl, sqlWarehouseId: cfgWarehouse, rfaEnabled, setupComplete, demoMode, refreshConfig,
           autoDiscoverEnabled, autoDiscoverPrefix, navLinks: configNavLinks, askAiEnabled: cfgAskAi, insightsEnabled: cfgInsights,
+          featureRequestsEnabled: cfgFeatureRequests, contributeUrl: cfgContributeUrl,
           aboutText: configAboutText, contactName: configContactName,
           contactEmail: configContactEmail, contactNote: configContactNote,
           faqItems: configFaqItems, searchChips: configSearchChips } = useAppConfig()
@@ -212,8 +213,10 @@ function SettingsPanel() {
     app_logo_url:    appLogoUrl || '',
     sql_warehouse_id:cfgWarehouse || '',
     rfa_enabled:     String(rfaEnabled),
-    ask_ai_enabled:  String(cfgAskAi !== false),
-    insights_enabled:String(cfgInsights !== false),
+    ask_ai_enabled:             String(cfgAskAi !== false),
+    insights_enabled:           String(cfgInsights !== false),
+    feature_requests_enabled:   String(cfgFeatureRequests === true),
+    contribute_url:             cfgContributeUrl || '',
     auto_discover_enabled: String(autoDiscoverEnabled),
     auto_discover_prefix:  autoDiscoverPrefix || '',
     about_text:      configAboutText || '',
@@ -235,8 +238,10 @@ function SettingsPanel() {
       app_logo_url:    appLogoUrl || '',
       sql_warehouse_id:cfgWarehouse || '',
       rfa_enabled:     String(rfaEnabled),
-      ask_ai_enabled:  String(cfgAskAi !== false),
-      insights_enabled:String(cfgInsights !== false),
+      ask_ai_enabled:             String(cfgAskAi !== false),
+      insights_enabled:           String(cfgInsights !== false),
+      feature_requests_enabled:   String(cfgFeatureRequests === true),
+      contribute_url:             cfgContributeUrl || '',
       auto_discover_enabled: String(autoDiscoverEnabled),
       auto_discover_prefix:  autoDiscoverPrefix || '',
       about_text:      configAboutText || '',
@@ -247,7 +252,8 @@ function SettingsPanel() {
     setNavLinks(configNavLinks?.length ? configNavLinks : DEFAULT_NAV_LINKS)
     setFaqItems(configFaqItems?.length ? configFaqItems : DEFAULT_FAQ)
     setSearchChips(configSearchChips || [])
-  }, [appName, appSubtitle, appLogoUrl, cfgWarehouse, rfaEnabled, cfgAskAi, cfgInsights, autoDiscoverEnabled, autoDiscoverPrefix,
+  }, [appName, appSubtitle, appLogoUrl, cfgWarehouse, rfaEnabled, cfgAskAi, cfgInsights, cfgFeatureRequests, cfgContributeUrl,
+      autoDiscoverEnabled, autoDiscoverPrefix,
       configNavLinks, configAboutText, configContactName, configContactEmail, configContactNote, configFaqItems, configSearchChips])
 
   const handleSave = async () => {
@@ -318,8 +324,9 @@ function SettingsPanel() {
         <div className="border-t border-gray-100 pt-4 space-y-3">
           <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Navigation visibility</p>
           {[
-            { key: 'ask_ai_enabled',   label: 'Ask AI',   desc: 'Natural language catalog search (Databricks FMAPI)' },
-            { key: 'insights_enabled', label: 'Insights', desc: 'Dashboard and data product insights gallery' },
+            { key: 'ask_ai_enabled',           label: 'Ask AI',        desc: 'Natural language catalog search (Databricks FMAPI)' },
+            { key: 'insights_enabled',          label: 'Insights',      desc: 'Dashboard and data product insights gallery' },
+            { key: 'feature_requests_enabled',  label: 'Requests',      desc: 'Data demand board — users submit & upvote data requests (off by default)' },
           ].map(({ key, label, desc }) => (
             <div key={key} className="flex items-center justify-between gap-4">
               <div>
@@ -428,12 +435,22 @@ function SettingsPanel() {
       <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-5">
         <h3 className="font-semibold text-gray-900 text-sm uppercase tracking-wide">Page Content</h3>
 
-        <div>
-          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">About page</p>
+        <div className="space-y-3">
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">About page</p>
           <textarea rows={3} value={form.about_text}
             onChange={e => setForm(f => ({ ...f, about_text: e.target.value }))}
             placeholder="Describe this portal in 2–3 sentences. Leave blank to show the default description."
             className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 resize-none" />
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">
+              Product feedback link <span className="text-gray-400 font-normal">(Loop 2 — optional)</span>
+            </label>
+            <input type="url" value={form.contribute_url}
+              onChange={e => setForm(f => ({ ...f, contribute_url: e.target.value }))}
+              placeholder="https://github.com/your-org/datamarket/issues/new"
+              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+            <p className="text-[11px] text-gray-400 mt-1">Displayed on the About page as a "Suggest a feature" link. GitHub Issues, Slack channel, or any URL.</p>
+          </div>
         </div>
 
         <div className="border-t border-gray-100 pt-4">

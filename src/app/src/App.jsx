@@ -12,6 +12,7 @@ import { AIExplorerPage } from './pages/AIExplorerPage'
 import { AboutPage } from './pages/AboutPage'
 import { FAQPage } from './pages/FAQPage'
 import { ContactPage } from './pages/ContactPage'
+import { FeatureRequestPage } from './pages/FeatureRequestPage'
 
 function AppInner() {
   const [currentPage, setCurrentPage] = useState('home')
@@ -52,9 +53,10 @@ function AppInner() {
       case 'my-library':   return <DataMarketLibraryPage onNavigate={navigate} onOpenProduct={openProduct} />
       case 'admin':        return <DataMarketLibraryPage onNavigate={navigate} onOpenProduct={openProduct} initialTab="Manage Approvals" />
       case 'register':     return <DataMarketRegisterPage onNavigate={navigate} editProduct={pageProps.editProduct || null} />
-      case 'about':        return <AboutPage onNavigate={navigate} />
-      case 'faq':          return <FAQPage onNavigate={navigate} />
-      case 'contact':      return <ContactPage onNavigate={navigate} />
+      case 'about':           return <AboutPage onNavigate={navigate} />
+      case 'faq':             return <FAQPage onNavigate={navigate} />
+      case 'contact':         return <ContactPage onNavigate={navigate} />
+      case 'feature-requests': return <FeatureRequestPage />
       default:             return <DataMarketHomePage onNavigate={navigate} onOpenProduct={openProduct} />
     }
   }
