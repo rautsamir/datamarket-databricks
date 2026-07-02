@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { ArrowLeft, BarChart3, FileText, Database, X, Calendar, User, RefreshCw, Tag, Lock, ExternalLink, CheckCircle2, Clock, Eye, EyeOff, ShieldAlert, ShieldCheck, Shield, Bot, LayoutDashboard, AppWindow, Cpu, Layers } from 'lucide-react'
+import { ArrowLeft, BarChart3, FileText, Database, X, Calendar, User, RefreshCw, Tag, Lock, ExternalLink, CheckCircle2, Clock, Eye, EyeOff, ShieldAlert, ShieldCheck, Shield, Bot, LayoutDashboard, AppWindow, Cpu, Layers, Edit3 } from 'lucide-react'
 import { usePersona } from '../context/PersonaContext'
 
 const DataMarket_BLUE = '#003865'
@@ -589,9 +589,9 @@ function AccessRequestModal({ product, onClose }) {
   )
 }
 
-export function DataMarketProductDetailPage({ product, onBack }) {
+export function DataMarketProductDetailPage({ product, onBack, onNavigate }) {
   const [showModal, setShowModal] = useState(false)
-  const { hasAccess, myRequests } = usePersona()
+  const { hasAccess, myRequests, isAdmin } = usePersona()
   const Icon = typeIcons[product.type] || BarChart3
   // Use product_ref as the canonical identifier — falls back to numeric id for static products
   const productRef = product.product_ref || product.id
@@ -602,13 +602,24 @@ export function DataMarketProductDetailPage({ product, onBack }) {
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
-      {/* Back */}
-      <button
-        onClick={onBack}
-        className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-900 mb-6 transition-colors"
-      >
-        <ArrowLeft className="h-4 w-4" /> Back
-      </button>
+      {/* Back + admin Edit */}
+      <div className="flex items-center justify-between mb-6">
+        <button
+          onClick={onBack}
+          className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-900 transition-colors"
+        >
+          <ArrowLeft className="h-4 w-4" /> Back
+        </button>
+        {isAdmin && onNavigate && (
+          <button
+            onClick={() => onNavigate('register', { editProduct: product })}
+            className="flex items-center gap-2 text-sm font-medium text-white px-4 py-2 rounded-lg"
+            style={{ backgroundColor: DataMarket_BLUE }}
+          >
+            <Edit3 className="h-4 w-4" /> Edit Product
+          </button>
+        )}
+      </div>
 
       <div className="flex gap-8 flex-col lg:flex-row">
         {/* Main */}
