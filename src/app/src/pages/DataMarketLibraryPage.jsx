@@ -7,6 +7,19 @@ import { useAppConfig } from '../context/AppConfigContext'
 
 const DataMarket_BLUE = '#003865'
 
+function CopyQueryButton({ query }) {
+  const [copied, setCopied] = useState(false)
+  return (
+    <button
+      onClick={() => { navigator.clipboard.writeText(query).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000) }) }}
+      title={`Copy: ${query}`}
+      className={`flex items-center gap-1 px-2 py-1 rounded text-[10px] font-medium transition-colors whitespace-nowrap ${copied ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+    >
+      {copied ? <><Check className="h-3 w-3" /> Copied</> : <><ClipboardList className="h-3 w-3" /> Copy SQL</>}
+    </button>
+  )
+}
+
 const tagColors = {
   Budget: 'bg-blue-100 text-blue-800', Financial: 'bg-green-100 text-green-800',
   'ERP System': 'bg-purple-100 text-purple-800', Payroll: 'bg-orange-100 text-orange-800',
@@ -22,6 +35,8 @@ const statusConfig = {
   Published: 'bg-emerald-100 text-emerald-800',
   Approved: 'bg-emerald-100 text-emerald-800',
   Pending: 'bg-amber-100 text-amber-800',
+  Draft: 'bg-amber-100 text-amber-700',
+  Unavailable: 'bg-red-100 text-red-700',
   Denied: 'bg-red-100 text-red-800',
   Revoked: 'bg-orange-100 text-orange-800',
   Rejected: 'bg-red-100 text-red-800',
@@ -174,7 +189,8 @@ function DemoControlsPanel() {
 }
 
 function SettingsPanel() {
-  const { appName, appSubtitle, appLogoUrl, genieSpaceId, sqlWarehouseId, rfaEnabled, setupComplete, demoMode, refreshConfig } = useAppConfig()
+  const { appName, appSubtitle, appLogoUrl, genieSpaceId, sqlWarehouseId, rfaEnabled, setupComplete, demoMode, refreshConfig,
+          autoDiscoverEnabled, autoDiscoverPrefix } = useAppConfig()
 
   const [form, setForm] = useState({
     app_name:        appName,
@@ -183,6 +199,8 @@ function SettingsPanel() {
     genie_space_id:  genieSpaceId || '',
     sql_warehouse_id:sqlWarehouseId || '',
     rfa_enabled:     String(rfaEnabled),
+    auto_discover_enabled: String(autoDiscoverEnabled),
+    auto_discover_prefix:  autoDiscoverPrefix || '',
   })
   const [saving, setSaving] = useState(false)
   const [saved, setSaved]   = useState(false)
@@ -196,8 +214,10 @@ function SettingsPanel() {
       genie_space_id:  genieSpaceId || '',
       sql_warehouse_id:sqlWarehouseId || '',
       rfa_enabled:     String(rfaEnabled),
+      auto_discover_enabled: String(autoDiscoverEnabled),
+      auto_discover_prefix:  autoDiscoverPrefix || '',
     })
-  }, [appName, appSubtitle, appLogoUrl, genieSpaceId, sqlWarehouseId, rfaEnabled])
+  }, [appName, appSubtitle, appLogoUrl, genieSpaceId, sqlWarehouseId, rfaEnabled, autoDiscoverEnabled, autoDiscoverPrefix])
 
   const handleSave = async () => {
     setSaving(true); setSaved(false); setError('')
@@ -274,6 +294,34 @@ function SettingsPanel() {
             To enable production mode, set <code className="font-mono bg-amber-100 px-1 rounded">DEMO_MODE=false</code> in app.yaml and redeploy.
           </div>
         )}
+      </div>
+
+      {/* Auto-Discovery */}
+      <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-4">
+        <h3 className="font-semibold text-gray-900 text-sm uppercase tracking-wide">Data Product Lifecycle</h3>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-sm font-medium text-gray-700">Auto-Discover New UC Tables</p>
+            <p className="text-xs text-gray-400 mt-0.5">
+              When enabled, new tables matching the prefix below are automatically added as <span className="font-medium text-amber-600">Draft</span> each time the app starts.
+              Admins review and publish or discard them — nothing goes live without approval.
+            </p>
+          </div>
+          <button
+            onClick={() => setForm(f => ({ ...f, auto_discover_enabled: f.auto_discover_enabled === 'true' ? 'false' : 'true' }))}
+            className={`relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors ${form.auto_discover_enabled === 'true' ? 'bg-emerald-500' : 'bg-gray-200'}`}
+          >
+            <span className={`pointer-events-none block h-5 w-5 rounded-full bg-white shadow transition-transform ${form.auto_discover_enabled === 'true' ? 'translate-x-5' : 'translate-x-0'}`} />
+          </button>
+        </div>
+        {field('Discovery Prefix', 'auto_discover_prefix', 'main.gold or main.gold.sales_', 'Catalog.schema or catalog.schema.name_prefix to scan. Only tables with this prefix are drafted.')}
+        <div className="rounded-lg bg-gray-50 border border-gray-100 px-4 py-3 text-xs text-gray-500">
+          <strong className="text-gray-700">UC Grants:</strong>{' '}
+          {form.sql_warehouse_id
+            ? <span className="text-emerald-600 font-medium">Enabled — GRANT SELECT will execute on approval</span>
+            : <span className="text-amber-600">Disabled — set SQL Warehouse ID above to activate real UC grants</span>
+          }
+        </div>
       </div>
       <div className="flex items-center gap-3">
         <button
@@ -779,7 +827,7 @@ function GroupsList() {
 // ─── Main Library Page ─────────────────────────────────────────────────────────
 export function DataMarketLibraryPage({ onNavigate, onOpenProduct, initialTab }) {
   const { myRequests, persona, currentPersona, pendingRequests, isAdmin, apiAvailable } = usePersona()
-  const { demoMode } = useAppConfig()
+  const { demoMode, databricksHost } = useAppConfig()
   const isSteward = isAdmin
   const [search, setSearch] = useState('')
   const [activeTab, setActiveTab] = useState(initialTab || (isSteward ? 'Data Products' : 'Data Product'))
@@ -789,6 +837,8 @@ export function DataMarketLibraryPage({ onNavigate, onOpenProduct, initialTab })
   const [productsError, setProductsError] = useState(null)
   const [editingRef, setEditingRef] = useState(null)
   const [showImport, setShowImport] = useState(false)
+  const [syncing, setSyncing] = useState(false)
+  const [syncResult, setSyncResult] = useState(null)
 
   const loadAllProducts = useCallback(() => {
     setLoadingProducts(true)
@@ -889,6 +939,27 @@ export function DataMarketLibraryPage({ onNavigate, onOpenProduct, initialTab })
               <Upload className="h-4 w-4" /> Import from UC
             </button>
           )}
+          {isSteward && (
+            <button
+              onClick={async () => {
+                setSyncing(true); setSyncResult(null)
+                try {
+                  const r = await fetch('/api/portal/admin/sync-uc-metadata', { method: 'POST' })
+                  const d = await r.json()
+                  setSyncResult(d)
+                  loadAllProducts()
+                  setTimeout(() => setSyncResult(null), 5000)
+                } catch (e) { setSyncResult({ error: e.message }) }
+                finally { setSyncing(false) }
+              }}
+              disabled={syncing}
+              title="Re-sync last_refreshed dates and mark removed tables Unavailable"
+              className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-50 transition-colors"
+            >
+              <RefreshCw className={`h-4 w-4 ${syncing ? 'animate-spin' : ''}`} />
+              {syncing ? 'Syncing…' : 'Sync from UC'}
+            </button>
+          )}
           <button
             onClick={() => onNavigate('register')}
             className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white"
@@ -943,6 +1014,25 @@ export function DataMarketLibraryPage({ onNavigate, onOpenProduct, initialTab })
       {/* ── Steward: All Products ─────────────────────────────────────────────── */}
       {((activeTab === 'Data Products' && isSteward)) && (
         <>
+          {/* Sync result toast */}
+          {syncResult && !syncResult.error && (
+            <div className="mb-3 px-4 py-2.5 rounded-lg bg-emerald-50 border border-emerald-200 text-sm text-emerald-800 flex items-center gap-2">
+              <CheckCircle2 className="h-4 w-4 shrink-0" />
+              Sync complete — {syncResult.synced} refreshed, {syncResult.unavailable} marked unavailable
+            </div>
+          )}
+          {syncResult?.error && (
+            <div className="mb-3 px-4 py-2.5 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700">{syncResult.error}</div>
+          )}
+          {/* Draft products banner */}
+          {allProducts.filter(p => p.status === 'Draft').length > 0 && (
+            <div className="mb-3 px-4 py-2.5 rounded-lg bg-amber-50 border border-amber-200 text-sm text-amber-800 flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 shrink-0" />
+              <span>
+                <strong>{allProducts.filter(p => p.status === 'Draft').length} draft product{allProducts.filter(p => p.status === 'Draft').length > 1 ? 's' : ''}</strong> auto-discovered from UC — review below and Publish or Delete.
+              </span>
+            </div>
+          )}
           <div className="relative mb-4 max-w-sm">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
             <input type="text" placeholder="Search products" value={search} onChange={e => setSearch(e.target.value)}
@@ -1086,6 +1176,9 @@ export function DataMarketLibraryPage({ onNavigate, onOpenProduct, initialTab })
                     <th className="text-left py-3 px-4 font-medium text-gray-500 text-xs uppercase tracking-wide">Frequency</th>
                     <th className="text-left py-3 px-4 font-medium text-gray-500 text-xs uppercase tracking-wide">Owner</th>
                     <th className="text-center py-3 px-4 font-medium text-gray-500 text-xs uppercase tracking-wide">Status</th>
+                    {activeTab === 'Data Product' && (
+                      <th className="text-center py-3 px-4 font-medium text-gray-500 text-xs uppercase tracking-wide">Query</th>
+                    )}
                   </tr>
                 </thead>
                 <tbody>
@@ -1093,6 +1186,14 @@ export function DataMarketLibraryPage({ onNavigate, onOpenProduct, initialTab })
                     .filter(item => activeTab === 'Data Product' ? item.status === 'Approved' : true)
                     .map(item => {
                       const Icon = { Dashboard: BarChart3, Report: FileText, Dataset: Database }[item.type] || Database
+                      const ucFullName = item.uc_full_name
+                      const ucParts = ucFullName ? ucFullName.split('.') : []
+                      const ucExplorerUrl = ucFullName && databricksHost
+                        ? `${databricksHost}/explore/data/${ucParts.join('/')}`
+                        : null
+                      const starterQuery = ucFullName
+                        ? `SELECT *\nFROM ${ucFullName}\nLIMIT 100`
+                        : null
                       return (
                         <tr key={item.product_ref || item.id} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
                           <td className="py-3 px-4">
@@ -1118,6 +1219,26 @@ export function DataMarketLibraryPage({ onNavigate, onOpenProduct, initialTab })
                               {item.status}
                             </span>
                           </td>
+                          {activeTab === 'Data Product' && (
+                            <td className="py-3 px-4">
+                              {item.status === 'Approved' && ucFullName ? (
+                                <div className="flex items-center gap-1 justify-center">
+                                  {ucExplorerUrl && (
+                                    <a href={ucExplorerUrl} target="_blank" rel="noopener noreferrer"
+                                      title="Open in UC Data Explorer"
+                                      className="flex items-center gap-1 px-2 py-1 rounded text-[10px] font-medium bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors whitespace-nowrap">
+                                      <ExternalLink className="h-3 w-3" /> Explore
+                                    </a>
+                                  )}
+                                  {starterQuery && (
+                                    <CopyQueryButton query={starterQuery} />
+                                  )}
+                                </div>
+                              ) : (
+                                <span className="text-xs text-gray-300">—</span>
+                              )}
+                            </td>
+                          )}
                         </tr>
                       )
                     })}
