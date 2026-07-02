@@ -33,7 +33,7 @@ export function DataMarketLayout({ currentPage, onNavigate, children }) {
   const [personaMenuOpen, setPersonaMenuOpen] = useState(false)
   const [notifOpen, setNotifOpen] = useState(false)
   const { persona, currentPersona, setCurrentPersona, pendingRequests, notifications, unreadNotificationCount, isAdmin, demoMode } = usePersona()
-  const { appName, appSubtitle, appLogoUrl } = useAppConfig()
+  const { appName, appSubtitle, appLogoUrl, navLinks } = useAppConfig()
 
   const personaColor = isAdmin ? '#7C3AED' : currentPersona === 'james' ? '#059669' : '#3B82F6'
   const avatarBadgeClass = isAdmin ? 'bg-purple-600' : currentPersona === 'james' ? 'bg-emerald-500' : 'bg-blue-500'
@@ -298,11 +298,16 @@ export function DataMarketLayout({ currentPage, onNavigate, children }) {
             {appLogoUrl && <img src={appLogoUrl} alt={appName} className="w-6 h-6 rounded-full" />}
             <span className="text-sm text-gray-500">{appName} · {appSubtitle}</span>
           </div>
-          <nav className="flex items-center gap-6">
-            {['About', 'FAQ', 'Contact'].map(item => (
-              <button key={item} className="text-sm text-gray-500 hover:text-gray-900 transition-colors">{item}</button>
-            ))}
-          </nav>
+          {navLinks?.some(l => l.visible) && (
+            <nav className="flex items-center gap-6">
+              {(navLinks || []).filter(l => l.visible).map(link => (
+                link.url
+                  ? <a key={link.label} href={link.url} target="_blank" rel="noopener noreferrer"
+                       className="text-sm text-gray-500 hover:text-gray-900 transition-colors">{link.label}</a>
+                  : <button key={link.label} className="text-sm text-gray-500 hover:text-gray-900 transition-colors">{link.label}</button>
+              ))}
+            </nav>
+          )}
         </div>
       </footer>
 

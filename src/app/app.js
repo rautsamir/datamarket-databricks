@@ -609,6 +609,15 @@ app.get('/api/portal/config', async (req, res) => {
     autoDiscoverEnabled: getSetting('auto_discover_enabled', 'false') === 'true',
     autoDiscoverPrefix:  getSetting('auto_discover_prefix', ''),
     databricksHost:      process.env.DATABRICKS_HOST || '',
+    navLinks: (() => {
+      const raw = getSetting('nav_links', '');
+      if (raw) { try { return JSON.parse(raw); } catch (_) {} }
+      return [
+        { label: 'About',   url: '', visible: true },
+        { label: 'FAQ',     url: '', visible: true },
+        { label: 'Contact', url: '', visible: true },
+      ];
+    })(),
   });
 });
 

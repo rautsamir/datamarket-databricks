@@ -12,6 +12,11 @@ const defaults = {
   autoDiscoverEnabled: false,
   autoDiscoverPrefix:  '',
   databricksHost: '',
+  navLinks: [
+    { label: 'About',   url: '', visible: true },
+    { label: 'FAQ',     url: '', visible: true },
+    { label: 'Contact', url: '', visible: true },
+  ],
 }
 
 const AppConfigContext = createContext({ ...defaults, refreshConfig: () => {} })
