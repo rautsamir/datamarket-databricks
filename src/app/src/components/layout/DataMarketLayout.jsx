@@ -33,16 +33,16 @@ export function DataMarketLayout({ currentPage, onNavigate, children }) {
   const [personaMenuOpen, setPersonaMenuOpen] = useState(false)
   const [notifOpen, setNotifOpen] = useState(false)
   const { persona, currentPersona, setCurrentPersona, pendingRequests, notifications, unreadNotificationCount, isAdmin, demoMode } = usePersona()
-  const { appName, appSubtitle, appLogoUrl, navLinks } = useAppConfig()
+  const { appName, appSubtitle, appLogoUrl, navLinks, askAiEnabled, insightsEnabled } = useAppConfig()
 
   const personaColor = isAdmin ? '#7C3AED' : currentPersona === 'james' ? '#059669' : '#3B82F6'
   const avatarBadgeClass = isAdmin ? 'bg-purple-600' : currentPersona === 'james' ? 'bg-emerald-500' : 'bg-blue-500'
 
   const navItems = [
-    { id: 'home',     label: 'Home' },
-    { id: 'discover', label: 'Discover' },
-    { id: 'ask-ai',   label: 'Ask AI' },
-    { id: 'insights', label: 'Insights' },
+    { id: 'home',      label: 'Home' },
+    { id: 'discover',  label: 'Discover' },
+    ...(askAiEnabled  ? [{ id: 'ask-ai',   label: 'Ask AI' }]   : []),
+    ...(insightsEnabled ? [{ id: 'insights', label: 'Insights' }] : []),
     { id: 'my-access', label: isAdmin ? 'Manage' : 'My Data' },
   ]
 
