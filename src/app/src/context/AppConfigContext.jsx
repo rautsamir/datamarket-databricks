@@ -13,6 +13,7 @@ const defaults = {
   databricksHost: '',
   askAiEnabled:    true,
   insightsEnabled: true,
+  searchChips:     [],
   navLinks: [
     { label: 'About',   visible: true },
     { label: 'FAQ',     visible: true },
