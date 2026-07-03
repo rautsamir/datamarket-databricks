@@ -278,6 +278,8 @@ export function registerRoutes(app) {
   app.get('/api/portal/products/:ref/preview', async (req, res) => {
     try {
       const { ref } = req.params;
+      // Reload settings so a newly configured warehouse ID is picked up without restart
+      await loadSettings();
       const { rows: [product] } = await query('SELECT uc_full_name FROM data_products WHERE product_ref = $1', [ref]);
       if (!product) return res.status(404).json({ error: 'Product not found' });
       if (!product.uc_full_name) return res.json({ source: 'synthetic', rows: [], columns: [] });

@@ -532,8 +532,8 @@ function SampleDataPreview({ product, accessGranted, onRequestAccess }) {
     )
   }
 
-  // Fallback: no warehouse or no uc_full_name — show a clear message, not fake data
-  if (!loading && (previewSource === 'no_warehouse' || previewSource === 'synthetic' || (!liveData && product?.uc_full_name))) {
+  // No warehouse configured — show a clear actionable message
+  if (!loading && previewSource === 'no_warehouse') {
     return (
       <div className="bg-white rounded-2xl border border-gray-200 p-6 mt-6">
         <div className="flex items-center gap-2 mb-3">
@@ -553,7 +553,31 @@ function SampleDataPreview({ product, accessGranted, onRequestAccess }) {
     )
   }
 
-  // Fallback: synthetic / loading / no warehouse
+  // No UC table linked — no preview possible
+  if (!loading && (previewSource === 'synthetic' || (!liveData && !product?.uc_full_name))) {
+    return null
+  }
+
+  // Error state — warehouse is set but query failed
+  if (!loading && !liveData && product?.uc_full_name) {
+    return (
+      <div className="bg-white rounded-2xl border border-gray-200 p-6 mt-6">
+        <div className="flex items-center gap-2 mb-3">
+          <Database className="h-4 w-4 text-gray-400" />
+          <h3 className="font-semibold text-gray-900 text-sm">Sample Data Preview</h3>
+        </div>
+        <div className="flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-lg px-4 py-4">
+          <Database className="h-4 w-4 text-amber-500 shrink-0" />
+          <div>
+            <p className="text-xs font-medium text-amber-800">Could not load preview</p>
+            <p className="text-xs text-amber-700 mt-0.5">Check that the app's service principal has <strong>Can use</strong> permission on the SQL Warehouse.</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // Fallback: synthetic rows (product has no uc_full_name at all)
   const { columns: synthCols, rows: synthRows, grantedRows } = getSampleData(product)
   const schema = getSchema(product)
   const elevatedIndices = new Set(
