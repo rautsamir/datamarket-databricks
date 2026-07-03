@@ -104,6 +104,7 @@ step 3 "Detecting Lakebase configuration"
 
 LAKEBASE_HOST=""
 LAKEBASE_ENDPOINT=""
+LAKEBASE_CACHE_FILE="${SCRIPT_DIR}/.lakebase-${APP_NAME}.cache"
 
 # Step 1: Try to discover the branch name dynamically (Lakebase uses auto-generated names)
 info "Looking up Lakebase project: ${LAKEBASE_PROJECT}"
@@ -122,7 +123,7 @@ try:
 except: print('')
 " 2>/dev/null || true)
 
-# Step 2: Build endpoint path and try to fetch hostname
+# Step 2: Build endpoint path and try to fetch hostname from API
 if [[ -n "$BRANCH_NAME" ]]; then
   LAKEBASE_ENDPOINT="projects/${LAKEBASE_PROJECT}/branches/${BRANCH_NAME}/endpoints/primary"
   info "Found branch: ${BRANCH_NAME} — trying endpoint: ${LAKEBASE_ENDPOINT}"
@@ -133,7 +134,16 @@ if [[ -n "$BRANCH_NAME" ]]; then
     2>/dev/null || true)
 fi
 
-# Step 3: Fallback — prompt the user
+# Step 3: Check local cache (written on first manual entry)
+if [[ -z "$LAKEBASE_HOST" && -f "$LAKEBASE_CACHE_FILE" ]]; then
+  CACHED_HOST=$(cat "$LAKEBASE_CACHE_FILE" 2>/dev/null || true)
+  if [[ -n "$CACHED_HOST" ]]; then
+    LAKEBASE_HOST="$CACHED_HOST"
+    ok "Lakebase hostname loaded from cache."
+  fi
+fi
+
+# Step 4: Fallback — prompt the user once and cache the answer
 if [[ -z "$LAKEBASE_HOST" ]]; then
   warn "Could not auto-detect Lakebase hostname."
   warn "Go to: Compute → Lakebase → ${LAKEBASE_PROJECT} → Overview → Connection details"
@@ -141,6 +151,9 @@ if [[ -z "$LAKEBASE_HOST" ]]; then
   echo ""
   read -rp "  Paste your Lakebase hostname: " LAKEBASE_HOST
   [[ -z "$LAKEBASE_HOST" ]] && fail "Lakebase hostname is required."
+  # Cache for next run
+  echo "$LAKEBASE_HOST" > "$LAKEBASE_CACHE_FILE"
+  ok "Hostname saved to cache — won't be asked again."
 fi
 
 # If we still don't have the endpoint path, construct a best-guess one for app.yaml

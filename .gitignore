@@ -43,3 +43,6 @@ yarn-debug.log*
 
 # Test coverage
 coverage/
+
+# Lakebase hostname cache (written by deploy.sh on first manual entry)
+src/app/.lakebase-*.cache
