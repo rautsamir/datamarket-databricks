@@ -10,6 +10,7 @@ import {
   fetchUcSchema,
   ucApiRequest,
   getUcAuth,
+  databricksApi,
 } from '../databricks.js';
 
 // ─── Background auto-discover (runs once after startup if enabled) ────────────
@@ -239,6 +240,35 @@ export function registerRoutes(app) {
     } catch (e) {
       console.error('[/api/portal/products/:ref/schema]', e.message);
       res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ─── UC Sample Data — live row preview ────────────────────────────────────────
+  app.get('/api/portal/products/:ref/preview', async (req, res) => {
+    try {
+      const { ref } = req.params;
+      const { rows: [product] } = await query('SELECT uc_full_name FROM data_products WHERE product_ref = $1', [ref]);
+      if (!product) return res.status(404).json({ error: 'Product not found' });
+      if (!product.uc_full_name) return res.json({ source: 'synthetic', rows: [], columns: [] });
+      if (!SQL_WAREHOUSE_ID) return res.json({ source: 'no_warehouse', rows: [], columns: [] });
+
+      const result = await databricksApi('POST', '/api/2.0/sql/statements', {
+        warehouse_id: SQL_WAREHOUSE_ID,
+        statement: `SELECT * FROM ${product.uc_full_name} LIMIT 5`,
+        wait_timeout: '15s'
+      });
+
+      if (result.data?.status?.state !== 'SUCCEEDED') {
+        return res.json({ source: 'error', rows: [], columns: [], error: result.data?.status?.error?.message });
+      }
+
+      const schema = result.data.manifest?.schema?.columns || [];
+      const columns = schema.map(c => c.name);
+      const rows = result.data.result?.data_array || [];
+      res.json({ source: 'unity_catalog', columns, rows });
+    } catch (e) {
+      console.error('[/api/portal/products/:ref/preview]', e.message);
+      res.status(500).json({ source: 'error', rows: [], columns: [], error: e.message });
     }
   });
 

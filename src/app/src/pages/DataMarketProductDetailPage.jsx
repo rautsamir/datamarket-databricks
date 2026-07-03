@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { ArrowLeft, BarChart3, FileText, Database, X, Calendar, User, RefreshCw, Tag, Lock, ExternalLink, CheckCircle2, Clock, Eye, EyeOff, ShieldAlert, ShieldCheck, Shield, Bot, LayoutDashboard, AppWindow, Cpu, Layers, Edit3, ClipboardList, Check } from 'lucide-react'
 import { usePersona } from '../context/PersonaContext'
 import { useAppConfig } from '../context/AppConfigContext'
@@ -135,11 +135,32 @@ const sensitivityConfig = {
 
 function DataSchemaPanel({ product, accessGranted, onRequestAccess }) {
   const [expanded, setExpanded] = useState(true)
-  const schema = getSchema(product)
-  const piiCount = schema.filter(c => c.sensitivity === 'PII').length
-  const confCount = schema.filter(c => c.sensitivity === 'CONFIDENTIAL').length
-  const standardMasked = schema.filter(c => c.masked && !c.elevatedPII)
-  const elevatedMasked = schema.filter(c => c.elevatedPII)
+  const [schema, setSchema] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [schemaSource, setSchemaSource] = useState(null)
+
+  useEffect(() => {
+    if (!product?.product_ref) return
+    setLoading(true)
+    fetch(`/api/portal/products/${product.product_ref}/schema`)
+      .then(r => r.json())
+      .then(data => {
+        setSchemaSource(data.source)
+        if (data.source === 'unity_catalog' && data.columns?.length) {
+          setSchema(data.columns)
+        } else {
+          setSchema(getSchema(product))
+        }
+      })
+      .catch(() => setSchema(getSchema(product)))
+      .finally(() => setLoading(false))
+  }, [product?.product_ref])
+
+  const cols = schema || []
+  const piiCount = cols.filter(c => c.sensitivity === 'PII').length
+  const confCount = cols.filter(c => c.sensitivity === 'CONFIDENTIAL').length
+  const standardMasked = cols.filter(c => c.masked && !c.elevatedPII)
+  const elevatedMasked = cols.filter(c => c.elevatedPII)
   const unlockedCount = accessGranted ? standardMasked.length : 0
   const stillMaskedCount = elevatedMasked.length
 
@@ -150,6 +171,9 @@ function DataSchemaPanel({ product, accessGranted, onRequestAccess }) {
           <div className="flex items-center gap-2">
             <Shield className="h-4 w-4 text-gray-400" />
             <h3 className="font-semibold text-gray-900 text-sm">Data Schema & Sensitivity</h3>
+            {schemaSource === 'unity_catalog' && (
+              <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-blue-50 text-blue-700 border border-blue-200">Live from UC</span>
+            )}
           </div>
           <div className="flex items-center gap-1.5 flex-wrap">
             {piiCount > 0 && (
@@ -186,63 +210,70 @@ function DataSchemaPanel({ product, accessGranted, onRequestAccess }) {
 
       {expanded && (
         <>
-          <div className="overflow-auto rounded-lg border border-gray-100">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="bg-gray-50 border-b border-gray-100">
-                  <th className="text-left px-3 py-2 text-gray-500 font-medium">Column</th>
-                  <th className="text-left px-3 py-2 text-gray-500 font-medium">Type</th>
-                  <th className="text-left px-3 py-2 text-gray-500 font-medium">Description</th>
-                  <th className="text-left px-3 py-2 text-gray-500 font-medium">Sensitivity</th>
-                  <th className="text-left px-3 py-2 text-gray-500 font-medium">Access</th>
-                </tr>
-              </thead>
-              <tbody>
-                {schema.map((col, i) => {
-                  const cfg = sensitivityConfig[col.sensitivity] || sensitivityConfig.INTERNAL
-                  const SIcon = cfg.icon
-                  // Three states: locked (no access), elevated PII (stays masked), unmasked
-                  const isLocked = col.masked && !accessGranted
-                  const isElevated = col.elevatedPII && accessGranted
-                  const isUnmasked = col.masked && !col.elevatedPII && accessGranted
-                  return (
-                    <tr key={i} className="border-b border-gray-50 last:border-0">
-                      <td className="px-3 py-2.5 font-mono text-gray-800 font-medium">{col.name}</td>
-                      <td className="px-3 py-2.5 text-gray-400 font-mono">{col.type}</td>
-                      <td className="px-3 py-2.5 text-gray-500">{col.description}</td>
-                      <td className="px-3 py-2.5">
-                        <span className={`inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border font-medium ${cfg.color}`}>
-                          <SIcon className="h-2.5 w-2.5" />
-                          {cfg.label}
-                        </span>
-                      </td>
-                      <td className="px-3 py-2.5">
-                        {isLocked ? (
-                          <span className="inline-flex items-center gap-1 text-[10px] text-red-600 bg-red-50 border border-red-100 px-1.5 py-0.5 rounded font-medium">
-                            <Lock className="h-2.5 w-2.5" /> Masked
+          {loading ? (
+            <div className="flex items-center gap-2 py-6 text-gray-400 text-xs justify-center">
+              <RefreshCw className="h-3.5 w-3.5 animate-spin" /> Loading schema from Unity Catalog…
+            </div>
+          ) : cols.length === 0 ? (
+            <p className="text-xs text-gray-400 py-4">No schema available — link a UC table to this product in Admin settings.</p>
+          ) : (
+            <div className="overflow-auto rounded-lg border border-gray-100">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="bg-gray-50 border-b border-gray-100">
+                    <th className="text-left px-3 py-2 text-gray-500 font-medium">Column</th>
+                    <th className="text-left px-3 py-2 text-gray-500 font-medium">Type</th>
+                    <th className="text-left px-3 py-2 text-gray-500 font-medium">Description</th>
+                    <th className="text-left px-3 py-2 text-gray-500 font-medium">Sensitivity</th>
+                    <th className="text-left px-3 py-2 text-gray-500 font-medium">Access</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {cols.map((col, i) => {
+                    const cfg = sensitivityConfig[col.sensitivity] || sensitivityConfig.INTERNAL
+                    const SIcon = cfg.icon
+                    const isLocked = col.masked && !accessGranted
+                    const isElevated = col.elevatedPII && accessGranted
+                    const isUnmasked = col.masked && !col.elevatedPII && accessGranted
+                    return (
+                      <tr key={i} className="border-b border-gray-50 last:border-0">
+                        <td className="px-3 py-2.5 font-mono text-gray-800 font-medium">{col.name}</td>
+                        <td className="px-3 py-2.5 text-gray-400 font-mono">{col.type}</td>
+                        <td className="px-3 py-2.5 text-gray-500">{col.description}</td>
+                        <td className="px-3 py-2.5">
+                          <span className={`inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border font-medium ${cfg.color}`}>
+                            <SIcon className="h-2.5 w-2.5" />
+                            {cfg.label}
                           </span>
-                        ) : isElevated ? (
-                          <span className="inline-flex items-center gap-1 text-[10px] text-red-600 bg-red-50 border border-red-100 px-1.5 py-0.5 rounded font-medium">
-                            <ShieldAlert className="h-2.5 w-2.5" /> Elevated PII
-                          </span>
-                        ) : isUnmasked ? (
-                          <span className="inline-flex items-center gap-1 text-[10px] text-emerald-600 bg-emerald-50 border border-emerald-100 px-1.5 py-0.5 rounded font-medium">
-                            <CheckCircle2 className="h-2.5 w-2.5" /> Unmasked
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 text-[10px] text-gray-500 px-1.5 py-0.5 rounded font-medium">
-                            <CheckCircle2 className="h-2.5 w-2.5 text-gray-400" /> Visible
-                          </span>
-                        )}
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
+                        </td>
+                        <td className="px-3 py-2.5">
+                          {isLocked ? (
+                            <span className="inline-flex items-center gap-1 text-[10px] text-red-600 bg-red-50 border border-red-100 px-1.5 py-0.5 rounded font-medium">
+                              <Lock className="h-2.5 w-2.5" /> Masked
+                            </span>
+                          ) : isElevated ? (
+                            <span className="inline-flex items-center gap-1 text-[10px] text-red-600 bg-red-50 border border-red-100 px-1.5 py-0.5 rounded font-medium">
+                              <ShieldAlert className="h-2.5 w-2.5" /> Elevated PII
+                            </span>
+                          ) : isUnmasked ? (
+                            <span className="inline-flex items-center gap-1 text-[10px] text-emerald-600 bg-emerald-50 border border-emerald-100 px-1.5 py-0.5 rounded font-medium">
+                              <CheckCircle2 className="h-2.5 w-2.5" /> Unmasked
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-[10px] text-gray-500 px-1.5 py-0.5 rounded font-medium">
+                              <CheckCircle2 className="h-2.5 w-2.5 text-gray-400" /> Visible
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
 
-          {!accessGranted && (standardMasked.length + elevatedMasked.length) > 0 && (
+          {!loading && !accessGranted && (standardMasked.length + elevatedMasked.length) > 0 && (
             <div className="mt-3 flex items-center justify-between gap-3 bg-amber-50 border border-amber-100 rounded-lg px-4 py-3">
               <div className="flex items-center gap-2">
                 <ShieldAlert className="h-4 w-4 text-amber-600 shrink-0" />
@@ -259,7 +290,7 @@ function DataSchemaPanel({ product, accessGranted, onRequestAccess }) {
             </div>
           )}
 
-          {accessGranted && (
+          {!loading && accessGranted && (
             <div className="mt-3 space-y-2">
               {unlockedCount > 0 && (
                 <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-100 rounded-lg px-4 py-3">
@@ -407,16 +438,109 @@ function getSampleData(product) {
 
 function SampleDataPreview({ product, accessGranted, onRequestAccess }) {
   const [expanded, setExpanded] = useState(false)
-  const { columns, rows, grantedRows } = getSampleData(product)
+  const [liveData, setLiveData] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [previewSource, setPreviewSource] = useState(null)
+
+  useEffect(() => {
+    if (!product?.product_ref) return
+    setLoading(true)
+    fetch(`/api/portal/products/${product.product_ref}/preview`)
+      .then(r => r.json())
+      .then(data => {
+        setPreviewSource(data.source)
+        if (data.source === 'unity_catalog' && data.columns?.length) {
+          setLiveData({ columns: data.columns, rows: data.rows })
+        } else {
+          setLiveData(null)
+        }
+      })
+      .catch(() => setLiveData(null))
+      .finally(() => setLoading(false))
+  }, [product?.product_ref])
+
+  // Live UC data path
+  if (!loading && liveData) {
+    const { columns, rows } = liveData
+    return (
+      <div className="bg-white rounded-2xl border border-gray-200 p-6 mt-6">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <Database className="h-4 w-4 text-gray-400" />
+            <h3 className="font-semibold text-gray-900 text-sm">Sample Data Preview</h3>
+            {!accessGranted && (
+              <span className="flex items-center gap-1 text-[10px] text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">
+                <Lock className="h-2.5 w-2.5" /> Restricted
+              </span>
+            )}
+            <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-blue-50 text-blue-700 border border-blue-200">Live from UC</span>
+          </div>
+          <button
+            onClick={() => setExpanded(v => !v)}
+            className="text-xs text-gray-400 hover:text-gray-700 flex items-center gap-1"
+          >
+            {expanded ? <><EyeOff className="h-3.5 w-3.5" /> Hide</> : <><Eye className="h-3.5 w-3.5" /> Preview</>}
+          </button>
+        </div>
+
+        {expanded ? (
+          <div className="relative overflow-auto rounded-lg border border-gray-100">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="bg-gray-50 border-b border-gray-100">
+                  {columns.map(col => (
+                    <th key={col} className="text-left px-3 py-2 font-medium text-gray-500 whitespace-nowrap">{col}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row, ri) => (
+                  <tr key={ri} className={`border-b border-gray-50 last:border-0 ${!accessGranted ? 'select-none' : ''}`}>
+                    {row.map((cell, ci) => (
+                      <td key={ci} className={`px-3 py-2 text-gray-700 ${!accessGranted ? 'blur-[5px]' : ''}`}>
+                        {cell ?? '—'}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {!accessGranted && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/60 backdrop-blur-[1px] rounded-lg">
+                <Lock className="h-6 w-6 text-gray-400 mb-2" />
+                <p className="text-sm font-medium text-gray-700 mb-3">Request access to view full data</p>
+                <button
+                  onClick={onRequestAccess}
+                  className="px-4 py-2 rounded-lg text-xs font-medium text-white flex items-center gap-1.5"
+                  style={{ backgroundColor: DataMarket_BLUE }}
+                >
+                  <Lock className="h-3 w-3" /> Request Access
+                </button>
+              </div>
+            )}
+          </div>
+        ) : (
+          <p className="text-xs text-gray-400">
+            {accessGranted
+              ? `${rows.length} live rows from Unity Catalog — click Preview to explore`
+              : 'Preview is blurred. Request access to unlock full dataset.'}
+          </p>
+        )}
+      </div>
+    )
+  }
+
+  // Fallback: synthetic / loading / no warehouse
+  const { columns: synthCols, rows: synthRows, grantedRows } = getSampleData(product)
   const schema = getSchema(product)
   const elevatedIndices = new Set(
-    columns.map((col, i) => {
+    synthCols.map((col, i) => {
       const key = col.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '')
       const match = schema.find(s => s.name.toLowerCase() === key || col.toLowerCase().includes(s.name.toLowerCase()))
       return match?.elevatedPII ? i : null
     }).filter(i => i !== null)
   )
-  const displayRows = accessGranted ? grantedRows : rows
+  const displayRows = accessGranted ? grantedRows : synthRows
 
   return (
     <div className="bg-white rounded-2xl border border-gray-200 p-6 mt-6">
@@ -443,12 +567,12 @@ function SampleDataPreview({ product, accessGranted, onRequestAccess }) {
         </button>
       </div>
 
-      {expanded && (
+      {expanded && !loading && (
         <div className="relative overflow-auto rounded-lg border border-gray-100">
           <table className="w-full text-xs">
             <thead>
               <tr className="bg-gray-50 border-b border-gray-100">
-                {columns.map((col, i) => (
+                {synthCols.map((col, i) => (
                   <th key={col} className={`text-left px-3 py-2 font-medium whitespace-nowrap ${accessGranted && elevatedIndices.has(i) ? 'text-red-400' : 'text-gray-500'}`}>
                     {col}
                     {accessGranted && elevatedIndices.has(i) && <ShieldAlert className="inline h-2.5 w-2.5 ml-1 text-red-400" />}
@@ -482,6 +606,12 @@ function SampleDataPreview({ product, accessGranted, onRequestAccess }) {
               </button>
             </div>
           )}
+        </div>
+      )}
+
+      {loading && expanded && (
+        <div className="flex items-center gap-2 py-6 text-gray-400 text-xs justify-center">
+          <RefreshCw className="h-3.5 w-3.5 animate-spin" /> Fetching preview rows…
         </div>
       )}
 
