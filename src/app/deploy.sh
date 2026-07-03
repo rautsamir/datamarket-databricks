@@ -222,6 +222,13 @@ for f in package.json manifest.yaml app.yaml; do
 done
 
 info "Deploying app (this takes ~2 minutes)..."
+
+# Create the app first if it doesn't exist yet
+if ! databricks apps get "$APP_NAME" --profile "$PROFILE" --output json >/dev/null 2>&1; then
+  info "App does not exist yet — creating..."
+  databricks apps create "$APP_NAME" --profile "$PROFILE" 2>&1 | tail -3
+fi
+
 DEPLOY_OUT=$(databricks apps deploy "$APP_NAME" \
   --source-code-path "$WORKSPACE_PATH" \
   --profile "$PROFILE" 2>&1)
@@ -282,24 +289,30 @@ else
   if [[ -z "$PG_TOKEN" ]]; then
     warn "Could not generate a Lakebase token. Grants skipped — run manually."
   else
-    PG_SQL="
-CREATE SCHEMA IF NOT EXISTS ${APP_NAME};
-GRANT USAGE  ON SCHEMA ${APP_NAME} TO \"${SP_UUID}\";
-GRANT CREATE ON SCHEMA ${APP_NAME} TO \"${SP_UUID}\";
-DO \$\$
-BEGIN
-  EXECUTE 'GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA ${APP_NAME} TO \"${SP_UUID}\"';
-EXCEPTION WHEN others THEN NULL;
-END \$\$;
-"
+    # Step 1: Create schema + run schema.sql (creates all core tables with correct types)
+    SCHEMA_SQL="${SCRIPT_DIR}/../../schema/schema.sql"
     PGPASSWORD="$PG_TOKEN" psql \
       "host=${LAKEBASE_HOST} port=5432 dbname=databricks_postgres sslmode=require user=${DATABRICKS_USER:-${ADMIN_EMAIL}}" \
-      -c "$PG_SQL" 2>&1 | grep -v "^$" || warn "psql encountered warnings (may be safe to ignore)"
+      -c "CREATE SCHEMA IF NOT EXISTS ${APP_NAME};" \
+      $( [[ -f "$SCHEMA_SQL" ]] && echo "-f \"$SCHEMA_SQL\"" || true ) \
+      2>&1 | grep -v "^$" | grep -v "^NOTICE" || true
 
-    ok "Schema grants applied"
+    # Step 2: Grant the SP full access
+    PGPASSWORD="$PG_TOKEN" psql \
+      "host=${LAKEBASE_HOST} port=5432 dbname=databricks_postgres sslmode=require user=${DATABRICKS_USER:-${ADMIN_EMAIL}}" \
+      -c "
+        GRANT USAGE  ON SCHEMA ${APP_NAME} TO \"${SP_UUID}\";
+        GRANT CREATE ON SCHEMA ${APP_NAME} TO \"${SP_UUID}\";
+        GRANT ALL PRIVILEGES ON ALL TABLES    IN SCHEMA ${APP_NAME} TO \"${SP_UUID}\";
+        GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA ${APP_NAME} TO \"${SP_UUID}\";
+        ALTER DEFAULT PRIVILEGES IN SCHEMA ${APP_NAME} GRANT ALL ON TABLES    TO \"${SP_UUID}\";
+        ALTER DEFAULT PRIVILEGES IN SCHEMA ${APP_NAME} GRANT ALL ON SEQUENCES TO \"${SP_UUID}\";
+      " 2>&1 | grep -v "^$" || warn "psql encountered warnings (may be safe to ignore)"
 
-    # Redeploy so the app picks up the new permissions and re-runs migrations
-    info "Restarting app to apply schema grants..."
+    ok "Schema initialized and grants applied"
+
+    # Step 3: Redeploy so the app starts with a ready database
+    info "Restarting app..."
     databricks apps deploy "$APP_NAME" \
       --source-code-path "$WORKSPACE_PATH" \
       --profile "$PROFILE" 2>&1 | tail -3
