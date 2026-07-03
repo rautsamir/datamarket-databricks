@@ -1,6 +1,10 @@
 import https from 'https';
 import { getDatabricksHost, getWorkspaceOAuthToken, httpsJsonRequest } from './auth.js';
-import { DEMO_MODE, SQL_WAREHOUSE_ID, RFA_ENABLED } from './db.js';
+import { DEMO_MODE, getSetting, loadSettings, RFA_ENABLED } from './db.js';
+
+function getWarehouseId() {
+  return getSetting('sql_warehouse_id', process.env.SQL_WAREHOUSE_ID || '');
+}
 
 // ─── Databricks REST API helper ──────────────────────────────────────────────
 export async function databricksApi(method, apiPath, body = null) {
@@ -49,10 +53,10 @@ export async function rfaNotify(ucFullName, requesterEmail, comment) {
 
 // ─── UC: Execute GRANT/REVOKE via SQL Statement Execution API ────────────────
 export async function executeUcStatement(sql) {
-  if (DEMO_MODE || !SQL_WAREHOUSE_ID) return { executed: false, reason: DEMO_MODE ? 'demo_mode' : 'no_warehouse' };
+  if (DEMO_MODE || !getWarehouseId()) return { executed: false, reason: DEMO_MODE ? 'demo_mode' : 'no_warehouse' };
   try {
     const result = await databricksApi('POST', '/api/2.0/sql/statements', {
-      warehouse_id: SQL_WAREHOUSE_ID,
+      warehouse_id: getWarehouseId(),
       statement: sql,
       wait_timeout: '10s'
     });
@@ -67,13 +71,14 @@ export async function executeUcStatement(sql) {
 
 // ─── UC: Fetch column schema + tags for a table ─────────────────────────────
 export async function fetchUcSchema(ucFullName) {
-  if (!SQL_WAREHOUSE_ID || !ucFullName) return null;
+  const warehouseId = getWarehouseId();
+  if (!warehouseId || !ucFullName) return null;
   const parts = ucFullName.split('.');
   if (parts.length !== 3) return null;
   const [catalog, schema, table] = parts;
   try {
     const colResult = await databricksApi('POST', '/api/2.0/sql/statements', {
-      warehouse_id: SQL_WAREHOUSE_ID,
+      warehouse_id: warehouseId,
       statement: `SELECT column_name, data_type, comment FROM system.information_schema.columns
                   WHERE table_catalog = '${catalog}' AND table_schema = '${schema}' AND table_name = '${table}'
                   ORDER BY ordinal_position`,
@@ -87,7 +92,7 @@ export async function fetchUcSchema(ucFullName) {
     let tagMap = {};
     try {
       const tagResult = await databricksApi('POST', '/api/2.0/sql/statements', {
-        warehouse_id: SQL_WAREHOUSE_ID,
+        warehouse_id: getWarehouseId(),
         statement: `SELECT column_name, tag_name, tag_value FROM system.information_schema.column_tags
                     WHERE table_catalog = '${catalog}' AND table_schema = '${schema}' AND table_name = '${table}'`,
         wait_timeout: '10s'
