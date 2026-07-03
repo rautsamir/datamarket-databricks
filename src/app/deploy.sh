@@ -102,24 +102,50 @@ info "Workspace path: ${WORKSPACE_PATH}"
 # ── Detect Lakebase ───────────────────────────────────────────────────────────
 step 3 "Detecting Lakebase configuration"
 
-LAKEBASE_ENDPOINT="projects/${LAKEBASE_PROJECT}/branches/production/endpoints/primary"
 LAKEBASE_HOST=""
+LAKEBASE_ENDPOINT=""
 
-info "Looking up Lakebase endpoint: ${LAKEBASE_ENDPOINT}"
+# Step 1: Try to discover the branch name dynamically (Lakebase uses auto-generated names)
+info "Looking up Lakebase project: ${LAKEBASE_PROJECT}"
 
-# Try to get hostname from the endpoint API
-ENDPOINT_JSON=$(databricks api get "2.0/postgres/endpoints/${LAKEBASE_ENDPOINT}" \
-  --profile "$PROFILE" 2>/dev/null || echo '{}')
-LAKEBASE_HOST=$(echo "$ENDPOINT_JSON" | python3 -c \
-  "import sys,json; d=json.load(sys.stdin); print(d.get('read_write_dns','') or d.get('dns','') or d.get('hostname',''))" \
-  2>/dev/null || true)
+BRANCH_NAME=$(databricks api get "2.0/postgres/autoscaling/projects/${LAKEBASE_PROJECT}/branches" \
+  --profile "$PROFILE" 2>/dev/null \
+  | python3 -c "
+import sys, json
+try:
+    d = json.load(sys.stdin)
+    branches = d.get('branches', d.get('items', []))
+    # Prefer 'production' if it exists, otherwise take the first branch
+    prod = next((b.get('name','') for b in branches if b.get('name','') == 'production'), '')
+    first = branches[0].get('name','') if branches else ''
+    print(prod or first)
+except: print('')
+" 2>/dev/null || true)
 
+# Step 2: Build endpoint path and try to fetch hostname
+if [[ -n "$BRANCH_NAME" ]]; then
+  LAKEBASE_ENDPOINT="projects/${LAKEBASE_PROJECT}/branches/${BRANCH_NAME}/endpoints/primary"
+  info "Found branch: ${BRANCH_NAME} — trying endpoint: ${LAKEBASE_ENDPOINT}"
+  ENDPOINT_JSON=$(databricks api get "2.0/postgres/endpoints/${LAKEBASE_ENDPOINT}" \
+    --profile "$PROFILE" 2>/dev/null || echo '{}')
+  LAKEBASE_HOST=$(echo "$ENDPOINT_JSON" | python3 -c \
+    "import sys,json; d=json.load(sys.stdin); print(d.get('read_write_dns','') or d.get('dns','') or d.get('hostname',''))" \
+    2>/dev/null || true)
+fi
+
+# Step 3: Fallback — prompt the user
 if [[ -z "$LAKEBASE_HOST" ]]; then
   warn "Could not auto-detect Lakebase hostname."
-  warn "Go to: Compute → Lakebase → ${LAKEBASE_PROJECT} → hostname"
+  warn "Go to: Compute → Lakebase → ${LAKEBASE_PROJECT} → Overview → Connection details"
+  warn "The hostname looks like: ep-your-project.database.region.azuredatabricks.net"
   echo ""
   read -rp "  Paste your Lakebase hostname: " LAKEBASE_HOST
   [[ -z "$LAKEBASE_HOST" ]] && fail "Lakebase hostname is required."
+fi
+
+# If we still don't have the endpoint path, construct a best-guess one for app.yaml
+if [[ -z "$LAKEBASE_ENDPOINT" ]]; then
+  LAKEBASE_ENDPOINT="projects/${LAKEBASE_PROJECT}/branches/${BRANCH_NAME:-production}/endpoints/primary"
 fi
 
 ok "Lakebase host:     $LAKEBASE_HOST"
