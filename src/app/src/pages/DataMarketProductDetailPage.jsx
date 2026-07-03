@@ -146,8 +146,9 @@ function DataSchemaPanel({ product, accessGranted, onRequestAccess }) {
       .then(r => r.json())
       .then(data => {
         setSchemaSource(data.source)
-        if (data.source === 'unity_catalog' && data.columns?.length) {
-          setSchema(data.columns)
+        if (data.source === 'unity_catalog' || data.source === 'unity_catalog_rest') {
+          if (data.columns?.length) setSchema(data.columns)
+          else setSchema(getSchema(product))
         } else {
           setSchema(getSchema(product))
         }
@@ -171,7 +172,7 @@ function DataSchemaPanel({ product, accessGranted, onRequestAccess }) {
           <div className="flex items-center gap-2">
             <Shield className="h-4 w-4 text-gray-400" />
             <h3 className="font-semibold text-gray-900 text-sm">Data Schema & Sensitivity</h3>
-            {schemaSource === 'unity_catalog' && (
+            {(schemaSource === 'unity_catalog' || schemaSource === 'unity_catalog_rest') && (
               <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-blue-50 text-blue-700 border border-blue-200">Live from UC</span>
             )}
           </div>

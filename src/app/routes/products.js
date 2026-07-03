@@ -234,6 +234,30 @@ export function registerRoutes(app) {
         if (liveSchema) {
           return res.json({ source: 'unity_catalog', uc_full_name: product.uc_full_name, columns: liveSchema });
         }
+
+        // Fallback: UC REST API returns columns without needing a warehouse
+        try {
+          const { host, token } = await getUcAuth();
+          const tableData = await ucApiRequest(host, token,
+            `/api/2.1/unity-catalog/tables/${encodeURIComponent(product.uc_full_name)}`);
+          const rawCols = tableData.columns || [];
+          if (rawCols.length > 0) {
+            const piiPatterns = /^(ssn|social_security|dob|date_of_birth|birth_date|email|phone|address|bank_account|credit_card|salary|compensation|wage)/i;
+            const confPatterns = /^(cost_center|approver|budget_code|account_number|internal_id)/i;
+            const columns = rawCols.map(col => {
+              const name = col.name;
+              const type = (col.type_text || col.type_name || 'STRING').toUpperCase();
+              const description = col.comment || '';
+              let sensitivity = 'INTERNAL';
+              if (piiPatterns.test(name)) sensitivity = 'PII';
+              else if (confPatterns.test(name)) sensitivity = 'CONFIDENTIAL';
+              const masked = sensitivity === 'PII' || sensitivity === 'CONFIDENTIAL';
+              const elevatedPII = sensitivity === 'PII' && /ssn|dob|date_of_birth|birth|bank|credit_card/i.test(name);
+              return { name, type, description, sensitivity, masked, elevatedPII };
+            });
+            return res.json({ source: 'unity_catalog_rest', uc_full_name: product.uc_full_name, columns });
+          }
+        } catch (_) {}
       }
       // Fall back to signal that frontend should use its synthetic schemas
       res.json({ source: 'synthetic', domain: product.domain, uc_full_name: product.uc_full_name || null });
