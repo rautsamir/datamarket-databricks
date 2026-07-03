@@ -4,7 +4,6 @@ import {
   resetProductColsCache,
   loadSettings,
   getSetting,
-  SQL_WAREHOUSE_ID,
 } from '../db.js';
 import {
   fetchUcSchema,
@@ -280,13 +279,14 @@ export function registerRoutes(app) {
       const { ref } = req.params;
       // Reload settings so a newly configured warehouse ID is picked up without restart
       await loadSettings();
+      const warehouseId = getSetting('sql_warehouse_id', process.env.SQL_WAREHOUSE_ID || '');
       const { rows: [product] } = await query('SELECT uc_full_name FROM data_products WHERE product_ref = $1', [ref]);
       if (!product) return res.status(404).json({ error: 'Product not found' });
       if (!product.uc_full_name) return res.json({ source: 'synthetic', rows: [], columns: [] });
-      if (!SQL_WAREHOUSE_ID) return res.json({ source: 'no_warehouse', rows: [], columns: [] });
+      if (!warehouseId) return res.json({ source: 'no_warehouse', rows: [], columns: [] });
 
       const result = await databricksApi('POST', '/api/2.0/sql/statements', {
-        warehouse_id: SQL_WAREHOUSE_ID,
+        warehouse_id: warehouseId,
         statement: `SELECT * FROM ${product.uc_full_name} LIMIT 5`,
         wait_timeout: '15s'
       });
