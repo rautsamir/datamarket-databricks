@@ -531,6 +531,27 @@ function SampleDataPreview({ product, accessGranted, onRequestAccess }) {
     )
   }
 
+  // Fallback: no warehouse or no uc_full_name — show a clear message, not fake data
+  if (!loading && (previewSource === 'no_warehouse' || previewSource === 'synthetic' || (!liveData && product?.uc_full_name))) {
+    return (
+      <div className="bg-white rounded-2xl border border-gray-200 p-6 mt-6">
+        <div className="flex items-center gap-2 mb-3">
+          <Database className="h-4 w-4 text-gray-400" />
+          <h3 className="font-semibold text-gray-900 text-sm">Sample Data Preview</h3>
+        </div>
+        <div className="flex items-center gap-3 bg-gray-50 border border-gray-200 rounded-lg px-4 py-4">
+          <Database className="h-4 w-4 text-gray-400 shrink-0" />
+          <div>
+            <p className="text-xs font-medium text-gray-700">SQL Warehouse required for live preview</p>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Go to <strong>Manage → Settings</strong> and set your SQL Warehouse ID to enable live sample data.
+            </p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   // Fallback: synthetic / loading / no warehouse
   const { columns: synthCols, rows: synthRows, grantedRows } = getSampleData(product)
   const schema = getSchema(product)
