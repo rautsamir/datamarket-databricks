@@ -498,11 +498,13 @@ function SampleDataPreview({ product, accessGranted, onRequestAccess }) {
               <tbody>
                 {rows.map((row, ri) => (
                   <tr key={ri} className={`border-b border-gray-50 last:border-0 ${!accessGranted ? 'select-none' : ''}`}>
-                    {row.map((cell, ci) => (
-                      <td key={ci} className={`px-3 py-2 text-gray-700 ${!accessGranted ? 'blur-[5px]' : ''}`}>
+                  {row.map((cell, ci) => (
+                    <td key={ci} className={`px-3 py-2 text-gray-700 ${!accessGranted ? 'blur-[5px]' : ''}`}>
+                      <span title={String(cell ?? '')} className="block max-w-[200px] truncate">
                         {cell ?? '—'}
-                      </td>
-                    ))}
+                      </span>
+                    </td>
+                  ))}
                   </tr>
                 ))}
               </tbody>
