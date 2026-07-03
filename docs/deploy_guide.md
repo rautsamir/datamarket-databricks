@@ -24,8 +24,8 @@ brew install postgresql@16
 ## Step 1 — Clone the repo
 
 ```bash
-git clone https://github.com/databricks-field-eng/datamarket.git
-cd datamarket/lac_dna_portal/src/app
+git clone https://github.com/rautsamir/datamarket-databricks.git
+cd datamarket-databricks/lac_dna_portal/src/app
 ```
 
 ---
