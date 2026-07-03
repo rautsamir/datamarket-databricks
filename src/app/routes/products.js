@@ -12,6 +12,18 @@ import {
   databricksApi,
 } from '../databricks.js';
 
+// ─── Simple TTL cache for schema + preview (avoids hammering UC on every page load) ──
+const _cache = new Map();
+function cacheGet(key) {
+  const entry = _cache.get(key);
+  if (!entry) return null;
+  if (Date.now() > entry.expiresAt) { _cache.delete(key); return null; }
+  return entry.value;
+}
+function cacheSet(key, value, ttlMs) {
+  _cache.set(key, { value, expiresAt: Date.now() + ttlMs });
+}
+
 // ─── Background auto-discover (runs once after startup if enabled) ────────────
 export async function maybeAutoDiscover() {
   try {
@@ -224,10 +236,16 @@ export function registerRoutes(app) {
   app.get('/api/portal/products/:ref/schema', async (req, res) => {
     try {
       const { ref } = req.params;
+
+      // Serve from cache if available (5 min TTL)
+      const cacheKey = `schema:${ref}`;
+      const cached = cacheGet(cacheKey);
+      if (cached) return res.json(cached);
+
       const { rows: [product] } = await query('SELECT uc_full_name, domain FROM data_products WHERE product_ref = $1', [ref]);
       if (!product) return res.status(404).json({ error: 'Product not found' });
 
-      // Try live UC schema first (requires SQL_WAREHOUSE_ID)
+      // Try live UC schema first (requires SQL warehouse in settings)
       if (product.uc_full_name) {
         const liveSchema = await fetchUcSchema(product.uc_full_name);
         if (liveSchema) {
@@ -237,7 +255,9 @@ export function registerRoutes(app) {
             const meta = await databricksApi('GET', `/api/2.1/unity-catalog/tables/${product.uc_full_name}`);
             table_comment = meta.data?.comment || '';
           } catch (_) {}
-          return res.json({ source: 'unity_catalog', uc_full_name: product.uc_full_name, columns: liveSchema, table_comment });
+          const payload = { source: 'unity_catalog', uc_full_name: product.uc_full_name, columns: liveSchema, table_comment };
+          cacheSet(cacheKey, payload, 5 * 60 * 1000);
+          return res.json(payload);
         }
 
         // Fallback: UC REST API returns columns without needing a warehouse
@@ -259,7 +279,9 @@ export function registerRoutes(app) {
               const elevatedPII = sensitivity === 'PII' && /ssn|dob|date_of_birth|birth|bank|credit_card/i.test(name);
               return { name, type, description, sensitivity, masked, elevatedPII };
             });
-            return res.json({ source: 'unity_catalog_rest', uc_full_name: product.uc_full_name, columns, table_comment: tableComment });
+            const payload = { source: 'unity_catalog_rest', uc_full_name: product.uc_full_name, columns, table_comment: tableComment };
+            cacheSet(cacheKey, payload, 5 * 60 * 1000);
+            return res.json(payload);
           }
         } catch (e) {
           console.warn('[schema] UC REST API fallback failed:', e.message);
@@ -277,6 +299,12 @@ export function registerRoutes(app) {
   app.get('/api/portal/products/:ref/preview', async (req, res) => {
     try {
       const { ref } = req.params;
+
+      // Serve from cache if available (10 min TTL)
+      const cacheKey = `preview:${ref}`;
+      const cached = cacheGet(cacheKey);
+      if (cached) return res.json(cached);
+
       // Reload settings so a newly configured warehouse ID is picked up without restart
       await loadSettings();
       const warehouseId = getSetting('sql_warehouse_id', process.env.SQL_WAREHOUSE_ID || '');
@@ -298,7 +326,9 @@ export function registerRoutes(app) {
       const schema = result.data.manifest?.schema?.columns || [];
       const columns = schema.map(c => c.name);
       const rows = result.data.result?.data_array || [];
-      res.json({ source: 'unity_catalog', columns, rows });
+      const payload = { source: 'unity_catalog', columns, rows };
+      cacheSet(cacheKey, payload, 10 * 60 * 1000);
+      res.json(payload);
     } catch (e) {
       console.error('[/api/portal/products/:ref/preview]', e.message);
       res.status(500).json({ source: 'error', rows: [], columns: [], error: e.message });
