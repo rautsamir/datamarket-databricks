@@ -133,7 +133,7 @@ const sensitivityConfig = {
   PII:          { label: 'PII',          color: 'bg-red-100 text-red-700 border-red-200',              icon: ShieldAlert },
 }
 
-function DataSchemaPanel({ product, accessGranted, onRequestAccess }) {
+function DataSchemaPanel({ product, accessGranted, onRequestAccess, onTableComment }) {
   const [expanded, setExpanded] = useState(true)
   const [schema, setSchema] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -146,6 +146,7 @@ function DataSchemaPanel({ product, accessGranted, onRequestAccess }) {
       .then(r => r.json())
       .then(data => {
         setSchemaSource(data.source)
+        if (data.table_comment && onTableComment) onTableComment(data.table_comment)
         if (data.source === 'unity_catalog' || data.source === 'unity_catalog_rest') {
           if (data.columns?.length) setSchema(data.columns)
           else setSchema(getSchema(product))
@@ -744,11 +745,11 @@ function AccessRequestModal({ product, onClose }) {
 
 export function DataMarketProductDetailPage({ product, onBack, onNavigate }) {
   const [showModal, setShowModal] = useState(false)
+  const [ucDescription, setUcDescription] = useState('')
   const { hasAccess, myRequests, isAdmin } = usePersona()
   const { databricksHost } = useAppConfig()
   const [copied, setCopied] = useState(false)
   const Icon = typeIcons[product.type] || BarChart3
-  // Use product_ref as the canonical identifier — falls back to numeric id for static products
   const productRef = product.product_ref || product.id
   const existingRequest = myRequests.find(r =>
     r.product_ref === productRef || r.productRef === productRef || r.productId === product.id
@@ -801,7 +802,9 @@ export function DataMarketProductDetailPage({ product, onBack, onNavigate }) {
               </div>
             </div>
 
-            <p className="text-gray-600 leading-relaxed">{product.description}</p>
+            <p className="text-gray-600 leading-relaxed">
+              {ucDescription || product.description}
+            </p>
 
             <div className="mt-6 flex gap-3 flex-wrap items-center">
               <button onClick={onBack} className="px-4 py-2 border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 flex items-center gap-2">
@@ -999,6 +1002,7 @@ export function DataMarketProductDetailPage({ product, onBack, onNavigate }) {
         product={product}
         accessGranted={accessGranted}
         onRequestAccess={() => setShowModal(true)}
+        onTableComment={setUcDescription}
       />
 
       <SampleDataPreview
