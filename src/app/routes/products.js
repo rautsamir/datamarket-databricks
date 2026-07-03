@@ -237,10 +237,8 @@ export function registerRoutes(app) {
 
         // Fallback: UC REST API returns columns without needing a warehouse
         try {
-          const { host, token } = await getUcAuth();
-          const tableData = await ucApiRequest(host, token,
-            `/api/2.1/unity-catalog/tables/${encodeURIComponent(product.uc_full_name)}`);
-          const rawCols = tableData.columns || [];
+          const result = await databricksApi('GET', `/api/2.1/unity-catalog/tables/${product.uc_full_name}`);
+          const rawCols = result.data?.columns || [];
           if (rawCols.length > 0) {
             const piiPatterns = /^(ssn|social_security|dob|date_of_birth|birth_date|email|phone|address|bank_account|credit_card|salary|compensation|wage)/i;
             const confPatterns = /^(cost_center|approver|budget_code|account_number|internal_id)/i;
@@ -257,7 +255,9 @@ export function registerRoutes(app) {
             });
             return res.json({ source: 'unity_catalog_rest', uc_full_name: product.uc_full_name, columns });
           }
-        } catch (_) {}
+        } catch (e) {
+          console.warn('[schema] UC REST API fallback failed:', e.message);
+        }
       }
       // Fall back to signal that frontend should use its synthetic schemas
       res.json({ source: 'synthetic', domain: product.domain, uc_full_name: product.uc_full_name || null });
