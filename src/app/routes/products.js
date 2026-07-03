@@ -232,13 +232,20 @@ export function registerRoutes(app) {
       if (product.uc_full_name) {
         const liveSchema = await fetchUcSchema(product.uc_full_name);
         if (liveSchema) {
-          return res.json({ source: 'unity_catalog', uc_full_name: product.uc_full_name, columns: liveSchema });
+          // Also fetch table-level comment from UC REST API
+          let table_comment = '';
+          try {
+            const meta = await databricksApi('GET', `/api/2.1/unity-catalog/tables/${product.uc_full_name}`);
+            table_comment = meta.data?.comment || '';
+          } catch (_) {}
+          return res.json({ source: 'unity_catalog', uc_full_name: product.uc_full_name, columns: liveSchema, table_comment });
         }
 
         // Fallback: UC REST API returns columns without needing a warehouse
         try {
           const result = await databricksApi('GET', `/api/2.1/unity-catalog/tables/${product.uc_full_name}`);
           const rawCols = result.data?.columns || [];
+          const tableComment = result.data?.comment || '';
           if (rawCols.length > 0) {
             const piiPatterns = /^(ssn|social_security|dob|date_of_birth|birth_date|email|phone|address|bank_account|credit_card|salary|compensation|wage)/i;
             const confPatterns = /^(cost_center|approver|budget_code|account_number|internal_id)/i;
@@ -253,7 +260,7 @@ export function registerRoutes(app) {
               const elevatedPII = sensitivity === 'PII' && /ssn|dob|date_of_birth|birth|bank|credit_card/i.test(name);
               return { name, type, description, sensitivity, masked, elevatedPII };
             });
-            return res.json({ source: 'unity_catalog_rest', uc_full_name: product.uc_full_name, columns });
+            return res.json({ source: 'unity_catalog_rest', uc_full_name: product.uc_full_name, columns, table_comment: tableComment });
           }
         } catch (e) {
           console.warn('[schema] UC REST API fallback failed:', e.message);
