@@ -746,6 +746,7 @@ function AccessRequestModal({ product, onClose }) {
 export function DataMarketProductDetailPage({ product, onBack, onNavigate }) {
   const [showModal, setShowModal] = useState(false)
   const [ucDescription, setUcDescription] = useState('')
+  const [descExpanded, setDescExpanded] = useState(false)
   const { hasAccess, myRequests, isAdmin } = usePersona()
   const { databricksHost } = useAppConfig()
   const [copied, setCopied] = useState(false)
@@ -755,6 +756,14 @@ export function DataMarketProductDetailPage({ product, onBack, onNavigate }) {
     r.product_ref === productRef || r.productRef === productRef || r.productId === product.id
   )
   const accessGranted = hasAccess(productRef)
+
+  // Strip markdown syntax for plain-text display
+  const stripMarkdown = (text) => (text || '')
+    .replace(/\*\*(.+?)\*\*/g, '$1')
+    .replace(/\*(.+?)\*/g, '$1')
+    .replace(/^#+\s+/gm, '')
+    .replace(/^[\*\-]\s+/gm, '• ')
+    .trim()
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
@@ -802,9 +811,20 @@ export function DataMarketProductDetailPage({ product, onBack, onNavigate }) {
               </div>
             </div>
 
-            <p className="text-gray-600 leading-relaxed">
-              {ucDescription || product.description}
-            </p>
+            <div className="mt-1">
+              <p className={`text-gray-600 leading-relaxed text-sm ${!descExpanded ? 'line-clamp-3' : ''}`}>
+                {stripMarkdown(ucDescription || product.description)}
+              </p>
+              {(ucDescription || product.description || '').length > 180 && (
+                <button
+                  onClick={() => setDescExpanded(v => !v)}
+                  className="text-xs font-medium mt-1"
+                  style={{ color: DataMarket_BLUE }}
+                >
+                  {descExpanded ? 'Show less' : 'Show more'}
+                </button>
+              )}
+            </div>
 
             <div className="mt-6 flex gap-3 flex-wrap items-center">
               <button onClick={onBack} className="px-4 py-2 border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 flex items-center gap-2">
