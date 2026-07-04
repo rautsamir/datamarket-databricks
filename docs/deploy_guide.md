@@ -113,16 +113,27 @@ A **first-run setup wizard** appears automatically. It walks you through the two
 
 ### Wizard Step 1 — SQL Warehouse ID
 
-**Why it matters:** Without this, approving an access request logs the approval in the portal but does **nothing** in Unity Catalog — the user can't actually query the table.
+**Why it matters:** Without this, approving an access request logs the approval in the portal but does **nothing** in Unity Catalog — the user can't actually query the table. It also enables live Data Schema and Sample Data Preview on every product detail page.
 
-**With it:** Every approval automatically executes `GRANT SELECT ON <table> TO <user>` in Unity Catalog.
+**With it:** Every approval automatically executes `GRANT SELECT ON <table> TO <user>` in Unity Catalog. The product detail page shows real column names, types, and 5 live sample rows.
 
 **How to find it:**
 1. Go to **SQL Warehouses** (under Compute)
 2. Click your warehouse → **Connection details**
-3. Copy the last segment of the HTTP path after `/sql/1.0/warehouses/`
+3. Copy the ID shown next to the warehouse name, or the last segment of the HTTP path after `/sql/1.0/warehouses/`
 
-### Wizard Step 2 — Import your data catalog
+### Wizard Step 2 — Grant the app SP access to the warehouse
+
+After saving the Warehouse ID, you must give the app's service principal permission to use it:
+
+1. Go to **SQL Warehouses → your warehouse → Permissions**
+2. Click **Add permission**
+3. Find the app SP — it's named something like `app-xxxxx datamarket` (visible in **Compute → Apps → datamarket → Details**)
+4. Grant it **Can use**
+
+Without this step, sample data preview and UC grants will silently fail.
+
+### Wizard Step 3 — Import your data catalog
 
 Click **Import from Unity Catalog**, browse your catalog → schema → tables, and import. This populates the portal — users can't discover anything until you do this.
 
@@ -156,7 +167,10 @@ SQL Warehouse ID not configured. Go to **Manage → Settings → Integrations**.
 Lakebase schema grants weren't applied. Usually means the `psql` step in the deploy script failed. Re-run the script — it's idempotent. If psql is not installed, install it (`brew install postgresql@16`) and re-run.
 
 **Deploy script can't detect Lakebase hostname**
-The script will prompt you to paste it manually. Find it in **Compute → Lakebase → your project → hostname**.
+The script will prompt you to paste it manually (once). Find it in **Compute → Lakebase → your project → hostname**. After you paste it, the value is cached in `.lakebase-datamarket.cache` next to `deploy.sh` — subsequent deploys are fully silent on this step.
+
+**Sample Data Preview shows "SQL Warehouse required"**
+Either the Warehouse ID isn't saved in **Manage → Settings**, or the app's service principal doesn't have "Can use" permission on the warehouse. See Step 5 above.
 
 **UC Import shows no catalogs**
 The app's service principal doesn't have Unity Catalog permissions. Ensure the workspace has UC enabled and the app SP has at least `USE CATALOG` privilege.
@@ -165,10 +179,10 @@ The app's service principal doesn't have Unity Catalog permissions. Ensure the w
 
 ## Re-deploying (updates)
 
-Pull the latest code and run the same deploy command. The script is idempotent — it skips steps that are already done and re-uploads everything that changed.
+Pull the latest code and run the same deploy command. The script is idempotent — it skips steps that are already done and re-uploads everything that changed. The Lakebase hostname is cached so you won't be prompted again.
 
 ```bash
-git pull
+git pull origin main
 ./deploy.sh \
   --profile my-profile \
   --admin-email you@company.com \
