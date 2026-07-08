@@ -101,6 +101,8 @@ That's it. The script handles the rest.
 | `--admin-email` | prompted | **Required.** Your email — auto-promoted to admin on first login |
 | `--lakebase-project` | `datamarket` | Name of your Lakebase Autoscaling project |
 | `--app-name` | `datamarket` | Databricks App name and workspace folder |
+| `--warehouse-id` | none | SQL Warehouse ID — script auto-grants SP "Can use" permission |
+| `--grant-catalogs` | `true` | Auto-grant SP `USE CATALOG` + `USE SCHEMA` on all UC catalogs |
 | `--demo-mode` | `false` | `true` = persona switcher (demos/POCs); `false` = real SSO + UC grants |
 
 ---
@@ -155,7 +157,84 @@ All optional features are toggled from **Manage → Settings** — no redeployme
 
 ---
 
-## Troubleshooting
+## Permissions Reference
+
+DataMarket touches four permission surfaces. This table covers everything — there is no other surface area.
+
+### 1. Lakebase (PostgreSQL)
+
+| Who | What | How to grant | Required for |
+|---|---|---|---|
+| App service principal | `USAGE + CREATE` on schema, `ALL PRIVILEGES` on tables/sequences | `deploy.sh` does this automatically (Step 7) | App to read/write all portal data |
+
+> `deploy.sh` handles this fully. No manual action needed.
+
+---
+
+### 2. SQL Warehouse
+
+| Who | What | How to grant | Required for |
+|---|---|---|---|
+| App service principal | **Can use** | `deploy.sh --warehouse-id YOUR_ID` (automated) or Warehouse → Permissions → Add SP (manual) | UC GRANTs on approval, INFORMATION_SCHEMA queries |
+
+> **Automated** with `--warehouse-id` flag. If you skip the flag, grant manually: SQL Warehouses → your warehouse → Permissions → Add SP.
+
+---
+
+### 3. Unity Catalog
+
+| Who | What | How to grant | Required for |
+|---|---|---|---|
+| App service principal | `USE CATALOG` + `USE SCHEMA` on all catalogs | `deploy.sh --warehouse-id YOUR_ID` (automated) or SQL `GRANT` (manual) | UC Import browser to see schemas/tables |
+| App service principal | `SELECT` on individual tables | Granted automatically via DataMarket approval flow | Schema panel to show real columns (REST API path) |
+| End users | `SELECT` on approved tables | DataMarket approval flow executes `GRANT SELECT` automatically | Users to actually query the data |
+
+> **Automated** with `--warehouse-id` flag — the script iterates all visible catalogs and grants `USE CATALOG` + `USE SCHEMA ON ALL SCHEMAS`. For `samples.*`, permissions are public by default.
+
+**Quick SQL to grant SP access to your catalog:**
+```sql
+-- Run in a Databricks notebook or SQL editor
+GRANT USE CATALOG ON CATALOG your_catalog TO `app-xxxxx datamarket`;
+GRANT USE SCHEMA  ON SCHEMA  your_catalog.your_schema TO `app-xxxxx datamarket`;
+-- Optional: so schema panel works for all tables without per-table grants
+GRANT SELECT ON ALL TABLES IN SCHEMA your_catalog.your_schema TO `app-xxxxx datamarket`;
+```
+
+---
+
+### 4. Databricks Apps
+
+| Who | What | How to grant | Required for |
+|---|---|---|---|
+| App service principal | Auto-created by platform | Nothing needed | App identity |
+| End users | Access the app URL | Apps → datamarket → Permissions | Users to open the app at all |
+
+> By default Databricks Apps is accessible to all workspace users. Restrict via Apps → Permissions if needed.
+
+---
+
+### Summary: what requires manual action
+
+| Step | Automated? | How |
+|---|---|---|
+| Lakebase schema grants | ✅ Always | `deploy.sh` Step 7 |
+| App created & deployed | ✅ Always | `deploy.sh` Step 6 |
+| Warehouse SP "Can use" | ✅ With `--warehouse-id` flag | `deploy.sh` Step 8 |
+| UC catalog/schema visibility for SP | ✅ With `--warehouse-id` flag | `deploy.sh` Step 9 |
+| End-user UC SELECT grants | ✅ Always | DataMarket approval flow |
+
+**Fully automated deploy command:**
+```bash
+./deploy.sh \
+  --profile my-profile \
+  --admin-email you@company.com \
+  --warehouse-id YOUR_WAREHOUSE_ID \
+  --lakebase-project datamarket
+```
+
+With `--warehouse-id` provided, zero manual permission steps are required.
+
+---
 
 **No Manage tab after login**
 `ADMIN_EMAIL` in `app.yaml` doesn't match your login email. The deploy script sets this from `--admin-email`. Re-run the script with the correct email.
