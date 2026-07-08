@@ -12,6 +12,8 @@
 #   --warehouse-id   ID             SQL Warehouse ID — auto-grants SP 'Can use' permission
 #   --grant-catalogs true|false     Auto-grant SP USE CATALOG/SCHEMA on all UC catalogs (default: true)
 #   --demo-mode      true|false     Enable persona switcher (default: false)
+#   --use-bundle     true|false     Use Databricks Asset Bundle (DAB) for Lakebase+app deploy (default: false)
+#   --bundle-target  TARGET         DAB target to deploy: dev or prod (default: prod)
 #   --help                          Show this help
 # ─────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
@@ -34,6 +36,8 @@ APP_NAME="datamarket"
 DEMO_MODE="false"
 WAREHOUSE_ID=""
 GRANT_CATALOGS="true"
+USE_BUNDLE="false"
+BUNDLE_TARGET="prod"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # ── Parse args ────────────────────────────────────────────────────────────────
@@ -46,6 +50,8 @@ while [[ $# -gt 0 ]]; do
     --demo-mode)        DEMO_MODE="$2";        shift 2 ;;
     --warehouse-id)     WAREHOUSE_ID="$2";     shift 2 ;;
     --grant-catalogs)   GRANT_CATALOGS="$2";   shift 2 ;;
+    --use-bundle)       USE_BUNDLE="$2";       shift 2 ;;
+    --bundle-target)    BUNDLE_TARGET="$2";    shift 2 ;;
     --help|-h)
       sed -n '/^# /p' "$0" | sed 's/^# \{0,1\}//'
       exit 0 ;;
@@ -105,7 +111,158 @@ WS_USER_PATH="${WS_USER//@/%40}"  # URL-encode @ for workspace path display
 WORKSPACE_PATH="/Workspace/Users/${WS_USER}/${APP_NAME}"
 info "Workspace path: ${WORKSPACE_PATH}"
 
-# ── Detect Lakebase ───────────────────────────────────────────────────────────
+# ── Bundle path ───────────────────────────────────────────────────────────────
+# When --use-bundle true, the DAB handles Lakebase provisioning + app deploy.
+# deploy.sh then picks up from Step 7 (Lakebase schema grants) onwards.
+if [[ "$USE_BUNDLE" == "true" ]]; then
+  BUNDLE_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"  # repo root (3 levels up from src/app)
+  if [[ ! -f "${BUNDLE_ROOT}/databricks.yml" ]]; then
+    fail "databricks.yml not found at ${BUNDLE_ROOT}. Run from the repo root or check --use-bundle."
+  fi
+
+  info "─── Bundle mode (DAB) — steps 3–6 handled by databricks bundle deploy ───"
+  info "Bundle root: ${BUNDLE_ROOT}"
+  info "Target: ${BUNDLE_TARGET}"
+
+  # Validate CLI version (postgres_projects needs >= 0.287.0)
+  CLI_VERSION=$(databricks -v 2>&1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)
+  info "Databricks CLI version: ${CLI_VERSION:-unknown}"
+
+  # Build frontend first (DAB doesn't know how to build Node apps)
+  step 3 "Building frontend"
+  (cd "$SCRIPT_DIR" && npm install --silent 2>/dev/null && npm run build:local 2>&1 | tail -4)
+  ok "Build complete"
+
+  # Ensure app.yaml exists (required in source dir before bundle deploy)
+  step 4 "Checking app.yaml"
+  if [[ ! -f "${SCRIPT_DIR}/app.yaml" ]]; then
+    info "app.yaml not found — generating from values provided..."
+    # Discover Lakebase hostname for app.yaml (needed even in bundle mode)
+    LAKEBASE_HOST=""
+    LAKEBASE_CACHE_FILE="${SCRIPT_DIR}/.lakebase-${APP_NAME}.cache"
+    BRANCH_NAME=$(databricks api get "2.0/postgres/autoscaling/projects/${LAKEBASE_PROJECT}/branches" \
+      --profile "$PROFILE" 2>/dev/null \
+      | python3 -c "
+import sys, json
+try:
+    d = json.load(sys.stdin)
+    branches = d.get('branches', d.get('items', []))
+    prod = next((b.get('name','') for b in branches if b.get('name','') == 'production'), '')
+    first = branches[0].get('name','') if branches else ''
+    print(prod or first)
+except: print('')
+" 2>/dev/null || true)
+    if [[ -n "$BRANCH_NAME" ]]; then
+      LAKEBASE_ENDPOINT_PATH="projects/${LAKEBASE_PROJECT}/branches/${BRANCH_NAME}/endpoints/primary"
+      LAKEBASE_HOST=$(databricks api get "2.0/postgres/endpoints/${LAKEBASE_ENDPOINT_PATH}" \
+        --profile "$PROFILE" 2>/dev/null \
+        | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('read_write_dns','') or d.get('dns','') or '')" 2>/dev/null || true)
+    fi
+    if [[ -z "$LAKEBASE_HOST" && -f "$LAKEBASE_CACHE_FILE" ]]; then
+      LAKEBASE_HOST=$(cat "$LAKEBASE_CACHE_FILE" 2>/dev/null || true)
+    fi
+    if [[ -z "$LAKEBASE_HOST" ]]; then
+      warn "Lakebase hostname not yet discoverable (project may not exist yet)."
+      warn "The DAB will provision Lakebase. After 'databricks bundle deploy' completes, re-run this script to finalize app.yaml."
+      info "Proceeding with bundle deploy — app.yaml will be created after Lakebase is up."
+    fi
+    LAKEBASE_ENDPOINT="${LAKEBASE_ENDPOINT_PATH:-projects/${LAKEBASE_PROJECT}/branches/production/endpoints/primary}"
+    cat > "${SCRIPT_DIR}/app.yaml" << YAML
+command:
+  - "node"
+  - "app.js"
+env:
+  - name: DATABRICKS_HOST
+    value: "${DATABRICKS_HOST}"
+  - name: ADMIN_EMAIL
+    value: "${ADMIN_EMAIL}"
+  - name: LAKEBASE_HOST
+    value: "${LAKEBASE_HOST}"
+  - name: LAKEBASE_DB
+    value: "databricks_postgres"
+  - name: LAKEBASE_SCHEMA
+    value: "${APP_NAME}"
+  - name: LAKEBASE_ENDPOINT
+    value: "${LAKEBASE_ENDPOINT}"
+  - name: DEMO_MODE
+    value: "${DEMO_MODE}"
+YAML
+    ok "app.yaml written"
+  else
+    ok "app.yaml already exists — using as-is"
+  fi
+
+  step 5 "Running databricks bundle deploy (Lakebase + App)"
+  cd "$BUNDLE_ROOT"
+  databricks bundle deploy -t "$BUNDLE_TARGET" \
+    --var "admin_email=${ADMIN_EMAIL}" \
+    --var "demo_mode=${DEMO_MODE}" \
+    --var "lakebase_project=${LAKEBASE_PROJECT}" \
+    --var "app_name=${APP_NAME}" \
+    --profile "$PROFILE" 2>&1 | tail -10
+  ok "Bundle deployed"
+  cd "$SCRIPT_DIR"
+
+  # After bundle deploy, update app.yaml with discovered Lakebase hostname if missing
+  step 6 "Refreshing app.yaml with Lakebase hostname"
+  LAKEBASE_CACHE_FILE="${SCRIPT_DIR}/.lakebase-${APP_NAME}.cache"
+  BRANCH_NAME=$(databricks api get "2.0/postgres/autoscaling/projects/${LAKEBASE_PROJECT}/branches" \
+    --profile "$PROFILE" 2>/dev/null \
+    | python3 -c "
+import sys, json
+try:
+    d = json.load(sys.stdin)
+    branches = d.get('branches', d.get('items', []))
+    prod = next((b.get('name','') for b in branches if b.get('name','') == 'production'), '')
+    first = branches[0].get('name','') if branches else ''
+    print(prod or first)
+except: print('')
+" 2>/dev/null || true)
+  if [[ -n "$BRANCH_NAME" ]]; then
+    LAKEBASE_ENDPOINT="projects/${LAKEBASE_PROJECT}/branches/${BRANCH_NAME}/endpoints/primary"
+    LAKEBASE_HOST=$(databricks api get "2.0/postgres/endpoints/${LAKEBASE_ENDPOINT}" \
+      --profile "$PROFILE" 2>/dev/null \
+      | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('read_write_dns','') or d.get('dns','') or '')" 2>/dev/null || true)
+    if [[ -n "$LAKEBASE_HOST" ]]; then
+      echo "$LAKEBASE_HOST" > "$LAKEBASE_CACHE_FILE"
+      # Patch app.yaml with real hostname
+      python3 -c "
+import re, sys
+with open('${SCRIPT_DIR}/app.yaml', 'r') as f: content = f.read()
+content = re.sub(r'(name: LAKEBASE_HOST\n\s+value: \")[^\"]*\"', r'\1${LAKEBASE_HOST}\"', content)
+with open('${SCRIPT_DIR}/app.yaml', 'w') as f: f.write(content)
+print('app.yaml patched with real Lakebase hostname')
+"
+      # Redeploy app with correct Lakebase host
+      info "Redeploying app with correct Lakebase hostname..."
+      databricks apps deploy "$APP_NAME" \
+        --source-code-path "${WORKSPACE_PATH}" \
+        --profile "$PROFILE" 2>&1 | tail -3 || true
+      ok "app.yaml updated: ${LAKEBASE_HOST}"
+    fi
+  fi
+
+  # Skip to grants — app is already deployed via bundle
+  TOTAL_STEPS=9
+  SP_UUID=$(databricks apps get "$APP_NAME" --profile "$PROFILE" --output json 2>/dev/null \
+    | python3 -c "
+import sys, json
+d = json.load(sys.stdin)
+candidates = [
+  d.get('service_principal_client_id'),
+  d.get('service_principal', {}).get('client_id'),
+]
+print(next((c for c in candidates if c), ''))
+" 2>/dev/null || true)
+
+  # Jump straight to step 7 (grants)
+  # shellcheck disable=SC2034
+  BUNDLE_DEPLOY_DONE=true
+fi
+
+# ── Standard path: Lakebase detection, app.yaml gen, build, upload, deploy ───
+if [[ "${BUNDLE_DEPLOY_DONE:-false}" != "true" ]]; then
+
 step 3 "Detecting Lakebase configuration"
 
 LAKEBASE_HOST=""
@@ -259,6 +416,8 @@ else
   echo "$DEPLOY_OUT" | tail -10
   fail "Deploy did not reach SUCCEEDED state. Check the output above."
 fi
+
+fi  # end standard path (not bundle mode)
 
 # ── Lakebase schema grants ────────────────────────────────────────────────────
 step 7 "Granting Lakebase schema permissions to the app service principal"
