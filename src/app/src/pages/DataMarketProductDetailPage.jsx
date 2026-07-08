@@ -147,9 +147,8 @@ function DataSchemaPanel({ product, accessGranted, onRequestAccess, onTableComme
       .then(data => {
         setSchemaSource(data.source)
         if (data.table_comment && onTableComment) onTableComment(data.table_comment)
-        if (data.source === 'unity_catalog' || data.source === 'unity_catalog_rest') {
-          if (data.columns?.length) setSchema(data.columns)
-          else setSchema(getSchema(product))
+        if ((data.source === 'unity_catalog' || data.source === 'unity_catalog_rest') && data.columns?.length) {
+          setSchema(data.columns)
         } else {
           setSchema(getSchema(product))
         }
@@ -159,15 +158,13 @@ function DataSchemaPanel({ product, accessGranted, onRequestAccess, onTableComme
   }, [product?.product_ref])
 
   const cols = schema || []
-  const piiCount = cols.filter(c => c.sensitivity === 'PII').length
-  const confCount = cols.filter(c => c.sensitivity === 'CONFIDENTIAL').length
-  const standardMasked = cols.filter(c => c.masked && !c.elevatedPII)
-  const elevatedMasked = cols.filter(c => c.elevatedPII)
-  const unlockedCount = accessGranted ? standardMasked.length : 0
-  const stillMaskedCount = elevatedMasked.length
+  const piiCount    = cols.filter(c => c.sensitivity === 'PII').length
+  const confCount   = cols.filter(c => c.sensitivity === 'CONFIDENTIAL').length
+  const restrictedCount = cols.filter(c => c.masked).length
 
   return (
     <div className="bg-white rounded-2xl border border-gray-200 p-6 mt-6">
+      {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3 flex-wrap">
           <div className="flex items-center gap-2">
@@ -188,25 +185,10 @@ function DataSchemaPanel({ product, accessGranted, onRequestAccess, onTableComme
                 {confCount} Confidential
               </span>
             )}
-            {!accessGranted && (standardMasked.length + elevatedMasked.length) > 0 && (
-              <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-gray-100 text-gray-600 border border-gray-200">
-                {standardMasked.length + elevatedMasked.length} masked
-              </span>
-            )}
-            {accessGranted && unlockedCount > 0 && (
-              <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-emerald-100 text-emerald-700 border border-emerald-200 flex items-center gap-1">
-                <CheckCircle2 className="h-2.5 w-2.5" /> {unlockedCount} unlocked
-              </span>
-            )}
-            {accessGranted && stillMaskedCount > 0 && (
-              <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-red-100 text-red-700 border border-red-200 flex items-center gap-1">
-                <Lock className="h-2.5 w-2.5" /> {stillMaskedCount} elevated PII
-              </span>
-            )}
           </div>
         </div>
         <button onClick={() => setExpanded(v => !v)} className="text-xs text-gray-400 hover:text-gray-700 flex items-center gap-1">
-          {expanded ? <><EyeOff className="h-3.5 w-3.5" /> Hide</> : <><Eye className="h-3.5 w-3.5" /> Show schema</>}
+          {expanded ? <><EyeOff className="h-3.5 w-3.5" /> Hide</> : <><Eye className="h-3.5 w-3.5" /> Show</>}
         </button>
       </div>
 
@@ -227,45 +209,22 @@ function DataSchemaPanel({ product, accessGranted, onRequestAccess, onTableComme
                     <th className="text-left px-3 py-2 text-gray-500 font-medium">Type</th>
                     <th className="text-left px-3 py-2 text-gray-500 font-medium">Description</th>
                     <th className="text-left px-3 py-2 text-gray-500 font-medium">Sensitivity</th>
-                    <th className="text-left px-3 py-2 text-gray-500 font-medium">Access</th>
                   </tr>
                 </thead>
                 <tbody>
                   {cols.map((col, i) => {
                     const cfg = sensitivityConfig[col.sensitivity] || sensitivityConfig.INTERNAL
                     const SIcon = cfg.icon
-                    const isLocked = col.masked && !accessGranted
-                    const isElevated = col.elevatedPII && accessGranted
-                    const isUnmasked = col.masked && !col.elevatedPII && accessGranted
                     return (
                       <tr key={i} className="border-b border-gray-50 last:border-0">
                         <td className="px-3 py-2.5 font-mono text-gray-800 font-medium">{col.name}</td>
                         <td className="px-3 py-2.5 text-gray-400 font-mono">{col.type}</td>
-                        <td className="px-3 py-2.5 text-gray-500">{col.description}</td>
+                        <td className="px-3 py-2.5 text-gray-500">{col.description || '—'}</td>
                         <td className="px-3 py-2.5">
                           <span className={`inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border font-medium ${cfg.color}`}>
                             <SIcon className="h-2.5 w-2.5" />
                             {cfg.label}
                           </span>
-                        </td>
-                        <td className="px-3 py-2.5">
-                          {isLocked ? (
-                            <span className="inline-flex items-center gap-1 text-[10px] text-red-600 bg-red-50 border border-red-100 px-1.5 py-0.5 rounded font-medium">
-                              <Lock className="h-2.5 w-2.5" /> Masked
-                            </span>
-                          ) : isElevated ? (
-                            <span className="inline-flex items-center gap-1 text-[10px] text-red-600 bg-red-50 border border-red-100 px-1.5 py-0.5 rounded font-medium">
-                              <ShieldAlert className="h-2.5 w-2.5" /> Elevated PII
-                            </span>
-                          ) : isUnmasked ? (
-                            <span className="inline-flex items-center gap-1 text-[10px] text-emerald-600 bg-emerald-50 border border-emerald-100 px-1.5 py-0.5 rounded font-medium">
-                              <CheckCircle2 className="h-2.5 w-2.5" /> Unmasked
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 text-[10px] text-gray-500 px-1.5 py-0.5 rounded font-medium">
-                              <CheckCircle2 className="h-2.5 w-2.5 text-gray-400" /> Visible
-                            </span>
-                          )}
                         </td>
                       </tr>
                     )
@@ -275,167 +234,37 @@ function DataSchemaPanel({ product, accessGranted, onRequestAccess, onTableComme
             </div>
           )}
 
-          {!loading && !accessGranted && (standardMasked.length + elevatedMasked.length) > 0 && (
-            <div className="mt-3 flex items-center justify-between gap-3 bg-amber-50 border border-amber-100 rounded-lg px-4 py-3">
-              <div className="flex items-center gap-2">
-                <ShieldAlert className="h-4 w-4 text-amber-600 shrink-0" />
-                <p className="text-xs text-amber-800">
-                  <strong>{standardMasked.length + elevatedMasked.length} column{standardMasked.length + elevatedMasked.length !== 1 ? 's are' : ' is'} masked</strong> by Unity Catalog ABAC policy.
-                  {piiCount > 0 && ` ${piiCount} PII column${piiCount !== 1 ? 's require' : ' requires'} explicit access grant.`}
+          {/* Access CTA — below table, only when no access */}
+          {!loading && cols.length > 0 && !accessGranted && (
+            <div className="mt-4 flex items-center justify-between gap-4 bg-gray-50 border border-gray-200 rounded-xl px-4 py-3">
+              <div>
+                <p className="text-xs font-medium text-gray-800">Want to query this dataset?</p>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Request access to run SQL, use Genie, or connect via Excel and BI tools.
+                  {restrictedCount > 0 && ` ${restrictedCount} sensitive column${restrictedCount !== 1 ? 's are' : ' is'} governed by Unity Catalog policy.`}
                 </p>
               </div>
               <button onClick={onRequestAccess}
-                className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium text-white flex items-center gap-1.5 whitespace-nowrap"
+                className="shrink-0 px-4 py-2 rounded-lg text-xs font-medium text-white flex items-center gap-1.5 whitespace-nowrap"
                 style={{ backgroundColor: DataMarket_BLUE }}>
-                <Lock className="h-3 w-3" /> Request Access
+                Request Access
               </button>
             </div>
           )}
 
+          {/* Access granted confirmation */}
           {!loading && accessGranted && (
-            <div className="mt-3 space-y-2">
-              {unlockedCount > 0 && (
-                <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-100 rounded-lg px-4 py-3">
-                  <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
-                  <p className="text-xs text-emerald-800">
-                    Your approved access has <strong>unmasked {unlockedCount} column{unlockedCount !== 1 ? 's' : ''}</strong> via Unity Catalog ABAC policy. Enforced at the query engine — applies across SQL, Genie, Excel, and all connected tools.
-                  </p>
-                </div>
-              )}
-              {stillMaskedCount > 0 && (
-                <div className="flex items-center gap-2 bg-red-50 border border-red-100 rounded-lg px-4 py-3">
-                  <ShieldAlert className="h-4 w-4 text-red-600 shrink-0" />
-                  <p className="text-xs text-red-800">
-                    <strong>{stillMaskedCount} column{stillMaskedCount !== 1 ? 's remain' : ' remains'} masked</strong> — these are Elevated PII fields requiring a separate, higher-privilege access grant from your Data Steward.
-                  </p>
-                </div>
-              )}
+            <div className="mt-3 flex items-center gap-2 bg-emerald-50 border border-emerald-100 rounded-lg px-4 py-3">
+              <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
+              <p className="text-xs text-emerald-800">
+                <strong>Access granted</strong> — you can query this dataset in SQL, Genie, or any connected tool. UC policies are enforced at the query engine.
+              </p>
             </div>
           )}
         </>
       )}
     </div>
   )
-}
-
-// Generic sample data schemas indexed by domain/category
-// rows: shown blurred when no access (masked cols also ••••)
-// grantedRows: shown after approval — standard masked cols show real values, elevatedPII cols stay ••••
-const sampleDataByDomain = {
-  Budget: {
-    columns: ['Department', 'FY Budget', 'YTD Spent', 'Variance', 'Status', 'Cost Center', 'Approver ID'],
-    rows: [
-      ['Public Works',    '$4.2M', '$3.1M', '+$1.1M', 'On Track',    '••••••', '•••••••'],
-      ['Health Services', '$8.7M', '$7.9M', '+$0.8M', 'On Track',    '••••••', '•••••••'],
-      ['IT & Digital',    '$2.3M', '$2.6M', '-$0.3M', 'Over Budget', '••••••', '•••••••'],
-      ['Parks & Rec',     '$1.8M', '$1.2M', '+$0.6M', 'Under Spend', '••••••', '•••••••'],
-    ],
-    grantedRows: [
-      ['Public Works',    '$4.2M', '$3.1M', '+$1.1M', 'On Track',    'CC-1042', 'EMP-8821'],
-      ['Health Services', '$8.7M', '$7.9M', '+$0.8M', 'On Track',    'CC-2207', 'EMP-6634'],
-      ['IT & Digital',    '$2.3M', '$2.6M', '-$0.3M', 'Over Budget', 'CC-3318', 'EMP-7741'],
-      ['Parks & Rec',     '$1.8M', '$1.2M', '+$0.6M', 'Under Spend', 'CC-0915', 'EMP-5502'],
-    ],
-  },
-  HRIS: {
-    columns: ['Department', 'Job Title', 'Headcount', 'Turnover Rate', 'Avg Salary', 'Employee ID', 'SSN Last 4', 'Date of Birth'],
-    rows: [
-      ['Finance',      'Senior Analyst',  '142', '4.2%', '••••••', '•••••••', '••••', '••/••/••••'],
-      ['Engineering',  'Staff Engineer',  '88',  '6.1%', '••••••', '•••••••', '••••', '••/••/••••'],
-      ['HR & Admin',   'HR Generalist',   '56',  '3.8%', '••••••', '•••••••', '••••', '••/••/••••'],
-      ['Operations',   'Operations Lead', '210', '8.3%', '••••••', '•••••••', '••••', '••/••/••••'],
-    ],
-    grantedRows: [
-      ['Finance',      'Senior Analyst',  '142', '4.2%', '$78,400', 'EMP-4421', '••••', '••/••/••••'],
-      ['Engineering',  'Staff Engineer',  '88',  '6.1%', '$94,200', 'EMP-3817', '••••', '••/••/••••'],
-      ['HR & Admin',   'HR Generalist',   '56',  '3.8%', '$72,100', 'EMP-2094', '••••', '••/••/••••'],
-      ['Operations',   'Operations Lead', '210', '8.3%', '$65,800', 'EMP-5503', '••••', '••/••/••••'],
-    ],
-  },
-  Payroll: {
-    columns: ['Pay Period', 'Department', 'Gross Pay', 'Net Pay', 'Overtime Hrs', 'Employee ID', 'Bank Acct Last 4'],
-    rows: [
-      ['Jan 2025', 'Engineering',   '••••••', '••••••', '284', '•••••••', '••••'],
-      ['Jan 2025', 'Finance',       '••••••', '••••••', '142', '•••••••', '••••'],
-      ['Feb 2025', 'Operations',    '••••••', '••••••', '510', '•••••••', '••••'],
-      ['Feb 2025', 'Health Svcs',   '••••••', '••••••', '338', '•••••••', '••••'],
-    ],
-    grantedRows: [
-      ['Jan 2025', 'Engineering',  '$3.8M', '$3.2M', '284', 'EMP-4421', '••••'],
-      ['Jan 2025', 'Finance',      '$2.1M', '$1.8M', '142', 'EMP-3817', '••••'],
-      ['Feb 2025', 'Operations',   '$5.2M', '$4.4M', '510', 'EMP-2094', '••••'],
-      ['Feb 2025', 'Health Svcs',  '$4.6M', '$3.9M', '338', 'EMP-5503', '••••'],
-    ],
-  },
-  'Property Tax': {
-    columns: ['Parcel ID', 'District', 'Assessed Value', 'Tax Levied', 'Status', 'Owner Name', 'Owner Address'],
-    rows: [
-      ['PAR-00142', 'District 1', '$1.24M', '$12,400', 'Paid',    '••••••••••', '•••••••••••••••'],
-      ['PAR-00387', 'District 2', '$0.88M', '$8,800',  'Paid',    '••••••••••', '•••••••••••••••'],
-      ['PAR-00591', 'District 1', '$2.10M', '$21,000', 'Delinquent','••••••••••', '•••••••••••••••'],
-      ['PAR-00743', 'District 3', '$1.65M', '$16,500', 'Paid',    '••••••••••', '•••••••••••••••'],
-    ],
-    grantedRows: [
-      ['PAR-00142', 'District 1', '$1.24M', '$12,400', 'Paid',     '••••••••••', '•••••••••••••••'],
-      ['PAR-00387', 'District 2', '$0.88M', '$8,800',  'Paid',     '••••••••••', '•••••••••••••••'],
-      ['PAR-00591', 'District 1', '$2.10M', '$21,000', 'Delinquent','••••••••••', '•••••••••••••••'],
-      ['PAR-00743', 'District 3', '$1.65M', '$16,500', 'Paid',     '••••••••••', '•••••••••••••••'],
-    ],
-  },
-  Demographics: {
-    columns: ['Age Group', 'Population', 'Median Income', 'Households', '% Total'],
-    rows: [
-      ['Under 18', '241,832', 'N/A',     '—',       '18.4%'],
-      ['18–34',    '298,441', '$52,400', '118,200', '22.7%'],
-      ['35–54',    '342,108', '$74,800', '156,400', '26.1%'],
-      ['55+',      '422,619', '$61,200', '198,300', '32.2%'],
-    ],
-    grantedRows: [
-      ['Under 18', '241,832', 'N/A',     '—',       '18.4%'],
-      ['18–34',    '298,441', '$52,400', '118,200', '22.7%'],
-      ['35–54',    '342,108', '$74,800', '156,400', '26.1%'],
-      ['55+',      '422,619', '$61,200', '198,300', '32.2%'],
-    ],
-  },
-  'Public Safety': {
-    columns: ['Incident ID', 'Type', 'Response Time', 'District', 'Officer Badge', 'Victim Name'],
-    rows: [
-      ['INC-2041', 'Medical',  '4.2 min', 'District 3', '•••••••', '••••••••••'],
-      ['INC-2042', 'Fire',     '6.8 min', 'District 1', '•••••••', '••••••••••'],
-      ['INC-2043', 'Crime',    '8.1 min', 'District 5', '•••••••', '••••••••••'],
-      ['INC-2044', 'Medical',  '3.5 min', 'District 2', '•••••••', '••••••••••'],
-    ],
-    grantedRows: [
-      ['INC-2041', 'Medical',  '4.2 min', 'District 3', 'BDG-1142', '••••••••••'],
-      ['INC-2042', 'Fire',     '6.8 min', 'District 1', 'BDG-0887', '••••••••••'],
-      ['INC-2043', 'Crime',    '8.1 min', 'District 5', 'BDG-2201', '••••••••••'],
-      ['INC-2044', 'Medical',  '3.5 min', 'District 2', 'BDG-1554', '••••••••••'],
-    ],
-  },
-}
-
-function getSampleData(product) {
-  const domain = (product.category || product.domain || '').toLowerCase()
-  const name = (product.name || '').toLowerCase()
-  if (domain.includes('hris') || domain.includes('ehr') || domain.includes('human resource') || name.includes('employee') || name.includes('headcount') || name.includes('workforce'))
-    return sampleDataByDomain['HRIS']
-  if (domain.includes('payroll') || name.includes('payroll') || name.includes('compensation'))
-    return sampleDataByDomain['Payroll']
-  if (domain.includes('budget') || domain.includes('financ') || domain.includes('account') || name.includes('budget') || name.includes('expenditure'))
-    return sampleDataByDomain['Budget']
-  if (domain.includes('property tax') || domain.includes('tax') || name.includes('property tax'))
-    return sampleDataByDomain['Property Tax']
-  if (domain.includes('demograph') || domain.includes('census') || name.includes('census') || name.includes('population'))
-    return sampleDataByDomain['Demographics']
-  if (domain.includes('public safety') || name.includes('incident') || name.includes('public safety'))
-    return sampleDataByDomain['Public Safety']
-  const fallbackRows = [
-    ['001', 'Sample Record A', product.category || 'General', '$12,400', '01/15/2025'],
-    ['002', 'Sample Record B', product.category || 'General', '$8,700', '01/20/2025'],
-    ['003', 'Sample Record C', product.category || 'General', '$23,100', '02/01/2025'],
-    ['004', 'Sample Record D', product.category || 'General', '$5,890', '02/11/2025'],
-  ]
-  return { columns: ['ID', 'Name', 'Category', 'Value', 'Updated'], rows: fallbackRows, grantedRows: fallbackRows }
 }
 
 function SampleDataPreview({ product, accessGranted, onRequestAccess }) {
@@ -1049,12 +878,6 @@ export function DataMarketProductDetailPage({ product, onBack, onNavigate }) {
         accessGranted={accessGranted}
         onRequestAccess={() => setShowModal(true)}
         onTableComment={setUcDescription}
-      />
-
-      <SampleDataPreview
-        product={product}
-        accessGranted={accessGranted}
-        onRequestAccess={() => setShowModal(true)}
       />
 
       {showModal && <AccessRequestModal product={product} onClose={() => setShowModal(false)} />}
