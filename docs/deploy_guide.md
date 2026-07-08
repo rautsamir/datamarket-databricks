@@ -104,6 +104,8 @@ That's it. The script handles the rest.
 | `--warehouse-id` | none | SQL Warehouse ID — script auto-grants SP "Can use" permission |
 | `--grant-catalogs` | `true` | Auto-grant SP `USE CATALOG` + `USE SCHEMA` on all UC catalogs |
 | `--demo-mode` | `false` | `true` = persona switcher (demos/POCs); `false` = real SSO + UC grants |
+| `--use-bundle` | `false` | `true` = use DAB for Lakebase+app deploy (requires CLI ≥ 0.287.0) |
+| `--bundle-target` | `prod` | DAB target: `dev` or `prod` |
 
 ---
 
@@ -266,4 +268,76 @@ git pull origin main
   --profile my-profile \
   --admin-email you@company.com \
   --lakebase-project datamarket
+```
+
+---
+
+## Alternative: Deploy with Databricks Asset Bundles (DAB)
+
+If you prefer infrastructure-as-code or are integrating into a CI/CD pipeline, DataMarket ships with a full `databricks.yml` that provisions Lakebase **and** deploys the app declaratively.
+
+**Requires:** Databricks CLI ≥ 0.287.0
+
+```bash
+# Check your CLI version
+databricks -v
+
+# Upgrade if needed
+pip install --upgrade databricks-cli
+```
+
+### DAB deploy command
+
+```bash
+# From the repo root (where databricks.yml lives)
+cd datamarket-databricks
+
+# Step 1: Build frontend + generate app.yaml
+cd lac_dna_portal/src/app
+./deploy.sh \
+  --profile      my-profile \
+  --admin-email  you@company.com \
+  --warehouse-id YOUR_WAREHOUSE_ID \
+  --use-bundle   true \
+  --bundle-target prod
+```
+
+The `--use-bundle true` flag changes the deploy flow:
+
+| Standard (`deploy.sh` only) | Bundle mode (`--use-bundle true`) |
+|---|---|
+| Script detects/prompts for Lakebase | DAB provisions `postgres_projects` + `postgres_branches` + `postgres_endpoints` |
+| Script uploads files + deploys app via CLI | DAB handles `databricks bundle deploy` |
+| Script runs Lakebase schema grants | Script still runs psql grants (DAB can't do this) |
+| Script grants Warehouse + UC permissions | Script still runs API grants |
+
+### Pure DAB (CI/CD usage)
+
+For CI/CD pipelines where you want to use the bundle directly:
+
+```bash
+# From repo root — provision Lakebase + deploy app
+databricks bundle deploy -t prod \
+  --var admin_email=you@company.com \
+  --var demo_mode=false \
+  --var lakebase_project=datamarket \
+  --profile my-profile
+
+# Then run grants (still required — DAB doesn't do psql or permissions API)
+cd lac_dna_portal/src/app
+./deploy.sh \
+  --profile      my-profile \
+  --admin-email  you@company.com \
+  --warehouse-id YOUR_WAREHOUSE_ID \
+  --use-bundle   true   # skips re-deploy, only runs grant steps
+```
+
+### DAB resource overview
+
+```yaml
+# databricks.yml provisions:
+postgres_projects:   datamarket     # Lakebase project
+postgres_branches:   production     # Production branch (no-expiry)
+postgres_endpoints:  primary        # Read-write endpoint (0.5–4 CU autoscaling)
+apps:                datamarket     # Databricks App
 ```
