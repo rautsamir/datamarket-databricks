@@ -5,12 +5,14 @@
 # Usage: ./deploy.sh [options]
 #
 # Options:
-#   --profile     PROFILE        Databricks CLI profile (default: DEFAULT)
-#   --admin-email EMAIL          Your email — gets admin role on first login (required)
-#   --lakebase-project NAME      Lakebase autoscaling project name (default: datamarket)
-#   --app-name    NAME           Databricks App name (default: datamarket)
-#   --demo-mode   true|false     Enable persona switcher (default: false)
-#   --help                       Show this help
+#   --profile        PROFILE        Databricks CLI profile (default: DEFAULT)
+#   --admin-email    EMAIL          Your email — gets admin role on first login (required)
+#   --lakebase-project NAME         Lakebase autoscaling project name (default: datamarket)
+#   --app-name       NAME           Databricks App name (default: datamarket)
+#   --warehouse-id   ID             SQL Warehouse ID — auto-grants SP 'Can use' permission
+#   --grant-catalogs true|false     Auto-grant SP USE CATALOG/SCHEMA on all UC catalogs (default: true)
+#   --demo-mode      true|false     Enable persona switcher (default: false)
+#   --help                          Show this help
 # ─────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 
@@ -22,7 +24,7 @@ warn() { echo -e "${YELLOW}⚠${NC} $*"; }
 fail() { echo -e "${RED}✗ ERROR:${NC} $*"; exit 1; }
 step() { echo -e "\n${BOLD}${BLUE}[$1/$TOTAL_STEPS]${NC} ${BOLD}$2${NC}"; }
 
-TOTAL_STEPS=7
+TOTAL_STEPS=9
 
 # ── Defaults ─────────────────────────────────────────────────────────────────
 PROFILE="DEFAULT"
@@ -30,16 +32,20 @@ ADMIN_EMAIL=""
 LAKEBASE_PROJECT="datamarket"
 APP_NAME="datamarket"
 DEMO_MODE="false"
+WAREHOUSE_ID=""
+GRANT_CATALOGS="true"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # ── Parse args ────────────────────────────────────────────────────────────────
 while [[ $# -gt 0 ]]; do
   case $1 in
-    --profile)        PROFILE="$2";         shift 2 ;;
-    --admin-email)    ADMIN_EMAIL="$2";     shift 2 ;;
+    --profile)          PROFILE="$2";          shift 2 ;;
+    --admin-email)      ADMIN_EMAIL="$2";      shift 2 ;;
     --lakebase-project) LAKEBASE_PROJECT="$2"; shift 2 ;;
-    --app-name)       APP_NAME="$2";        shift 2 ;;
-    --demo-mode)      DEMO_MODE="$2";       shift 2 ;;
+    --app-name)         APP_NAME="$2";         shift 2 ;;
+    --demo-mode)        DEMO_MODE="$2";        shift 2 ;;
+    --warehouse-id)     WAREHOUSE_ID="$2";     shift 2 ;;
+    --grant-catalogs)   GRANT_CATALOGS="$2";   shift 2 ;;
     --help|-h)
       sed -n '/^# /p' "$0" | sed 's/^# \{0,1\}//'
       exit 0 ;;
@@ -333,7 +339,84 @@ else
   fi
 fi
 
-# ── Done ──────────────────────────────────────────────────────────────────────
+# ── Warehouse SP permission ───────────────────────────────────────────────────
+step 8 "Granting SQL Warehouse 'Can use' to app service principal"
+
+if [[ -z "$WAREHOUSE_ID" ]]; then
+  warn "No --warehouse-id provided. Skipping warehouse permission grant."
+  warn "To automate this, re-run with: --warehouse-id YOUR_WAREHOUSE_ID"
+  warn "Or grant manually: SQL Warehouses → your warehouse → Permissions → Add SP"
+elif [[ -z "$SP_UUID" ]]; then
+  warn "SP UUID not detected — skipping warehouse grant. Grant manually in the UI."
+else
+  WAREHOUSE_PERM_PAYLOAD="{\"access_control_list\":[{\"service_principal_name\":\"${SP_UUID}\",\"permission_level\":\"CAN_USE\"}]}"
+  WAREHOUSE_PERM_RESULT=$(databricks api patch "2.0/permissions/warehouses/${WAREHOUSE_ID}" \
+    --profile "$PROFILE" \
+    --body "$WAREHOUSE_PERM_PAYLOAD" 2>&1 || echo "error")
+
+  if echo "$WAREHOUSE_PERM_RESULT" | grep -qi "error\|Error\|INTERNAL"; then
+    warn "Warehouse permission grant returned a warning (may already be set or partial):"
+    echo "$WAREHOUSE_PERM_RESULT" | head -3
+  else
+    ok "SP '${SP_UUID}' granted CAN_USE on warehouse ${WAREHOUSE_ID}"
+  fi
+fi
+
+# ── UC Catalog / Schema grants ────────────────────────────────────────────────
+step 9 "Granting SP USE CATALOG + USE SCHEMA on all Unity Catalog catalogs"
+
+if [[ "$GRANT_CATALOGS" != "true" ]]; then
+  warn "UC catalog grants skipped (--grant-catalogs false)."
+elif [[ -z "$SP_UUID" ]]; then
+  warn "SP UUID not detected — skipping UC grants. Run the SQL below manually:"
+  echo "  GRANT USE CATALOG ON CATALOG <catalog> TO \`<sp-uuid>\`;"
+elif [[ -z "$WAREHOUSE_ID" ]]; then
+  warn "No warehouse ID available — cannot execute UC GRANTs. Pass --warehouse-id to automate."
+else
+  info "Listing UC catalogs visible to this profile..."
+
+  CATALOGS=$(databricks api get "2.1/unity-catalog/catalogs" \
+    --profile "$PROFILE" 2>/dev/null \
+    | python3 -c "
+import sys, json
+try:
+    d = json.load(sys.stdin)
+    cats = [c.get('name','') for c in d.get('catalogs',[])
+            if c.get('name','') not in ('system','__databricks_internal','hive_metastore')]
+    print(' '.join(cats))
+except: print('')
+" 2>/dev/null || true)
+
+  if [[ -z "$CATALOGS" ]]; then
+    warn "No catalogs found or insufficient permissions to list catalogs."
+  else
+    info "Found catalogs: ${CATALOGS}"
+    GRANT_ERRORS=0
+    for CATALOG in $CATALOGS; do
+      # Grant USE CATALOG + USE SCHEMA via SQL warehouse
+      GRANT_SQL="GRANT USE CATALOG ON CATALOG \`${CATALOG}\` TO \`${SP_UUID}\`; GRANT USE SCHEMA ON ALL SCHEMAS IN CATALOG \`${CATALOG}\` TO \`${SP_UUID}\`;"
+      GRANT_RESULT=$(databricks api post "2.0/sql/statements" \
+        --profile "$PROFILE" \
+        --body "{\"warehouse_id\":\"${WAREHOUSE_ID}\",\"statement\":\"GRANT USE CATALOG ON CATALOG \`${CATALOG}\` TO \`${SP_UUID}\`\",\"wait_timeout\":\"10s\"}" \
+        2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('status',{}).get('state','UNKNOWN'))" 2>/dev/null || echo "ERROR")
+
+      GRANT_SCHEMA_RESULT=$(databricks api post "2.0/sql/statements" \
+        --profile "$PROFILE" \
+        --body "{\"warehouse_id\":\"${WAREHOUSE_ID}\",\"statement\":\"GRANT USE SCHEMA ON ALL SCHEMAS IN CATALOG \`${CATALOG}\` TO \`${SP_UUID}\`\",\"wait_timeout\":\"10s\"}" \
+        2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('status',{}).get('state','UNKNOWN'))" 2>/dev/null || echo "ERROR")
+
+      if [[ "$GRANT_RESULT" == "SUCCEEDED" && "$GRANT_SCHEMA_RESULT" == "SUCCEEDED" ]]; then
+        ok "  ✓ ${CATALOG} — USE CATALOG + USE SCHEMA granted"
+      else
+        warn "  ⚠ ${CATALOG} — grant may have failed (${GRANT_RESULT} / ${GRANT_SCHEMA_RESULT}). May lack privileges on this catalog."
+        GRANT_ERRORS=$((GRANT_ERRORS + 1))
+      fi
+    done
+    [[ $GRANT_ERRORS -eq 0 ]] && ok "UC catalog grants complete" || warn "${GRANT_ERRORS} catalog(s) could not be granted — check above. These may be restricted catalogs."
+  fi
+fi
+
+
 APP_URL=$(databricks apps get "$APP_NAME" --profile "$PROFILE" --output json 2>/dev/null \
   | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('url',''))" 2>/dev/null || true)
 
@@ -350,5 +433,10 @@ echo ""
 echo -e "  ${YELLOW}Next steps in the app (2 minutes):${NC}"
 echo -e "  1. Open the URL and log in"
 echo -e "  2. Click Manage → Data Products → Import from UC"
-echo -e "  3. Click Manage → Settings → set your SQL Warehouse ID"
+if [[ -z "$WAREHOUSE_ID" ]]; then
+  echo -e "  3. Click Manage → Settings → set your SQL Warehouse ID"
+  echo -e "     Then: SQL Warehouses → your warehouse → Permissions → add app SP with 'Can use'"
+else
+  echo -e "  3. Warehouse permission already granted ✓"
+fi
 echo ""
