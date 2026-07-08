@@ -155,7 +155,75 @@ All optional features are toggled from **Manage → Settings** — no redeployme
 
 ---
 
-## Troubleshooting
+## Permissions Reference
+
+DataMarket touches four permission surfaces. This table covers everything — there is no other surface area.
+
+### 1. Lakebase (PostgreSQL)
+
+| Who | What | How to grant | Required for |
+|---|---|---|---|
+| App service principal | `USAGE + CREATE` on schema, `ALL PRIVILEGES` on tables/sequences | `deploy.sh` does this automatically (Step 7) | App to read/write all portal data |
+
+> `deploy.sh` handles this fully. No manual action needed.
+
+---
+
+### 2. SQL Warehouse
+
+| Who | What | How to grant | Required for |
+|---|---|---|---|
+| App service principal | **Can use** | Warehouse → Permissions → Add SP | UC GRANTs on approval, sample data preview, INFORMATION_SCHEMA queries |
+
+> **Manual step.** Find the SP name in Compute → Apps → datamarket → Details. One-time per warehouse.
+
+---
+
+### 3. Unity Catalog
+
+| Who | What | How to grant | Required for |
+|---|---|---|---|
+| App service principal | `USE CATALOG` + `USE SCHEMA` on catalogs you want to browse | UC → Permissions or SQL `GRANT` | UC Import browser to see schemas/tables |
+| App service principal | `SELECT` on individual tables | Granted automatically via DataMarket approval flow | Schema panel to show real columns (REST API path) |
+| End users | `SELECT` on approved tables | DataMarket approval flow executes `GRANT SELECT` automatically | Users to actually query the data |
+
+> The UC Import browser only shows schemas the SP can see. For `samples.*`, permissions are public. For your own catalogs, grant the SP `USE CATALOG` + `USE SCHEMA` once.
+
+**Quick SQL to grant SP access to your catalog:**
+```sql
+-- Run in a Databricks notebook or SQL editor
+GRANT USE CATALOG ON CATALOG your_catalog TO `app-xxxxx datamarket`;
+GRANT USE SCHEMA  ON SCHEMA  your_catalog.your_schema TO `app-xxxxx datamarket`;
+-- Optional: so schema panel works for all tables without per-table grants
+GRANT SELECT ON ALL TABLES IN SCHEMA your_catalog.your_schema TO `app-xxxxx datamarket`;
+```
+
+---
+
+### 4. Databricks Apps
+
+| Who | What | How to grant | Required for |
+|---|---|---|---|
+| App service principal | Auto-created by platform | Nothing needed | App identity |
+| End users | Access the app URL | Apps → datamarket → Permissions | Users to open the app at all |
+
+> By default Databricks Apps is accessible to all workspace users. Restrict via Apps → Permissions if needed.
+
+---
+
+### Summary: what requires manual action
+
+| Step | Automated? | Where |
+|---|---|---|
+| Lakebase schema grants | ✅ `deploy.sh` | Automatic |
+| App created & deployed | ✅ `deploy.sh` | Automatic |
+| Warehouse SP permission | ❌ Manual | Warehouse → Permissions |
+| UC catalog/schema visibility for SP | ❌ Manual (once per catalog) | UC Permissions or SQL GRANT |
+| End-user UC SELECT grants | ✅ DataMarket approval flow | Automatic on approval |
+
+The two manual steps (warehouse permission + UC catalog grant) are one-time setup per workspace and take under 2 minutes combined.
+
+---
 
 **No Manage tab after login**
 `ADMIN_EMAIL` in `app.yaml` doesn't match your login email. The deploy script sets this from `--admin-email`. Re-run the script with the correct email.
