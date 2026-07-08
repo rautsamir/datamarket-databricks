@@ -245,46 +245,54 @@ export function registerRoutes(app) {
       const { rows: [product] } = await query('SELECT uc_full_name, domain FROM data_products WHERE product_ref = $1', [ref]);
       if (!product) return res.status(404).json({ error: 'Product not found' });
 
-      // Try live UC schema first (requires SQL warehouse in settings)
       if (product.uc_full_name) {
-        const liveSchema = await fetchUcSchema(product.uc_full_name);
-        if (liveSchema) {
-          // Also fetch table-level comment from UC REST API
-          let table_comment = '';
-          try {
-            const meta = await databricksApi('GET', `/api/2.1/unity-catalog/tables/${product.uc_full_name}`);
-            table_comment = meta.data?.comment || '';
-          } catch (_) {}
-          const payload = { source: 'unity_catalog', uc_full_name: product.uc_full_name, columns: liveSchema, table_comment };
-          cacheSet(cacheKey, payload, 5 * 60 * 1000);
-          return res.json(payload);
-        }
-
-        // Fallback: UC REST API returns columns without needing a warehouse
+        // ── Step 1: UC REST API first — fast (~300ms), no warehouse needed ──────
+        let restColumns = [];
+        let tableComment = '';
         try {
           const result = await databricksApi('GET', `/api/2.1/unity-catalog/tables/${product.uc_full_name}`);
-          const rawCols = result.data?.columns || [];
-          const tableComment = result.data?.comment || '';
-          if (rawCols.length > 0) {
-            const piiPatterns = /^(ssn|social_security|dob|date_of_birth|birth_date|email|phone|address|bank_account|credit_card|salary|compensation|wage)/i;
-            const confPatterns = /^(cost_center|approver|budget_code|account_number|internal_id)/i;
-            const columns = rawCols.map(col => {
-              const name = col.name;
-              const type = (col.type_text || col.type_name || 'STRING').toUpperCase();
-              const description = col.comment || '';
-              let sensitivity = 'INTERNAL';
-              if (piiPatterns.test(name)) sensitivity = 'PII';
-              else if (confPatterns.test(name)) sensitivity = 'CONFIDENTIAL';
-              const masked = sensitivity === 'PII' || sensitivity === 'CONFIDENTIAL';
-              const elevatedPII = sensitivity === 'PII' && /ssn|dob|date_of_birth|birth|bank|credit_card/i.test(name);
-              return { name, type, description, sensitivity, masked, elevatedPII };
-            });
-            const payload = { source: 'unity_catalog_rest', uc_full_name: product.uc_full_name, columns, table_comment: tableComment };
-            cacheSet(cacheKey, payload, 5 * 60 * 1000);
-            return res.json(payload);
-          }
+          restColumns = result.data?.columns || [];
+          tableComment = result.data?.comment || '';
         } catch (e) {
-          console.warn('[schema] UC REST API fallback failed:', e.message);
+          console.warn('[schema] UC REST API failed:', e.message);
+        }
+
+        if (restColumns.length > 0) {
+          const piiPatterns = /^(ssn|social_security|dob|date_of_birth|birth_date|email|phone|address|bank_account|credit_card|salary|compensation|wage)/i;
+          const confPatterns = /^(cost_center|approver|budget_code|account_number|internal_id)/i;
+          const columns = restColumns.map(col => {
+            const name = col.name;
+            const type = (col.type_text || col.type_name || 'STRING').toUpperCase();
+            const description = col.comment || '';
+            let sensitivity = 'INTERNAL';
+            if (piiPatterns.test(name)) sensitivity = 'PII';
+            else if (confPatterns.test(name)) sensitivity = 'CONFIDENTIAL';
+            const masked = sensitivity === 'PII' || sensitivity === 'CONFIDENTIAL';
+            const elevatedPII = sensitivity === 'PII' && /ssn|dob|date_of_birth|birth|bank|credit_card/i.test(name);
+            return { name, type, description, sensitivity, masked, elevatedPII };
+          });
+
+          // ── Step 2: Optionally enrich with UC column tags if warehouse is ready ─
+          // Only attempt if warehouse is configured — runs async enrichment, doesn't
+          // block the response. For now return REST result immediately; tag enrichment
+          // is a future enhancement (requires warehouse to be already warm).
+          const warehouseId = getSetting('sql_warehouse_id', process.env.SQL_WAREHOUSE_ID || '');
+          if (warehouseId) {
+            // Try warehouse enrichment with a short timeout — don't block if cold
+            const liveSchema = await Promise.race([
+              fetchUcSchema(product.uc_full_name),
+              new Promise(resolve => setTimeout(() => resolve(null), 3000)),
+            ]);
+            if (liveSchema) {
+              const payload = { source: 'unity_catalog', uc_full_name: product.uc_full_name, columns: liveSchema, table_comment: tableComment };
+              cacheSet(cacheKey, payload, 5 * 60 * 1000);
+              return res.json(payload);
+            }
+          }
+
+          const payload = { source: 'unity_catalog_rest', uc_full_name: product.uc_full_name, columns, table_comment: tableComment };
+          cacheSet(cacheKey, payload, 5 * 60 * 1000);
+          return res.json(payload);
         }
       }
       // Fall back to signal that frontend should use its synthetic schemas
