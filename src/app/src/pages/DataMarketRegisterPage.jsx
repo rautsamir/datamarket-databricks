@@ -203,14 +203,17 @@ export function DataMarketRegisterPage({ onNavigate, editProduct = null }) {
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Source System</label>
-              <select
+              <input
+                type="text"
+                list="source-options"
+                placeholder="e.g. ERP, HRIS, Salesforce, SAP…"
                 value={form.source}
                 onChange={e => updateForm('source', e.target.value)}
                 className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="">Select source system...</option>
-                {sourceOptions.map(s => <option key={s}>{s}</option>)}
-              </select>
+              />
+              <datalist id="source-options">
+                {sourceOptions.map(s => <option key={s} value={s} />)}
+              </datalist>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Tags</label>
