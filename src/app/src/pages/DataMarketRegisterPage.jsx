@@ -230,17 +230,25 @@ export function DataMarketRegisterPage({ onNavigate, editProduct = null }) {
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Source System</label>
-              <input
-                type="text"
-                list="source-options"
-                placeholder="e.g. ERP, HRIS, Salesforce, SAP…"
-                value={form.source}
-                onChange={e => updateForm('source', e.target.value)}
+              <select
+                value={sourceOptions.includes(form.source) ? form.source : '__custom__'}
+                onChange={e => updateForm('source', e.target.value === '__custom__' ? '' : e.target.value)}
                 className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-              <datalist id="source-options">
-                {sourceOptions.map(s => <option key={s} value={s} />)}
-              </datalist>
+              >
+                <option value="">Select source system…</option>
+                {sourceOptions.map(s => <option key={s} value={s}>{s}</option>)}
+                <option value="__custom__">Other (type custom…)</option>
+              </select>
+              {!sourceOptions.includes(form.source) && (
+                <input
+                  type="text"
+                  placeholder="Type your source system (e.g. Salesforce, SAP, ServiceNow…)"
+                  value={form.source}
+                  onChange={e => updateForm('source', e.target.value)}
+                  className="mt-2 w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  autoFocus
+                />
+              )}
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Tags</label>
