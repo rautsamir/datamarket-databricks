@@ -460,23 +460,79 @@ export function registerRoutes(app) {
         `SELECT MAX(CAST(SUBSTRING(product_ref FROM 4) AS INTEGER)) AS max_id FROM data_products`);
       let nextId = (maxRow.max_id || 16) + 1;
 
+      // Domain inference from catalog/schema name — broadens left-nav filter options
+      const inferDomain = (catalogName = '', schemaName = '') => {
+        const s = `${catalogName} ${schemaName}`.toLowerCase();
+        if (/finance|budget|payroll|revenue|billing|accounting|expenditure/.test(s)) return 'Finance';
+        if (/hr|human.resource|employee|headcount|workforce|hris/.test(s)) return 'HR';
+        if (/health|clinical|patient|medical|pharma/.test(s)) return 'Healthcare';
+        if (/fire|police|ems|safety|emergency|incident|911/.test(s)) return 'Public Safety';
+        if (/sales|customer|crm|marketing|retail|ecommerce/.test(s)) return 'Sales & Marketing';
+        if (/geo|gis|spatial|map|location|address/.test(s)) return 'Geospatial';
+        if (/weather|forecast|climate|accuweather/.test(s)) return 'Weather';
+        if (/tax|property|assessment|parcel/.test(s)) return 'Property Tax';
+        if (/supply|inventory|logistics|warehouse|procurement/.test(s)) return 'Operations';
+        if (/nyctaxi|transit|transport|trip|vehicle/.test(s)) return 'Transportation';
+        if (/bakehouse|restaurant|food|hospitality|hotel|wander/.test(s)) return 'Hospitality';
+        if (/audit|compliance|risk|governance/.test(s)) return 'Compliance';
+        return 'Other';
+      };
+
+      const { host, token } = await getUcAuth();
       const imported = [];
+
       for (const t of tables) {
         const ref = `DP-${String(nextId++).padStart(3, '0')}`;
-        const displayName = (t.table_name || t.full_name.split('.').pop())
+        const parts = (t.full_name || '').split('.');
+        const catalogName = parts[0] || '';
+        const schemaName  = parts[1] || '';
+        const tableName   = parts[2] || t.table_name || '';
+
+        const displayName = (tableName || t.full_name.split('.').pop())
           .replace(/_/g, ' ').replace(/\bgold\b/i, '').trim()
           .replace(/\b\w/g, c => c.toUpperCase());
+
+        // ── Enrich from UC REST API ──────────────────────────────────────────
+        let ucComment = '';
+        let ucTags = [];
+        let ucOwner = '';
+        let ucUpdatedAt = null;
+        try {
+          const ucMeta = await ucApiRequest(host, token,
+            `/api/2.1/unity-catalog/tables/${encodeURIComponent(t.full_name)}`);
+          ucComment  = ucMeta?.comment || '';
+          ucOwner    = ucMeta?.owner   || '';
+          ucUpdatedAt = ucMeta?.updated_at ? new Date(ucMeta.updated_at).toISOString() : null;
+
+          // UC tags are a key-value map — use the keys as tags (values often empty)
+          const rawTags = ucMeta?.tags || {};
+          ucTags = Object.keys(rawTags).filter(k => k && k !== 'UC Import');
+        } catch (_) { /* non-fatal — proceed without enrichment */ }
+
+        // Build final tag array: UC tags + domain + catalog/schema context
+        const domain = t.domain || inferDomain(catalogName, schemaName);
+        const tagSet = new Set(['UC Import']);
+        if (domain !== 'Other') tagSet.add(domain);
+        ucTags.forEach(tag => tagSet.add(tag));
+        // Add catalog/schema as context tags if they're meaningful (not 'samples')
+        if (catalogName && catalogName !== 'samples' && catalogName !== 'main') tagSet.add(catalogName);
+        if (schemaName && schemaName.length > 3) tagSet.add(schemaName.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()));
+        const finalTags = `{${[...tagSet].map(tag => `"${tag.replace(/"/g, '')}"`).join(',')}}`;
+
+        const description = ucComment || t.description || `Imported from Unity Catalog: ${t.full_name}`;
+        const ownerEmail  = ucOwner || t.owner_email || 'datasteward@example.org';
+
         const { rows: [product] } = await query(
           `INSERT INTO data_products
              (product_ref, display_name, description, type, domain, tags, source_system,
               refresh_frequency, owner_email, classification, uc_full_name, is_active, status,
               last_refreshed)
            VALUES ($1, $2, $3, 'Dataset', $4, $5, 'Unity Catalog', 'Daily',
-                   $6, 'Internal', $7, TRUE, 'Published', NOW())
+                   $6, 'Internal', $7, TRUE, 'Published', COALESCE($8, NOW()))
            ON CONFLICT (product_ref) DO NOTHING RETURNING *`,
-          [ref, t.display_name || displayName, t.description || `Imported from Unity Catalog: ${t.full_name}`,
-           t.domain || 'Other', `{${(t.domain || 'UC Import').replace(/'/g, '')}}`,
-           t.owner_email || 'datasteward@example.org', t.full_name]);
+          [ref, t.display_name || displayName, description,
+           domain, finalTags,
+           ownerEmail, t.full_name, ucUpdatedAt]);
         if (product) imported.push(product);
       }
       res.json({ imported: imported.length, products: imported });
