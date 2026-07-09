@@ -166,14 +166,16 @@ export function DataMarketRegisterPage({ onNavigate, editProduct = null }) {
               <label className="block text-sm font-medium text-gray-700 mb-2">Data Product Type *</label>
               <div className="flex flex-wrap gap-2">
                 {[
-                  { id: 'Dashboard',       label: 'Dashboard',       hint: 'Lakeview / embedded viz' },
-                  { id: 'AI/BI Dashboard', label: 'AI/BI Dashboard', hint: 'Databricks AI/BI' },
-                  { id: 'Genie Space',     label: 'Genie Space',     hint: 'Natural-language SQL' },
-                  { id: 'Dataset',         label: 'Dataset',         hint: 'Delta table / UC asset' },
-                  { id: 'Report',          label: 'Report',          hint: 'Scheduled / static report' },
-                  { id: 'App',             label: 'App',             hint: 'Databricks App' },
-                  { id: 'ML Model',        label: 'ML Model',        hint: 'Served model / endpoint' },
-                  { id: 'Source',          label: 'Source System',   hint: 'External data source' },
+                  { id: 'Dashboard',        label: 'Dashboard',        hint: 'Lakeview / embedded viz' },
+                  { id: 'AI/BI Dashboard',  label: 'AI/BI Dashboard',  hint: 'Databricks AI/BI' },
+                  { id: 'Genie Space',      label: 'Genie Space',      hint: 'Natural-language SQL' },
+                  { id: 'Dataset',          label: 'Dataset',          hint: 'Delta table / UC asset' },
+                  { id: 'Report',           label: 'Report',           hint: 'Scheduled / static report' },
+                  { id: 'App',              label: 'App',              hint: 'Databricks App' },
+                  { id: 'ML Model',         label: 'ML Model',         hint: 'Served model / endpoint' },
+                  { id: 'Power BI',         label: 'Power BI',         hint: 'Microsoft Power BI report or dashboard' },
+                  { id: 'Tableau',          label: 'Tableau',          hint: 'Tableau workbook or view' },
+                  { id: 'Source',           label: 'Source System',    hint: 'External data source' },
                 ].map(t => (
                   <button
                     key={t.id}
@@ -186,6 +188,29 @@ export function DataMarketRegisterPage({ onNavigate, editProduct = null }) {
                   </button>
                 ))}
               </div>
+              {/* Custom type input — for any type not in the preset list */}
+              {![
+                'Dashboard','AI/BI Dashboard','Genie Space','Dataset','Report',
+                'App','ML Model','Power BI','Tableau','Source'
+              ].includes(form.type) && form.type ? (
+                <div className="mt-2 flex items-center gap-2">
+                  <span className="px-3 py-1.5 rounded-lg text-sm font-medium text-white" style={{ backgroundColor: DataMarket_BLUE }}>
+                    {form.type}
+                  </span>
+                  <button onClick={() => updateForm('type', 'Dashboard')} className="text-xs text-gray-400 hover:text-gray-600">
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ) : null}
+              <div className="mt-2 flex gap-2">
+                <input
+                  type="text"
+                  placeholder="Custom type… (e.g. Looker, Sigma, Notebook)"
+                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); const v = e.target.value.trim(); if (v) { updateForm('type', v); e.target.value = '' } } }}
+                  onBlur={e => { const v = e.target.value.trim(); if (v) { updateForm('type', v); e.target.value = '' } }}
+                  className="flex-1 px-3 py-1.5 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-500"
+                />
+              </div>
               {form.type && (
                 <p className="text-xs text-gray-400 mt-1.5">
                   {[
@@ -196,6 +221,8 @@ export function DataMarketRegisterPage({ onNavigate, editProduct = null }) {
                     { id: 'Report',          hint: 'Static or scheduled report — link to the report URL or file location.' },
                     { id: 'App',             hint: 'Databricks App — paste the app URL (e.g. https://your-app.azuredatabricksapps.com).' },
                     { id: 'ML Model',        hint: 'Served model or endpoint — link to the Model Serving endpoint URL.' },
+                    { id: 'Power BI',        hint: 'Power BI report or dashboard — paste the published report URL.' },
+                    { id: 'Tableau',         hint: 'Tableau workbook or view — paste the Tableau Server / Cloud URL.' },
                     { id: 'Source',          hint: 'Reference to an upstream source system — no direct URL required.' },
                   ].find(h => h.id === form.type)?.hint}
                 </p>

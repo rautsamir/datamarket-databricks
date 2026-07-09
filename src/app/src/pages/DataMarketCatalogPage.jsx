@@ -7,7 +7,7 @@ import { ImportUCModal } from '../components/ImportUCModal'
 const DataMarket_BLUE = '#003865'
 
 // Type options — the supported product types (these are a fixed taxonomy)
-const ALL_TYPES = ['All', 'Dashboard', 'AI/BI Dashboard', 'Genie Space', 'Dataset', 'Report', 'App', 'ML Model']
+const ALL_TYPES = ['All', 'Dashboard', 'AI/BI Dashboard', 'Genie Space', 'Dataset', 'Report', 'App', 'ML Model', 'Power BI', 'Tableau']
 
 // Static fallback — shown if Lakebase is unavailable
 const staticProducts = [
@@ -84,6 +84,8 @@ const typeIcons = {
   Report:            FileText,
   App:               AppWindow,
   'ML Model':        Cpu,
+  'Power BI':        BarChart3,
+  'Tableau':         BarChart3,
   Source:            Layers,
 }
 const PAGE_SIZE = 6
