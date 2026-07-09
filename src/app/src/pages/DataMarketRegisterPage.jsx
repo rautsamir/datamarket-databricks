@@ -26,6 +26,7 @@ export function DataMarketRegisterPage({ onNavigate, editProduct = null }) {
   const [submitted, setSubmitted] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState(null)
+  const [customTagInput, setCustomTagInput] = useState('')
 
   const blankForm = {
     name: '', description: '', type: 'Dashboard', source: '', tags: [],
@@ -87,6 +88,16 @@ export function DataMarketRegisterPage({ onNavigate, editProduct = null }) {
     ...prev,
     tags: prev.tags.includes(tag) ? prev.tags.filter(t => t !== tag) : [...prev.tags, tag]
   }))
+
+  const addCustomTag = () => {
+    const tag = customTagInput.trim()
+    if (tag && !form.tags.includes(tag)) {
+      setForm(prev => ({ ...prev, tags: [...prev.tags, tag] }))
+    }
+    setCustomTagInput('')
+  }
+
+  const removeTag = tag => setForm(prev => ({ ...prev, tags: prev.tags.filter(t => t !== tag) }))
 
   if (submitted) {
     return (
@@ -203,17 +214,53 @@ export function DataMarketRegisterPage({ onNavigate, editProduct = null }) {
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Tags</label>
-              <div className="flex flex-wrap gap-2">
-                {tagOptions.map(tag => (
+              {/* Selected tags as removable chips */}
+              {form.tags.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 mb-2">
+                  {form.tags.map(tag => (
+                    <span
+                      key={tag}
+                      className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium text-white"
+                      style={{ backgroundColor: DataMarket_BLUE }}
+                    >
+                      {tag}
+                      <button onClick={() => removeTag(tag)} className="ml-0.5 hover:opacity-70">
+                        <X className="h-3 w-3" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+              {/* Quick-add preset tags (only show ones not already selected) */}
+              <div className="flex flex-wrap gap-1.5 mb-3">
+                {tagOptions.filter(t => !form.tags.includes(t)).map(tag => (
                   <button
                     key={tag}
                     onClick={() => toggleTag(tag)}
-                    className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${form.tags.includes(tag) ? 'text-white border-transparent' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}
-                    style={form.tags.includes(tag) ? { backgroundColor: DataMarket_BLUE } : {}}
+                    className="px-2.5 py-0.5 rounded-full text-xs font-medium border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors"
                   >
-                    {form.tags.includes(tag) && <X className="h-3 w-3 inline mr-1" />}{tag}
+                    + {tag}
                   </button>
                 ))}
+              </div>
+              {/* Custom tag input */}
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="Add a custom tag…"
+                  value={customTagInput}
+                  onChange={e => setCustomTagInput(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addCustomTag() } }}
+                  className="flex-1 px-3 py-1.5 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <button
+                  onClick={addCustomTag}
+                  disabled={!customTagInput.trim()}
+                  className="px-3 py-1.5 rounded-lg text-xs font-medium text-white disabled:opacity-40"
+                  style={{ backgroundColor: DataMarket_BLUE }}
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                </button>
               </div>
             </div>
             <div>

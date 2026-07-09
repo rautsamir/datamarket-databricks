@@ -95,6 +95,7 @@ export function DataMarketCatalogPage({ onOpenProduct, onNavigate, initialSearch
   const [selectedCategory, setSelectedCategory] = useState('All')
   const [selectedType, setSelectedType] = useState('All')
   const [selectedSource, setSelectedSource] = useState('All')
+  const [selectedTag, setSelectedTag] = useState('All')
   const [sortBy, setSortBy] = useState('Most Recent')
   const [page, setPage] = useState(1)
   const [allProducts, setAllProducts] = useState([])
@@ -118,6 +119,13 @@ export function DataMarketCatalogPage({ onOpenProduct, onNavigate, initialSearch
   const sourceTypes = useMemo(() => {
     const sources = [...new Set(allProducts.map(p => p.sourceType || p.source_system || '').filter(Boolean))].sort()
     return ['All', ...sources]
+  }, [allProducts])
+
+  // Derive tag options dynamically from all product tags
+  const allTags = useMemo(() => {
+    const tagSet = new Set()
+    allProducts.forEach(p => (p.tags || []).forEach(t => t && t !== 'UC Import' && tagSet.add(t)))
+    return ['All', ...Array.from(tagSet).sort()]
   }, [allProducts])
 
   const loadProducts = () => {
@@ -155,7 +163,8 @@ export function DataMarketCatalogPage({ onOpenProduct, onNavigate, initialSearch
     const matchesCat = selectedCategory === 'All' || p.category === selectedCategory
     const matchesType = selectedType === 'All' || p.type === selectedType
     const matchesSource = selectedSource === 'All' || p.sourceType === selectedSource
-    return matchesSearch && matchesCat && matchesType && matchesSource
+    const matchesTag    = selectedTag === 'All' || (p.tags || []).includes(selectedTag)
+    return matchesSearch && matchesCat && matchesType && matchesSource && matchesTag
   })
 
   const totalPages = Math.ceil(filtered.length / PAGE_SIZE)
@@ -257,7 +266,7 @@ export function DataMarketCatalogPage({ onOpenProduct, onNavigate, initialSearch
           </div>
 
           {/* Source Filter */}
-          <div>
+          <div className="mb-5">
             <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
               <Layers className="h-3 w-3" /> Source
             </p>
@@ -276,6 +285,27 @@ export function DataMarketCatalogPage({ onOpenProduct, onNavigate, initialSearch
               ))}
             </div>
           </div>
+
+          {/* Tags Filter — only show if real tags exist beyond 'UC Import' */}
+          {allTags.length > 1 && (
+            <div className="mb-5">
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Tags</p>
+              <div className="flex flex-wrap gap-1.5">
+                {allTags.map(tag => (
+                  <button
+                    key={tag}
+                    onClick={() => { setSelectedTag(tag); setPage(1) }}
+                    className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
+                      selectedTag === tag ? 'text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    }`}
+                    style={selectedTag === tag ? { backgroundColor: DataMarket_BLUE } : {}}
+                  >
+                    {tag}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </aside>
 
         {/* Main Grid */}
