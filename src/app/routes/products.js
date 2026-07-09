@@ -362,7 +362,7 @@ export function registerRoutes(app) {
       if (display_name !== undefined)        { params.push(display_name);           sets.push(`display_name = $${params.length}`); }
       if (owner_email !== undefined)         { params.push(owner_email);            sets.push(`owner_email = $${params.length}`); }
       if (data_classification !== undefined) { params.push(data_classification);    sets.push(`data_classification = $${params.length}`); }
-      if (tags !== undefined)                { params.push(JSON.stringify(tags));   sets.push(`tags = $${params.length}`); }
+      if (tags !== undefined)                { params.push(tags);                  sets.push(`tags = $${params.length}`); }
       if (sets.length === 0) return res.status(400).json({ error: 'Nothing to update' });
       sets.push('updated_at = NOW()');
       params.push(ref);
