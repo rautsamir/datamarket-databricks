@@ -68,11 +68,16 @@ echo ""
 # ── Prerequisites ─────────────────────────────────────────────────────────────
 step 1 "Checking prerequisites"
 
-command -v databricks >/dev/null 2>&1 || fail "Databricks CLI not found. Install: pip install databricks-cli"
-command -v node        >/dev/null 2>&1 || fail "Node.js not found. Install from nodejs.org"
+command -v databricks >/dev/null 2>&1 || fail "Databricks CLI not found. Install: brew tap databricks/tap && brew install databricks"
+command -v node        >/dev/null 2>&1 || fail "Node.js not found. Install: brew install node"
 command -v npm         >/dev/null 2>&1 || fail "npm not found."
-command -v psql        >/dev/null 2>&1 || fail "psql not found. Install postgresql-client: brew install postgresql"
 command -v python3     >/dev/null 2>&1 || fail "python3 not found."
+PSQL_BIN=$(command -v psql 2>/dev/null || true)
+if [[ -z "$PSQL_BIN" ]]; then
+  warn "psql not found — schema init and SP grants will be skipped."
+  warn "Install with: brew install postgresql@16"
+  warn "The app will auto-create tables on first start, but you must grant schema access manually."
+fi
 ok "All prerequisites met"
 
 # ── Validate CLI auth ─────────────────────────────────────────────────────────
@@ -99,9 +104,15 @@ ok "User:  ${DATABRICKS_USER:-<service-principal>}"
 
 # ── Prompt for required values ────────────────────────────────────────────────
 if [[ -z "$ADMIN_EMAIL" ]]; then
-  echo ""
-  read -rp "  Your email address (becomes the first admin): " ADMIN_EMAIL
-  [[ -z "$ADMIN_EMAIL" ]] && fail "ADMIN_EMAIL is required."
+  # Auto-detect from profile first
+  ADMIN_EMAIL="${DATABRICKS_USER:-}"
+  if [[ -z "$ADMIN_EMAIL" ]]; then
+    echo ""
+    read -rp "  Your email address (becomes the first admin): " ADMIN_EMAIL
+    [[ -z "$ADMIN_EMAIL" ]] && fail "ADMIN_EMAIL is required."
+  else
+    info "Admin email auto-detected from profile: ${ADMIN_EMAIL}"
+  fi
 fi
 ok "Admin: $ADMIN_EMAIL"
 
@@ -464,16 +475,30 @@ else
   PG_TOKEN=$(databricks auth token --profile "$PROFILE" \
     | python3 -c "import sys,json; print(json.load(sys.stdin).get('access_token',''))" 2>/dev/null || true)
 
-  if [[ -z "$PG_TOKEN" ]]; then
+  if [[ -z "$PSQL_BIN" ]]; then
+    warn "psql not available — skipping schema init and grants. Run deploy again after installing psql."
+    warn "  brew install postgresql@16"
+  elif [[ -z "$PG_TOKEN" ]]; then
     warn "Could not generate a Lakebase token. Grants skipped — run manually."
   else
-    # Step 1: Create schema + run schema.sql (creates all core tables with correct types)
+    # Step 1: Create schema + apply schema.sql (creates all core tables)
     SCHEMA_SQL="${SCRIPT_DIR}/../../schema/schema.sql"
-    PGPASSWORD="$PG_TOKEN" psql \
-      "host=${LAKEBASE_HOST} port=5432 dbname=databricks_postgres sslmode=require user=${DATABRICKS_USER:-${ADMIN_EMAIL}}" \
-      -c "CREATE SCHEMA IF NOT EXISTS ${APP_NAME};" \
-      $( [[ -f "$SCHEMA_SQL" ]] && echo "-f \"$SCHEMA_SQL\"" || true ) \
+    PG_CONN="host=${LAKEBASE_HOST} port=5432 dbname=databricks_postgres sslmode=require user=${DATABRICKS_USER:-${ADMIN_EMAIL}}"
+
+    PGPASSWORD="$PG_TOKEN" psql "$PG_CONN" \
+      -c "CREATE SCHEMA IF NOT EXISTS ${APP_NAME}; SET search_path TO ${APP_NAME};" \
       2>&1 | grep -v "^$" | grep -v "^NOTICE" || true
+
+    if [[ -f "$SCHEMA_SQL" ]]; then
+      PGPASSWORD="$PG_TOKEN" psql "$PG_CONN" \
+        -v ON_ERROR_STOP=0 \
+        -c "SET search_path TO ${APP_NAME};" \
+        -f "$SCHEMA_SQL" \
+        2>&1 | grep -v "^$" | grep -v "^NOTICE" | grep -v "already exists" || true
+      ok "schema.sql applied"
+    else
+      warn "schema.sql not found at ${SCHEMA_SQL} — tables will be auto-created by the app on first start"
+    fi
 
     # Step 2: Grant the SP full access
     PGPASSWORD="$PG_TOKEN" psql \
