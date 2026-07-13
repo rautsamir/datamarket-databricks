@@ -12,6 +12,8 @@
 #   --warehouse-id   ID             SQL Warehouse ID — auto-grants SP 'Can use' permission
 #   --grant-catalogs true|false     Auto-grant SP USE CATALOG/SCHEMA on all UC catalogs (default: true)
 #   --demo-mode      true|false     Enable persona switcher (default: false)
+#   --seed           true|false     Apply schema/seed.sql after schema init — loads demo data products,
+#                                   users, and requests (default: true when --demo-mode true, else false)
 #   --use-bundle     true|false     Use Databricks Asset Bundle (DAB) for Lakebase+app deploy (default: false)
 #   --bundle-target  TARGET         DAB target to deploy: dev or prod (default: prod)
 #   --help                          Show this help
@@ -34,6 +36,7 @@ ADMIN_EMAIL=""
 LAKEBASE_PROJECT="datamarket"
 APP_NAME="datamarket"
 DEMO_MODE="false"
+SEED_DATA=""          # empty = auto (true when demo-mode, false otherwise)
 WAREHOUSE_ID=""
 GRANT_CATALOGS="true"
 USE_BUNDLE="false"
@@ -48,6 +51,7 @@ while [[ $# -gt 0 ]]; do
     --lakebase-project) LAKEBASE_PROJECT="$2"; shift 2 ;;
     --app-name)         APP_NAME="$2";         shift 2 ;;
     --demo-mode)        DEMO_MODE="$2";        shift 2 ;;
+    --seed)             SEED_DATA="$2";        shift 2 ;;
     --warehouse-id)     WAREHOUSE_ID="$2";     shift 2 ;;
     --grant-catalogs)   GRANT_CATALOGS="$2";   shift 2 ;;
     --use-bundle)       USE_BUNDLE="$2";       shift 2 ;;
@@ -525,6 +529,29 @@ else
       ok "schema.sql applied"
     else
       warn "schema.sql not found at ${SCHEMA_SQL} — tables will be auto-created by the app on first start"
+    fi
+
+    # ── Seed data ────────────────────────────────────────────────────────────
+    # Auto-seed when demo-mode is on; can be forced with --seed true|false
+    if [[ -z "$SEED_DATA" ]]; then
+      [[ "$DEMO_MODE" == "true" ]] && SEED_DATA="true" || SEED_DATA="false"
+    fi
+
+    SEED_SQL="${SCRIPT_DIR}/../../schema/seed.sql"
+    if [[ "$SEED_DATA" == "true" ]]; then
+      if [[ -f "$SEED_SQL" ]]; then
+        info "Applying seed data (schema/seed.sql)..."
+        PGPASSWORD="$PG_TOKEN" psql "$PG_CONN" \
+          -v ON_ERROR_STOP=0 \
+          -c "SET search_path TO ${APP_NAME};" \
+          -f "$SEED_SQL" \
+          2>&1 | grep -v "^$" | grep -v "^NOTICE" | grep -v "already exists" || true
+        ok "Seed data applied — demo products + users loaded"
+      else
+        warn "seed.sql not found at ${SEED_SQL} — skipping seed"
+      fi
+    else
+      info "Seed data skipped (production mode). Pass --seed true to load demo data."
     fi
 
     # Step 2: Grant the SP full access
