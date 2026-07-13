@@ -14,15 +14,15 @@ After running `deploy.sh`, complete these steps **before** using the app:
 
 | # | Step | Where | Why it matters |
 |---|---|---|---|
-| **0** | **Set `ADMIN_EMAIL` in `app.yaml`** | `app.yaml` → `env_vars` | **Critical first step.** Set this to the deployer's email (e.g. `sglendye@yourorg.com`). On first SSO login the app auto-promotes this email to admin. Without it you land as a regular analyst with no Manage tab and no way to configure anything. Comma-separate multiple emails for co-admins. |
 | 1 | Import your UC tables | **Manage → Data Products → Import from UC** | Populates the catalog — nothing shows in Discover until you do this |
-| 2 | Set SQL Warehouse ID | **Manage → Settings → Integrations** | Required for `GRANT SELECT` to actually execute when you approve access requests. Without it, approvals are logged but UC permissions are never set. |
-| 3 | Turn off demo mode | Set `DEMO_MODE: "false"` in `app.yaml` and redeploy | Disables the persona switcher and enables real SSO identity. Do this before any customer-facing demo. |
-| 4 | Add team members | **Manage → Users** | Add data stewards and analysts, or configure Entra ID groups under the **Groups** tab for bulk role assignment. |
+| 2 | Set SQL Warehouse ID | **Manage → Settings → Integrations** | Required for `GRANT SELECT` to actually execute when approving access requests. Without it, approvals are logged but UC permissions are never set. |
+| 3 | Add team members | **Manage → Users** | Add data stewards and analysts, or configure Entra ID groups under the **Groups** tab for bulk role assignment. |
 
-> **Stuck as the wrong persona after turning off demo mode?** Make sure `ADMIN_EMAIL` is set to your email and redeploy. The identity endpoint auto-promotes on first login.
+> **Admin access is automatic.** The deployer's email is written to `ADMIN_EMAIL` by the deploy script and auto-promoted to admin on first SSO login — no manual `app.yaml` editing required.
 
-> Steps 1–4 take about 10 minutes total.
+> **Demo vs. production mode** is set at deploy time via `--demo-mode true|false` (default: `false`). To switch after deploying, re-run with the flag and `--seed skip`.
+
+> Steps 1–3 take about 5 minutes total.
 
 ---
 
@@ -155,51 +155,48 @@ Once registered as a UC catalog, tables are queryable directly from Databricks S
 
 ## Deploying in a New Databricks Environment
 
-### Option A — One-step script (recommended)
+### One-step script (recommended)
 
 > **Full guide:** [`docs/deploy_guide.md`](docs/deploy_guide.md)
 
-**Prerequisites:** Databricks CLI, Node.js ≥ 18, psql (optional for seeding).
+**Prerequisites:** Databricks CLI, Node.js ≥ 18, psql (optional — install with `brew install postgresql@16`).
 
 ```bash
 # 1. Clone
 git clone https://github.com/rautsamir/datamarket-databricks.git
-cd datamarket
+cd datamarket-databricks
 
 # 2. Authenticate the CLI
 databricks auth login --host https://your-workspace.azuredatabricks.net --profile my-profile
 
-# 3a. Deploy — if you already have a Lakebase Autoscaling instance (ep-* hostname)
-./scripts/deploy.sh \
-  --profile       my-profile \
-  --email         you@company.com \
-  --lakebase-host ep-your-project.database.region.azuredatabricks.net \
-  --seed          demo
+# 3. Deploy — that's it
+./deploy.sh --profile my-profile
+```
 
-# 3b. Deploy — let the script create a Lakebase instance for you
-./scripts/deploy.sh \
-  --profile           my-profile \
-  --email             you@company.com \
-  --lakebase-instance datamarket \
-  --seed              demo
+The script auto-detects everything: your workspace URL, your email (becomes the first admin), and the Lakebase project. It handles: auth check → Lakebase detection → schema init + grants → frontend build → workspace upload → app create/deploy. Prints the app URL when done.
 
-# 3c. Fully interactive — script will prompt for everything
-./scripts/deploy.sh --profile my-profile
+**Common optional flags:**
+
+```bash
+./deploy.sh \
+  --profile        my-profile \
+  --warehouse-id   abc123def       # auto-grants SP 'Can use'; enables live UC GRANTs
+  --demo-mode      false           # default — real SSO + UC grants
+  --lakebase-project datamarket    # default Lakebase project name
+  --app-name       datamarket      # default app name / workspace folder
 ```
 
 > **Azure workspaces:** add `--pat YOUR_DATABRICKS_PAT` if the app can't authenticate at runtime.
 
-The script handles everything: CLI auth check → Lakebase setup → schema + seed → frontend build → workspace upload → app create/deploy. It prints the app URL when done.
-
 > **Branding** (name, tagline, logo, Genie Space ID) is configured in **Admin → Settings** inside the app — no redeploy needed.
 
-Run `./scripts/deploy.sh --help` for all flags. Full log always written to `/tmp/datamarket-deploy-<ts>.log`; add `--verbose` for live output.
+Run `./deploy.sh --help` for all flags.
 
 ---
 
-### Option B — Manual steps
+### Manual steps (advanced / troubleshooting)
 
-> Follow these if you prefer step-by-step control or are troubleshooting.
+> Follow these if you prefer step-by-step control or are debugging a failed deploy.
 
 ### Step 1 — Clone the repo
 
@@ -243,33 +240,29 @@ PGPASSWORD="..." psql -h ... -U ... -d databricks_postgres --set=sslmode=require
 
 ### Step 4 — Configure `app.yaml`
 
-Open `src/app/app.yaml` and fill in these values:
+The deploy script generates `app.yaml` automatically. If building manually, the minimum required env vars are:
 
 ```yaml
 env:
-  - name: DATABRICKS_USER
-    value: "your-email@company.com"        # Your Databricks login email
+  - name: DATABRICKS_HOST
+    value: "https://your-workspace.azuredatabricks.net"
+  - name: ADMIN_EMAIL
+    value: "you@company.com"              # Auto-promoted to admin on first SSO login
   - name: LAKEBASE_HOST
     value: "ep-your-project.database.region.azuredatabricks.net"
   - name: LAKEBASE_DB
     value: "databricks_postgres"
   - name: LAKEBASE_SCHEMA
     value: "datamarket"
-
-  # ── Branding ────────────────────────────────────────────────────────────
-  - name: APP_NAME
-    value: "DataMarket"                    # Change to your org's portal name
-  - name: APP_SUBTITLE
-    value: "Data Discovery & Access"       # Tagline shown under the name
-  - name: APP_LOGO_URL
-    value: "/your-logo.png"               # Path to logo in dist/public, or "" to hide
-
-  # ── Mode ────────────────────────────────────────────────────────────────
+  - name: LAKEBASE_ENDPOINT
+    value: "projects/datamarket/branches/production/endpoints/primary"
   - name: DEMO_MODE
-    value: "true"                          # true = persona switcher, false = real SSO
+    value: "false"                        # false = real SSO + UC grants (recommended)
 ```
 
-`DATABRICKS_HOST` is set explicitly by the deploy script. `DATABRICKS_TOKEN` is auto-injected by Databricks Apps at runtime on most workspaces. On some Azure workspaces it may need to be set explicitly via `--pat` (see Option A troubleshooting above).
+> **Branding** (portal name, tagline, logo, Genie Space ID, SQL Warehouse ID) are configured in **Admin → Settings** inside the running app — no `app.yaml` changes or redeploy needed.
+
+`DATABRICKS_TOKEN` is auto-injected by Databricks Apps at runtime. On some Azure workspaces pass `--pat YOUR_PAT` when deploying.
 
 ### Step 5 — Build the frontend
 
