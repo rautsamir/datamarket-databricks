@@ -526,10 +526,46 @@ fi
 # ── Warehouse SP permission ───────────────────────────────────────────────────
 step 8 "Granting SQL Warehouse 'Can use' to app service principal"
 
+# Auto-detect warehouse if not provided
 if [[ -z "$WAREHOUSE_ID" ]]; then
-  warn "No --warehouse-id provided. Skipping warehouse permission grant."
-  warn "To automate this, re-run with: --warehouse-id YOUR_WAREHOUSE_ID"
-  warn "Or grant manually: SQL Warehouses → your warehouse → Permissions → Add SP"
+  info "No --warehouse-id provided — auto-detecting..."
+  WAREHOUSE_ID=$(databricks warehouses list --profile "$PROFILE" -o json 2>/dev/null \
+    | python3 -c "
+import sys, json
+
+data = json.load(sys.stdin)
+warehouses = data if isinstance(data, list) else data.get('warehouses', data.get('items', []))
+
+def score(w):
+    name  = (w.get('name') or '').lower()
+    state = (w.get('state') or '').upper()
+    wtype = (w.get('warehouse_type') or '').upper()
+    s = 0
+    if state == 'RUNNING':   s += 10
+    if 'starter' in name:    s += 4
+    if 'serverless' in name: s += 3
+    if wtype == 'PRO':       s += 2
+    return s
+
+best = sorted(warehouses, key=score, reverse=True)
+if best:
+    w = best[0]
+    print(w.get('id',''))
+    import sys
+    print(f'  Selected: {w.get(\"name\")} ({w.get(\"warehouse_type\")}, {w.get(\"state\")})', file=sys.stderr)
+" 2>/tmp/wh_detect_log.txt || true)
+  [[ -f /tmp/wh_detect_log.txt ]] && cat /tmp/wh_detect_log.txt >&2 || true
+  if [[ -n "$WAREHOUSE_ID" ]]; then
+    ok "Auto-detected warehouse: ${WAREHOUSE_ID}"
+    info "Pass --warehouse-id ${WAREHOUSE_ID} to skip detection on future runs."
+  else
+    warn "Could not auto-detect a SQL Warehouse. UC GRANTs won't execute until one is set."
+    warn "After deploy: Manage → Settings → SQL Warehouse ID"
+  fi
+fi
+
+if [[ -z "$WAREHOUSE_ID" ]]; then
+  : # skip silently — warned above
 elif [[ -z "$SP_UUID" ]]; then
   warn "SP UUID not detected — skipping warehouse grant. Grant manually in the UI."
 else
