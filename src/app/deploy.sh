@@ -280,63 +280,90 @@ LAKEBASE_HOST=""
 LAKEBASE_ENDPOINT=""
 LAKEBASE_CACHE_FILE="${SCRIPT_DIR}/.lakebase-${APP_NAME}.cache"
 
-# Step 1: Try to discover the branch name dynamically (Lakebase uses auto-generated names)
-info "Looking up Lakebase project: ${LAKEBASE_PROJECT}"
+# ── Helper: get the first/production branch name for a project ────────────────
+_get_branch() {
+  databricks postgres list-branches "projects/${LAKEBASE_PROJECT}" \
+    --profile "$PROFILE" -o json 2>/dev/null \
+  | python3 -c "
+import sys, json
+try:
+    items = json.load(sys.stdin)
+    if not isinstance(items, list): items = []
+    # resource names look like 'projects/foo/branches/bar' — extract short name
+    names = [b.get('name','').split('/')[-1] for b in items if b.get('name','')]
+    prod = next((n for n in names if n == 'production'), '')
+    print(prod or (names[0] if names else ''))
+except: print('')
+" 2>/dev/null || true
+}
 
-BRANCH_NAME=$(databricks api get "2.0/postgres/autoscaling/projects/${LAKEBASE_PROJECT}/branches" \
-  --profile "$PROFILE" 2>/dev/null \
+# ── Helper: get endpoint hostname for a branch ────────────────────────────────
+_get_host() {
+  local branch="$1"
+  databricks api get "2.0/postgres/endpoints/projects/${LAKEBASE_PROJECT}/branches/${branch}/endpoints/primary" \
+    --profile "$PROFILE" 2>/dev/null \
   | python3 -c "
 import sys, json
 try:
     d = json.load(sys.stdin)
-    branches = d.get('branches', d.get('items', []))
-    # Prefer 'production' if it exists, otherwise take the first branch
-    prod = next((b.get('name','') for b in branches if b.get('name','') == 'production'), '')
-    first = branches[0].get('name','') if branches else ''
-    print(prod or first)
+    print(d.get('read_write_dns','') or d.get('dns','') or d.get('hostname',''))
 except: print('')
-" 2>/dev/null || true)
+" 2>/dev/null || true
+}
 
-# Step 2: Build endpoint path and try to fetch hostname from API
-if [[ -n "$BRANCH_NAME" ]]; then
-  LAKEBASE_ENDPOINT="projects/${LAKEBASE_PROJECT}/branches/${BRANCH_NAME}/endpoints/primary"
-  info "Found branch: ${BRANCH_NAME} — trying endpoint: ${LAKEBASE_ENDPOINT}"
-  ENDPOINT_JSON=$(databricks api get "2.0/postgres/endpoints/${LAKEBASE_ENDPOINT}" \
-    --profile "$PROFILE" 2>/dev/null || echo '{}')
-  LAKEBASE_HOST=$(echo "$ENDPOINT_JSON" | python3 -c \
-    "import sys,json; d=json.load(sys.stdin); print(d.get('read_write_dns','') or d.get('dns','') or d.get('hostname',''))" \
-    2>/dev/null || true)
-fi
+info "Looking up Lakebase project: ${LAKEBASE_PROJECT}"
+BRANCH_NAME=$(_get_branch)
 
-# Step 3: Check local cache (written on first manual entry)
-if [[ -z "$LAKEBASE_HOST" && -f "$LAKEBASE_CACHE_FILE" ]]; then
-  CACHED_HOST=$(cat "$LAKEBASE_CACHE_FILE" 2>/dev/null || true)
-  if [[ -n "$CACHED_HOST" ]]; then
-    LAKEBASE_HOST="$CACHED_HOST"
-    ok "Lakebase hostname loaded from cache."
+# ── Project doesn't exist yet — create it ─────────────────────────────────────
+if [[ -z "$BRANCH_NAME" ]]; then
+  info "Project '${LAKEBASE_PROJECT}' not found — creating Lakebase Autoscaling project..."
+  info "(This takes ~2–3 minutes on first deploy — the CLI will wait automatically)"
+
+  CREATE_OUT=$(databricks postgres create-project "$LAKEBASE_PROJECT" \
+    --profile "$PROFILE" -o json 2>&1 || true)
+
+  if echo "$CREATE_OUT" | python3 -c "import sys,json; json.load(sys.stdin)" &>/dev/null; then
+    ok "Project '${LAKEBASE_PROJECT}' created"
+  else
+    # May already exist or be in progress — not fatal
+    warn "create-project output: ${CREATE_OUT:0:200}"
   fi
-fi
 
-# Step 4: Fallback — prompt the user once and cache the answer
-if [[ -z "$LAKEBASE_HOST" ]]; then
-  warn "Could not auto-detect Lakebase hostname."
-  warn "Go to: Compute → Lakebase → ${LAKEBASE_PROJECT} → Overview → Connection details"
-  warn "The hostname looks like: ep-your-project.database.region.azuredatabricks.net"
+  # Poll for branch (provisioned after project creation)
+  info "Waiting for Lakebase branch to be ready..."
+  for i in $(seq 1 36); do
+    BRANCH_NAME=$(_get_branch)
+    [[ -n "$BRANCH_NAME" ]] && { ok "Branch ready: ${BRANCH_NAME}"; break; }
+    echo -n "."; sleep 5
+  done
   echo ""
-  read -rp "  Paste your Lakebase hostname: " LAKEBASE_HOST
+  [[ -z "$BRANCH_NAME" ]] && fail "Lakebase branch not ready after 3 min. Check Compute → Lakebase → ${LAKEBASE_PROJECT} in the UI."
+fi
+
+# ── Resolve endpoint hostname ─────────────────────────────────────────────────
+LAKEBASE_ENDPOINT="projects/${LAKEBASE_PROJECT}/branches/${BRANCH_NAME}/endpoints/primary"
+LAKEBASE_HOST=$(_get_host "$BRANCH_NAME")
+
+# Fall back to cache if API doesn't return a hostname yet (endpoint still provisioning)
+if [[ -z "$LAKEBASE_HOST" && -f "$LAKEBASE_CACHE_FILE" ]]; then
+  LAKEBASE_HOST=$(cat "$LAKEBASE_CACHE_FILE" 2>/dev/null || true)
+  [[ -n "$LAKEBASE_HOST" ]] && ok "Lakebase hostname loaded from cache."
+fi
+
+# Last resort — ask once, cache the answer
+if [[ -z "$LAKEBASE_HOST" ]]; then
+  warn "Could not resolve Lakebase hostname from API (endpoint may still be provisioning)."
+  warn "Go to: Compute → Lakebase → ${LAKEBASE_PROJECT} → Overview → Connection details"
+  echo ""
+  read -rp "  Paste your Lakebase hostname (ep-...): " LAKEBASE_HOST
   [[ -z "$LAKEBASE_HOST" ]] && fail "Lakebase hostname is required."
-  # Cache for next run
-  echo "$LAKEBASE_HOST" > "$LAKEBASE_CACHE_FILE"
-  ok "Hostname saved to cache — won't be asked again."
 fi
 
-# If we still don't have the endpoint path, construct a best-guess one for app.yaml
-if [[ -z "$LAKEBASE_ENDPOINT" ]]; then
-  LAKEBASE_ENDPOINT="projects/${LAKEBASE_PROJECT}/branches/${BRANCH_NAME:-production}/endpoints/primary"
-fi
+# Always cache the resolved hostname for future runs
+echo "$LAKEBASE_HOST" > "$LAKEBASE_CACHE_FILE"
 
-ok "Lakebase host:     $LAKEBASE_HOST"
-ok "Lakebase endpoint: $LAKEBASE_ENDPOINT"
+ok "Lakebase host:     ${LAKEBASE_HOST}"
+ok "Lakebase endpoint: ${LAKEBASE_ENDPOINT}"
 
 # ── Generate app.yaml ─────────────────────────────────────────────────────────
 step 4 "Generating app.yaml"
