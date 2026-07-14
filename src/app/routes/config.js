@@ -10,6 +10,7 @@ import {
   APP_SUBTITLE,
   APP_LOGO_URL,
 } from '../db.js';
+import { getUcAuth, ucApiRequest } from '../databricks.js';
 
 export function registerRoutes(app) {
   // ─── Health ───────────────────────────────────────────────────────────────────
@@ -96,6 +97,53 @@ export function registerRoutes(app) {
       invalidateSettingsCache();
       await loadSettings();
       res.json({ ok: true });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ─── UC Access Check — catalog visibility for the app SP ─────────────────────
+  // Used by the onboarding wizard to surface grant gaps and generate fix SQL.
+  app.get('/api/portal/admin/uc-access-check', async (req, res) => {
+    try {
+      const spId = process.env.DATABRICKS_CLIENT_ID || '';
+      const databricksHost = (process.env.DATABRICKS_HOST || '').replace(/\/$/, '');
+
+      const { host, token } = await getUcAuth();
+      const catalogData = await ucApiRequest(host, token, '/api/2.1/unity-catalog/catalogs');
+      const catalogs = (catalogData.catalogs || [])
+        .filter(c => !['system', '__databricks_internal', 'hive_metastore'].includes(c.name));
+
+      // For each catalog, check if the SP can see any schemas (beyond information_schema).
+      const results = await Promise.all(catalogs.map(async (cat) => {
+        try {
+          const d = await ucApiRequest(host, token,
+            `/api/2.1/unity-catalog/schemas?catalog_name=${encodeURIComponent(cat.name)}`);
+          const schemas = (d.schemas || []).filter(s => s.name !== 'information_schema');
+          return { name: cat.name, accessible: schemas.length > 0, schemaCount: schemas.length };
+        } catch {
+          return { name: cat.name, accessible: false, schemaCount: 0 };
+        }
+      }));
+
+      const needsGrant = results.filter(c => !c.accessible);
+      const grantSql = needsGrant.length > 0 && spId
+        ? needsGrant.map(c =>
+            `GRANT USE SCHEMA ON ALL SCHEMAS IN CATALOG \`${c.name}\` TO \`${spId}\`;\n` +
+            `GRANT BROWSE ON CATALOG \`${c.name}\` TO \`${spId}\`;`
+          ).join('\n\n')
+        : '';
+
+      const sqlEditorUrl = databricksHost ? `${databricksHost}/sql/editor` : '';
+
+      res.json({
+        spId,
+        catalogs: results,
+        needsGrant: needsGrant.map(c => c.name),
+        grantSql,
+        sqlEditorUrl,
+        allAccessible: needsGrant.length === 0,
+      });
     } catch (e) {
       res.status(500).json({ error: e.message });
     }
