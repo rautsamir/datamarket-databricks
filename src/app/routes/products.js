@@ -376,6 +376,33 @@ export function registerRoutes(app) {
   });
 
   // ─── Admin: UC Catalog Browser ────────────────────────────────────────────────
+  // Returns already-registered UC table names so the frontend can mark them.
+  app.get('/api/portal/admin/uc-registered', async (req, res) => {
+    try {
+      const { rows } = await query(
+        `SELECT uc_full_name FROM data_products WHERE uc_full_name IS NOT NULL AND uc_full_name != ''`);
+      res.json({ names: rows.map(r => r.uc_full_name) });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Local-dev proxy: forwards UC API calls as the SP (used when databricksHost isn't
+  // available in the browser, e.g. running locally). Not used in Databricks Apps.
+  app.get('/api/portal/admin/uc-proxy', async (req, res) => {
+    try {
+      const path = req.query.path;
+      if (!path || !path.startsWith('/api/2.1/unity-catalog/')) {
+        return res.status(400).json({ error: 'Invalid path' });
+      }
+      const { host, token } = await getUcAuth();
+      const data = await ucApiRequest(host, token, path);
+      res.json(data);
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   app.get('/api/portal/admin/uc-catalogs', async (req, res) => {
     try {
       const { host, token } = await getUcAuth();
