@@ -446,7 +446,25 @@ export function registerRoutes(app) {
         table_type: t.table_type, comment: t.comment,
         registered: registered.has(t.full_name),
       }));
-      res.json({ tables });
+
+      // If no tables returned but no error, the SP likely lacks USE SCHEMA on this schema.
+      // Include the grant SQL so the frontend can show a helpful fix.
+      let needsGrant = false;
+      let grantSql = '';
+      let sqlEditorUrl = '';
+      if (tables.length === 0 && !data.error_code) {
+        try {
+          const spId = process.env.DATABRICKS_CLIENT_ID || '';
+          if (spId) {
+            needsGrant = true;
+            const databricksHost = (process.env.DATABRICKS_HOST || '').replace(/\/$/, '');
+            grantSql = `GRANT USE SCHEMA ON SCHEMA \`${catalog}\`.\`${schema}\` TO \`${spId}\`;`;
+            sqlEditorUrl = databricksHost ? `${databricksHost}/sql/editor` : '';
+          }
+        } catch (_) { /* non-fatal */ }
+      }
+
+      res.json({ tables, needsGrant, grantSql, sqlEditorUrl });
     } catch (e) {
       res.status(500).json({ error: e.message });
     }
