@@ -387,16 +387,32 @@ export function registerRoutes(app) {
     }
   });
 
+  // Run a SQL statement via the configured warehouse, return rows as arrays.
+  async function warehouseSql(statement) {
+    const warehouseId = getSetting('sql_warehouse_id', process.env.SQL_WAREHOUSE_ID || '');
+    if (!warehouseId) throw new Error('No SQL Warehouse configured — set one in Manage → Settings.');
+    const result = await databricksApi('POST', '/api/2.0/sql/statements', {
+      warehouse_id: warehouseId,
+      statement,
+      wait_timeout: '15s',
+    });
+    if (result.data?.status?.state !== 'SUCCEEDED') {
+      throw new Error(`SQL failed: ${JSON.stringify(result.data?.status)}`);
+    }
+    return result.data?.result?.data_array || [];
+  }
+
   app.get('/api/portal/admin/uc-schemas', async (req, res) => {
     try {
       const { catalog } = req.query;
       if (!catalog) return res.status(400).json({ error: 'catalog param required' });
-      const { host, token } = await getUcAuth();
-      const data = await ucApiRequest(host, token,
-        `/api/2.1/unity-catalog/schemas?catalog_name=${encodeURIComponent(catalog)}`);
-      const schemas = (data.schemas || [])
-        .filter(s => s.name !== 'information_schema')
-        .map(s => ({ name: s.name, full_name: s.full_name, comment: s.comment }));
+      // SHOW SCHEMAS uses the SP's warehouse session — works with USE CATALOG alone,
+      // no per-schema grant required. Covers schemas added after deploy.
+      const rows = await warehouseSql(`SHOW SCHEMAS IN CATALOG \`${catalog.replace(/`/g, '')}\``);
+      // SHOW SCHEMAS returns: databaseName (col 0)
+      const schemas = rows
+        .map(r => ({ name: r[0], full_name: `${catalog}.${r[0]}` }))
+        .filter(s => s.name !== 'information_schema');
       res.json({ schemas });
     } catch (e) {
       res.status(500).json({ error: e.message });
@@ -407,18 +423,19 @@ export function registerRoutes(app) {
     try {
       const { catalog, schema } = req.query;
       if (!catalog || !schema) return res.status(400).json({ error: 'catalog and schema params required' });
-      const { host, token } = await getUcAuth();
       const { rows: existing } = await query(
         `SELECT uc_full_name FROM data_products WHERE uc_full_name IS NOT NULL AND uc_full_name != ''`);
       const registered = new Set(existing.map(r => r.uc_full_name));
-      const data = await ucApiRequest(host, token,
-        `/api/2.1/unity-catalog/tables?catalog_name=${encodeURIComponent(catalog)}&schema_name=${encodeURIComponent(schema)}&omit_columns=true`);
-      const tables = (data.tables || []).map(t => ({
-        full_name: t.full_name, table_name: t.name,
-        schema_name: schema, catalog_name: catalog,
-        table_type: t.table_type, comment: t.comment,
-        registered: registered.has(t.full_name),
-      }));
+      // SHOW TABLES returns: namespace (col 0), tableName (col 1), isTemporary (col 2)
+      const rows = await warehouseSql(
+        `SHOW TABLES IN \`${catalog.replace(/`/g, '')}\`.\`${schema.replace(/`/g, '')}\``
+      );
+      const tables = rows.map(r => {
+        const table_name = r[1];
+        const full_name  = `${catalog}.${schema}.${table_name}`;
+        return { full_name, table_name, schema_name: schema, catalog_name: catalog,
+                 table_type: 'TABLE', registered: registered.has(full_name) };
+      });
       res.json({ tables });
     } catch (e) {
       res.status(500).json({ error: e.message });
