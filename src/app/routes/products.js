@@ -23,6 +23,10 @@ function cacheGet(key) {
 function cacheSet(key, value, ttlMs) {
   _cache.set(key, { value, expiresAt: Date.now() + ttlMs });
 }
+function cacheClear(prefix = '') {
+  if (!prefix) { _cache.clear(); return; }
+  for (const k of _cache.keys()) { if (k.startsWith(prefix)) _cache.delete(k); }
+}
 
 // ─── Background auto-discover (runs once after startup if enabled) ────────────
 export async function maybeAutoDiscover() {
@@ -576,6 +580,9 @@ export function registerRoutes(app) {
       };
 
       const { host, token } = await getUcAuth();
+      // Clear any cached synthetic schema for tables about to be imported
+      cacheClear('schema:');
+
       const imported = [];
 
       for (const t of tables) {
