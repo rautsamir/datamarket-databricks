@@ -394,7 +394,9 @@ export function registerRoutes(app) {
       const { host, token } = await getUcAuth();
       const data = await ucApiRequest(host, token,
         `/api/2.1/unity-catalog/schemas?catalog_name=${encodeURIComponent(catalog)}`);
-      const schemas = (data.schemas || []).map(s => ({ name: s.name, full_name: s.full_name, comment: s.comment }));
+      const schemas = (data.schemas || [])
+        .filter(s => s.name !== 'information_schema')
+        .map(s => ({ name: s.name, full_name: s.full_name, comment: s.comment }));
       res.json({ schemas });
     } catch (e) {
       res.status(500).json({ error: e.message });
