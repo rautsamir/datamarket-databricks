@@ -129,7 +129,8 @@ export function registerRoutes(app) {
       const needsGrant = results.filter(c => !c.accessible);
       const grantSql = needsGrant.length > 0 && spId
         ? needsGrant.map(c =>
-            `GRANT USE SCHEMA ON ALL SCHEMAS IN CATALOG \`${c.name}\` TO \`${spId}\`;\n` +
+            `GRANT USE CATALOG ON CATALOG \`${c.name}\` TO \`${spId}\`;\n` +
+            `GRANT USE SCHEMA ON CATALOG \`${c.name}\` TO \`${spId}\`;\n` +
             `GRANT BROWSE ON CATALOG \`${c.name}\` TO \`${spId}\`;`
           ).join('\n\n')
         : '';
