@@ -54,13 +54,15 @@ databricks auth describe --profile my-profile
 
 ## Step 3 — Run the deploy script
 
+This is the only command you need to run:
+
 ```bash
 ./deploy.sh --profile my-profile
 ```
 
-That's it. The script handles everything automatically — including creating the Lakebase project if it doesn't exist yet.
+That's it. One line from the repo root — the script handles everything end-to-end.
 
-> If a previous deploy was interrupted mid-provisioning and the default project name (`datamarket`) is in a broken state, pass a custom project name:
+> **If the default Lakebase project name (`datamarket`) is in a broken state** (interrupted mid-provisioning), pass a custom name:
 > ```bash
 > ./deploy.sh --profile my-profile --lakebase-project datamarket-app
 > ```
@@ -129,17 +131,13 @@ An onboarding wizard opens automatically with 3 quick steps:
 
 ## Re-deploying (updates)
 
-Pull the latest and re-run with the same flags you used originally. The script is fully idempotent — existing resources are reused, grants are re-applied safely.
+One line — same flags you used originally:
 
 ```bash
 git pull origin main && ./deploy.sh --profile my-profile
 ```
 
-If you used a custom Lakebase project name, pass it again:
-
-```bash
-git pull origin main && ./deploy.sh --profile my-profile --lakebase-project datamarket-app
-```
+> If you used `--lakebase-project datamarket-app` (or any custom name) on first deploy, include it again here. The script is fully idempotent — existing resources are reused, grants re-applied safely.
 
 ---
 
