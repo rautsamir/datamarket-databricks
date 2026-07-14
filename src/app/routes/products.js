@@ -348,6 +348,24 @@ export function registerRoutes(app) {
   });
 
   // ─── Admin: Product inline update ─────────────────────────────────────────────
+  app.delete('/api/portal/products/:ref', async (req, res) => {
+    try {
+      const { ref } = req.params;
+      // Delete dependent rows first, then the product
+      await query(`DELETE FROM access_requests WHERE product_id IN (SELECT product_id FROM data_products WHERE product_ref = $1)`, [ref]);
+      await query(`DELETE FROM audit_log WHERE target_name = $1`, [ref]);
+      const { rows: [deleted] } = await query(
+        `DELETE FROM data_products WHERE product_ref = $1 RETURNING product_ref, display_name`, [ref]);
+      if (!deleted) return res.status(404).json({ error: 'Product not found' });
+      cacheClear(`schema:${ref}`);
+      cacheClear(`preview:${ref}`);
+      res.json({ deleted: true, ref: deleted.product_ref, name: deleted.display_name });
+    } catch (e) {
+      console.error('[DELETE /api/portal/products/:ref]', e.message);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   app.put('/api/portal/products/:ref', async (req, res) => {
     try {
       const { ref } = req.params;
