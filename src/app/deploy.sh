@@ -304,13 +304,18 @@ except: print('')
 # ── Helper: get endpoint hostname for a branch ────────────────────────────────
 _get_host() {
   local branch="$1"
-  databricks api get "2.0/postgres/endpoints/projects/${LAKEBASE_PROJECT}/branches/${branch}/endpoints/primary" \
-    --profile "$PROFILE" 2>/dev/null \
+  databricks postgres list-endpoints "projects/${LAKEBASE_PROJECT}/branches/${branch}" \
+    --profile "$PROFILE" -o json 2>/dev/null \
   | python3 -c "
 import sys, json
 try:
-    d = json.load(sys.stdin)
-    print(d.get('read_write_dns','') or d.get('dns','') or d.get('hostname',''))
+    items = json.load(sys.stdin)
+    if not isinstance(items, list): items = []
+    for ep in items:
+        host = ep.get('status', {}).get('hosts', {}).get('host', '')
+        if host:
+            print(host)
+            break
 except: print('')
 " 2>/dev/null || true
 }
