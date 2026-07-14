@@ -650,7 +650,7 @@ elif [[ -z "$SP_UUID" ]]; then
   warn "SP UUID not detected — skipping warehouse grant. Grant manually in the UI."
 else
   WAREHOUSE_PERM_PAYLOAD="{\"access_control_list\":[{\"service_principal_name\":\"${SP_UUID}\",\"permission_level\":\"CAN_USE\"}]}"
-  WAREHOUSE_PERM_RESULT=$(databricks api patch "2.0/permissions/warehouses/${WAREHOUSE_ID}" \
+  WAREHOUSE_PERM_RESULT=$(databricks api patch "/api/2.0/permissions/warehouses/${WAREHOUSE_ID}" \
     --profile "$PROFILE" \
     --json "$WAREHOUSE_PERM_PAYLOAD" 2>&1 || echo "error")
 
@@ -675,7 +675,7 @@ elif [[ -z "$WAREHOUSE_ID" ]]; then
 else
   info "Listing UC catalogs visible to this profile..."
 
-  CATALOGS=$(databricks api get "2.1/unity-catalog/catalogs" \
+  CATALOGS=$(databricks api get "/api/2.1/unity-catalog/catalogs" \
     --profile "$PROFILE" 2>/dev/null \
     | python3 -c "
 import sys, json
@@ -695,12 +695,12 @@ except: print('')
     for CATALOG in $CATALOGS; do
       # Grant USE CATALOG + USE SCHEMA via SQL warehouse
       GRANT_SQL="GRANT USE CATALOG ON CATALOG \`${CATALOG}\` TO \`${SP_UUID}\`; GRANT USE SCHEMA ON ALL SCHEMAS IN CATALOG \`${CATALOG}\` TO \`${SP_UUID}\`;"
-      GRANT_RESULT=$(databricks api post "2.0/sql/statements" \
+      GRANT_RESULT=$(databricks api post "/api/2.0/sql/statements" \
         --profile "$PROFILE" \
         --json "{\"warehouse_id\":\"${WAREHOUSE_ID}\",\"statement\":\"GRANT USE CATALOG ON CATALOG \`${CATALOG}\` TO \`${SP_UUID}\`\",\"wait_timeout\":\"10s\"}" \
         2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('status',{}).get('state','UNKNOWN'))" 2>/dev/null || echo "ERROR")
 
-      GRANT_SCHEMA_RESULT=$(databricks api post "2.0/sql/statements" \
+      GRANT_SCHEMA_RESULT=$(databricks api post "/api/2.0/sql/statements" \
         --profile "$PROFILE" \
         --json "{\"warehouse_id\":\"${WAREHOUSE_ID}\",\"statement\":\"GRANT USE SCHEMA ON ALL SCHEMAS IN CATALOG \`${CATALOG}\` TO \`${SP_UUID}\`\",\"wait_timeout\":\"10s\"}" \
         2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('status',{}).get('state','UNKNOWN'))" 2>/dev/null || echo "ERROR")
