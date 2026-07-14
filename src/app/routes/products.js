@@ -434,34 +434,61 @@ export function registerRoutes(app) {
     try {
       const { catalog, schema } = req.query;
       if (!catalog || !schema) return res.status(400).json({ error: 'catalog and schema params required' });
-      const { host, token } = await getUcAuth();
+
       const { rows: existing } = await query(
         `SELECT uc_full_name FROM data_products WHERE uc_full_name IS NOT NULL AND uc_full_name != ''`);
       const registered = new Set(existing.map(r => r.uc_full_name));
-      const data = await ucApiRequest(host, token,
-        `/api/2.1/unity-catalog/tables?catalog_name=${encodeURIComponent(catalog)}&schema_name=${encodeURIComponent(schema)}&omit_columns=true`);
-      const tables = (data.tables || []).map(t => ({
-        full_name: t.full_name, table_name: t.name,
-        schema_name: schema, catalog_name: catalog,
-        table_type: t.table_type, comment: t.comment,
-        registered: registered.has(t.full_name),
-      }));
 
-      // If no tables returned (whether due to missing USE SCHEMA or a genuine permission error),
-      // surface the grant SQL so the admin can fix it inline.
+      let tables = [];
+
+      // Primary: use SQL warehouse SHOW TABLES — more reliable for SP permission model
+      const warehouseId = getSetting('sql_warehouse_id', '');
+      if (warehouseId) {
+        try {
+          const stmt = await databricksApi('POST', '/api/2.0/sql/statements', {
+            warehouse_id: warehouseId,
+            statement: `SHOW TABLES IN \`${catalog}\`.\`${schema}\``,
+            wait_timeout: '15s',
+          });
+          if (stmt.data?.status?.state === 'SUCCEEDED') {
+            const rows = stmt.data.result?.data_array || [];
+            // SHOW TABLES returns [database, tableName, isTemporary]
+            tables = rows.map(r => {
+              const tName = r[1] || r[0];
+              const full = `${catalog}.${schema}.${tName}`;
+              return { full_name: full, table_name: tName, schema_name: schema, catalog_name: catalog, registered: registered.has(full) };
+            });
+          }
+        } catch (e) {
+          console.warn('[uc-tables-browse] SHOW TABLES failed, falling back to UC REST API:', e.message);
+        }
+      }
+
+      // Fallback: UC REST API (requires USE SCHEMA on the schema)
+      if (tables.length === 0 && !warehouseId) {
+        const { host, token } = await getUcAuth();
+        const data = await ucApiRequest(host, token,
+          `/api/2.1/unity-catalog/tables?catalog_name=${encodeURIComponent(catalog)}&schema_name=${encodeURIComponent(schema)}`);
+        tables = (data.tables || []).map(t => ({
+          full_name: t.full_name, table_name: t.name,
+          schema_name: schema, catalog_name: catalog,
+          table_type: t.table_type, comment: t.comment,
+          registered: registered.has(t.full_name),
+        }));
+      }
+
+      // If still empty, offer the grant SQL so admin can fix inline
       let needsGrant = false;
       let grantSql = '';
       let sqlEditorUrl = '';
       if (tables.length === 0) {
-        try {
-          const spId = process.env.DATABRICKS_CLIENT_ID || '';
-          if (spId) {
-            needsGrant = true;
-            const databricksHost = (process.env.DATABRICKS_HOST || '').replace(/\/$/, '');
-            grantSql = `GRANT USE SCHEMA ON SCHEMA \`${catalog}\`.\`${schema}\` TO \`${spId}\`;`;
-            sqlEditorUrl = databricksHost ? `${databricksHost}/sql/editor` : '';
-          }
-        } catch (_) { /* non-fatal */ }
+        const spId = process.env.DATABRICKS_CLIENT_ID || '';
+        if (spId) {
+          needsGrant = true;
+          const databricksHost = (process.env.DATABRICKS_HOST || '').replace(/\/$/, '');
+          grantSql = `GRANT USE SCHEMA ON SCHEMA \`${catalog}\`.\`${schema}\` TO \`${spId}\`;`;
+          sqlEditorUrl = databricksHost ? `${databricksHost}/sql/editor` : '';
+        }
       }
 
       res.json({ tables, needsGrant, grantSql, sqlEditorUrl });
