@@ -783,15 +783,16 @@ except: print('')
 
       SCHEMA_GRANT_OK=0; SCHEMA_GRANT_FAIL=0
       for SCHEMA in $SCHEMAS_IN_CAT; do
+        # Grant SELECT on schema — required for the SP to list/browse tables in the Import modal
         SR=$(databricks api post "/api/2.0/sql/statements" \
           --profile "$PROFILE" \
-          --json "{\"warehouse_id\":\"${WAREHOUSE_ID}\",\"statement\":\"GRANT USE SCHEMA ON SCHEMA \`${CATALOG}\`.\`${SCHEMA}\` TO \`${SP_UUID}\`\",\"wait_timeout\":\"10s\"}" \
+          --json "{\"warehouse_id\":\"${WAREHOUSE_ID}\",\"statement\":\"GRANT SELECT ON SCHEMA \`${CATALOG}\`.\`${SCHEMA}\` TO \`${SP_UUID}\`\",\"wait_timeout\":\"10s\"}" \
           2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('status',{}).get('state','UNKNOWN'))" 2>/dev/null || echo "ERROR")
         [[ "$SR" == "SUCCEEDED" ]] && SCHEMA_GRANT_OK=$((SCHEMA_GRANT_OK+1)) || SCHEMA_GRANT_FAIL=$((SCHEMA_GRANT_FAIL+1))
       done
 
       if [[ "$GRANT_RESULT" == "SUCCEEDED" ]]; then
-        ok "  ✓ ${CATALOG} — USE CATALOG granted, USE SCHEMA on ${SCHEMA_GRANT_OK} schema(s)"
+        ok "  ✓ ${CATALOG} — USE CATALOG granted, SELECT on ${SCHEMA_GRANT_OK} schema(s)"
         [[ $SCHEMA_GRANT_FAIL -gt 0 ]] && warn "  ⚠ ${CATALOG} — ${SCHEMA_GRANT_FAIL} schema(s) could not be granted (may be owned by another user — use wizard to fix)"
       else
         warn "  ⚠ ${CATALOG} — USE CATALOG grant failed. Use the onboarding wizard to generate the correct SQL."
