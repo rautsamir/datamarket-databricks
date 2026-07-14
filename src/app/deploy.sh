@@ -424,8 +424,17 @@ step 5 "Building frontend"
 (cd "$SCRIPT_DIR" && npm install --silent 2>/dev/null && npm run build:local 2>&1 | tail -4)
 ok "Build complete"
 
-# ── Upload and deploy ─────────────────────────────────────────────────────────
-step 6 "Uploading and deploying to Databricks"
+# ── Build frontend ────────────────────────────────────────────────────────────
+step 6 "Building frontend and uploading to Databricks"
+
+if command -v node >/dev/null 2>&1 && [[ -f "${SCRIPT_DIR}/vite.config.js" ]]; then
+  info "Running Vite build..."
+  (cd "${SCRIPT_DIR}" && npm run build:local 2>&1 | tail -5) \
+    && ok "Frontend built" \
+    || warn "Vite build failed — uploading existing dist/"
+else
+  info "Node/Vite not found — uploading existing dist/"
+fi
 
 info "Uploading dist/..."
 databricks workspace import-dir "${SCRIPT_DIR}/dist" "${WORKSPACE_PATH}/dist" \
