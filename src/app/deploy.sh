@@ -341,7 +341,14 @@ if [[ -z "$BRANCH_NAME" ]]; then
     echo -n "."; sleep 5
   done
   echo ""
-  [[ -z "$BRANCH_NAME" ]] && fail "Lakebase branch not ready after 3 min. Check Compute → Lakebase → ${LAKEBASE_PROJECT} in the UI."
+  if [[ -z "$BRANCH_NAME" ]]; then
+    warn "Lakebase branch not ready after 3 min."
+    warn "This can happen if a previous deploy left the project in a broken state."
+    warn "Options:"
+    warn "  1. Try a different project name: ./deploy.sh --lakebase-project datamarket-app"
+    warn "  2. Delete the project from the UI (Compute → Lakebase) and re-run"
+    fail "Lakebase branch unavailable for project '${LAKEBASE_PROJECT}'. See options above."
+  fi
 fi
 
 # ── Resolve endpoint hostname ─────────────────────────────────────────────────
