@@ -155,8 +155,9 @@ export function registerRoutes(app) {
           }
           // Grant USE SCHEMA per schema where tables aren't visible
           for (const sch of cat.schemasNeedingGrant) {
+            // SELECT on schema lets the SP list and browse tables (USE SCHEMA alone is not enough)
             grantLines.push(
-              `GRANT USE SCHEMA ON SCHEMA \`${cat.name}\`.\`${sch.name}\` TO \`${spId}\`;`
+              `GRANT SELECT ON SCHEMA \`${cat.name}\`.\`${sch.name}\` TO \`${spId}\`;`
             );
           }
         }
