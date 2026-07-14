@@ -188,7 +188,7 @@ export function FirstRunWizard({ onDismiss }) {
                   <div>
                     <p className="font-semibold text-gray-900">Grant catalog access to the app</p>
                     <p className="text-sm text-gray-500 mt-0.5">
-                      The app runs as a service principal. It needs <code className="bg-gray-100 px-1 rounded text-xs">USE SCHEMA</code> on your catalogs to browse and import tables.
+                      The app runs as a service principal. It needs <code className="bg-gray-100 px-1 rounded text-xs">USE SCHEMA</code> on each schema to browse and import tables.
                     </p>
                   </div>
                 </div>
@@ -213,13 +213,29 @@ export function FirstRunWizard({ onDismiss }) {
                     {/* Catalog list */}
                     <div className="border border-gray-100 rounded-xl overflow-hidden divide-y divide-gray-100">
                       {accessCheck.catalogs.map(cat => (
-                        <div key={cat.name} className="flex items-center gap-3 px-4 py-2.5">
-                          <Database className="h-3.5 w-3.5 text-gray-400 shrink-0" />
-                          <span className="text-sm text-gray-700 font-mono flex-1 truncate">{cat.name}</span>
-                          {cat.accessible
-                            ? <span className="flex items-center gap-1 text-xs text-emerald-600 font-medium shrink-0"><CheckCircle2 className="h-3.5 w-3.5" /> Accessible</span>
-                            : <span className="flex items-center gap-1 text-xs text-amber-600 font-medium shrink-0"><AlertTriangle className="h-3.5 w-3.5" /> Needs grant</span>
-                          }
+                        <div key={cat.name}>
+                          <div className="flex items-center gap-3 px-4 py-2.5">
+                            <Database className="h-3.5 w-3.5 text-gray-400 shrink-0" />
+                            <span className="text-sm text-gray-700 font-mono flex-1 truncate">{cat.name}</span>
+                            {cat.accessible
+                              ? <span className="flex items-center gap-1 text-xs text-emerald-600 font-medium shrink-0"><CheckCircle2 className="h-3.5 w-3.5" /> Accessible</span>
+                              : cat.schemasVisible
+                                ? <span className="flex items-center gap-1 text-xs text-amber-600 font-medium shrink-0"><AlertTriangle className="h-3.5 w-3.5" /> Tables need grant</span>
+                                : <span className="flex items-center gap-1 text-xs text-red-600 font-medium shrink-0"><AlertTriangle className="h-3.5 w-3.5" /> No access</span>
+                            }
+                          </div>
+                          {/* Per-schema breakdown when schemas are visible but tables aren't */}
+                          {!cat.accessible && cat.schemasVisible && cat.schemasNeedingGrant?.length > 0 && (
+                            <div className="bg-amber-50 border-t border-amber-100 px-5 py-2 space-y-1">
+                              {cat.schemasNeedingGrant.map(s => (
+                                <div key={s.name} className="flex items-center gap-2 text-xs text-amber-700">
+                                  <span className="w-2 h-2 rounded-full bg-amber-400 shrink-0" />
+                                  <code className="font-mono">{cat.name}.{s.name}</code>
+                                  <span className="text-amber-500">— needs USE SCHEMA</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>
