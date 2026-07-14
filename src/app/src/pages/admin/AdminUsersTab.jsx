@@ -174,6 +174,7 @@ function UsersList() {
               <option value="analyst">Analyst</option>
               <option value="manager">Manager</option>
               <option value="data_steward">Data Steward</option>
+              <option value="admin">Admin</option>
             </select>
             <input
               placeholder="Department"
@@ -239,6 +240,7 @@ function UsersList() {
                           <option value="analyst">Analyst</option>
                           <option value="manager">Manager</option>
                           <option value="steward">Steward</option>
+                          <option value="admin">Admin</option>
                         </select>
                       ) : (
                         <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium capitalize ${roleColors[user.role] || 'bg-gray-100 text-gray-700'}`}>
