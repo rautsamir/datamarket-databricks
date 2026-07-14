@@ -447,12 +447,12 @@ export function registerRoutes(app) {
         registered: registered.has(t.full_name),
       }));
 
-      // If no tables returned but no error, the SP likely lacks USE SCHEMA on this schema.
-      // Include the grant SQL so the frontend can show a helpful fix.
+      // If no tables returned (whether due to missing USE SCHEMA or a genuine permission error),
+      // surface the grant SQL so the admin can fix it inline.
       let needsGrant = false;
       let grantSql = '';
       let sqlEditorUrl = '';
-      if (tables.length === 0 && !data.error_code) {
+      if (tables.length === 0) {
         try {
           const spId = process.env.DATABRICKS_CLIENT_ID || '';
           if (spId) {
