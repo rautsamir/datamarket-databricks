@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { Upload, X, Check, Database, ChevronRight, ChevronDown, Loader2, Search, Table2 } from 'lucide-react'
+import { Upload, X, Check, Database, FolderOpen, Folder, ChevronRight, ChevronDown, Loader2, Search, Table2 } from 'lucide-react'
 
 const BLUE = '#003865'
 
@@ -233,7 +233,7 @@ export function ImportUCModal({ onClose, onImported }) {
                             ? <ChevronDown className="h-3.5 w-3.5 text-gray-500 shrink-0" />
                             : <ChevronRight className="h-3.5 w-3.5 text-gray-500 shrink-0" />
                         }
-                        <span className="text-base leading-none">🗂️</span>
+                        <Database className="h-4 w-4 text-gray-500 shrink-0" />
                         <span className="font-semibold text-gray-800 truncate">{cat.name}</span>
                         {cat.schemasLoaded && (
                           <span className="text-xs text-gray-400 shrink-0">
@@ -280,7 +280,10 @@ export function ImportUCModal({ onClose, onImported }) {
                                         ? <ChevronDown className="h-3 w-3 text-gray-500 shrink-0" />
                                         : <ChevronRight className="h-3 w-3 text-gray-500 shrink-0" />
                                     }
-                                    <span className="text-sm leading-none">📁</span>
+                                    {sch.expanded
+                                      ? <FolderOpen className="h-3.5 w-3.5 text-amber-500 shrink-0" />
+                                      : <Folder className="h-3.5 w-3.5 text-amber-500 shrink-0" />
+                                    }
                                     <span className="text-gray-700 truncate">{sch.name}</span>
                                     {sch.tablesLoaded && (
                                       <span className="text-xs text-gray-400 shrink-0">
