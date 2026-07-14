@@ -40,11 +40,6 @@ cd datamarket-databricks
 
 That's it. Everything else is automatic.
 
-> **Tip:** If the default Lakebase project name (`datamarket`) is in a broken state from a previous interrupted deploy, pass a custom name:
-> ```bash
-> ./deploy.sh --profile my-profile --lakebase-project datamarket-app
-> ```
-
 ### Optional flags
 
 | Flag | Default | Description |
