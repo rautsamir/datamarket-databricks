@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { Upload, X, Check, Database, FolderOpen, Folder, ChevronRight, ChevronDown, Loader2, Search, Table2 } from 'lucide-react'
-import { useAppConfig } from '@/context/AppConfigContext'
 
 const BLUE = '#003865'
 
@@ -16,7 +15,6 @@ function Checkbox({ checked, indeterminate, disabled, onChange, className = '' }
 
 // ─── Main modal ───────────────────────────────────────────────────────────────
 export function ImportUCModal({ onClose, onImported }) {
-  const { databricksHost } = useAppConfig()
   const [catalogs, setCatalogs]   = useState([])
   const [schemas,  setSchemas]    = useState({})
   const [tables,   setTables]     = useState({})
@@ -27,26 +25,12 @@ export function ImportUCModal({ onClose, onImported }) {
   const [result,   setResult]     = useState(null)
   const [initError, setInitError] = useState(null)
 
-  // Call Databricks UC API directly from the browser using the user's own session.
-  // This gives the same catalog/schema/table visibility as the native Databricks UI —
-  // no SP grants required for browsing. Falls back to our backend proxy for local dev.
-  const ucGet = async (path) => {
-    if (databricksHost) {
-      const host = databricksHost.replace(/^https?:\/\//, '').replace(/\/$/, '')
-      const r = await fetch(`https://${host}${path}`, { credentials: 'include' })
-      if (!r.ok) throw new Error(`Databricks API ${r.status}: ${await r.text()}`)
-      return r.json()
-    }
-    // local dev: proxy through backend
-    const r = await fetch(`/api/portal/admin/uc-proxy?path=${encodeURIComponent(path)}`)
-    if (!r.ok) throw new Error(await r.text())
-    return r.json()
-  }
-
   // Load catalog list on mount
   useEffect(() => {
-    ucGet('/api/2.1/unity-catalog/catalogs')
+    fetch('/api/portal/admin/uc-catalogs')
+      .then(r => r.json())
       .then(d => {
+        if (d.error) throw new Error(d.error)
         setCatalogs((d.catalogs || []).map(c => ({
           name: c.name, comment: c.comment,
           expanded: false, loading: false, schemasLoaded: false,
@@ -54,7 +38,7 @@ export function ImportUCModal({ onClose, onImported }) {
       })
       .catch(e => setInitError(e.message))
       .finally(() => setInitLoad(false))
-  }, [databricksHost])
+  }, [])
 
   // ── Catalog toggle ───────────────────────────────────────────────────────────
   const toggleCatalog = async (name) => {
@@ -63,12 +47,13 @@ export function ImportUCModal({ onClose, onImported }) {
     if (!cat.schemasLoaded && !cat.expanded) {
       setCatalogs(p => p.map(c => c.name === name ? { ...c, loading: true } : c))
       try {
-        const d = await ucGet(`/api/2.1/unity-catalog/schemas?catalog_name=${encodeURIComponent(name)}`)
+        const d = await fetch(`/api/portal/admin/uc-schemas?catalog=${encodeURIComponent(name)}`).then(r => r.json())
+        if (d.error) throw new Error(d.error)
         setSchemas(p => ({
           ...p,
-          [name]: (d.schemas || [])
-            .filter(s => s.name !== 'information_schema')
-            .map(s => ({ name: s.name, expanded: false, loading: false, tablesLoaded: false }))
+          [name]: (d.schemas || []).map(s => ({
+            name: s.name, expanded: false, loading: false, tablesLoaded: false,
+          }))
         }))
         setCatalogs(p => p.map(c => c.name === name ? { ...c, schemasLoaded: true, loading: false, expanded: true } : c))
       } catch {
@@ -87,19 +72,11 @@ export function ImportUCModal({ onClose, onImported }) {
     if (!sch.tablesLoaded && !sch.expanded) {
       setSchemas(p => ({ ...p, [catName]: p[catName].map(s => s.name === schName ? { ...s, loading: true } : s) }))
       try {
-        // Fetch registered products to mark already-imported tables
-        const reg = await fetch('/api/portal/admin/uc-registered').then(r => r.json())
-        const registered = new Set(reg.names || [])
-        const d = await ucGet(
-          `/api/2.1/unity-catalog/tables?catalog_name=${encodeURIComponent(catName)}&schema_name=${encodeURIComponent(schName)}&omit_columns=true`
-        )
-        const tbl = (d.tables || []).map(t => ({
-          full_name: t.full_name, table_name: t.name,
-          schema_name: schName, catalog_name: catName,
-          table_type: t.table_type, comment: t.comment,
-          registered: registered.has(t.full_name),
-        }))
-        setTables(p => ({ ...p, [key]: tbl }))
+        const d = await fetch(
+          `/api/portal/admin/uc-tables-browse?catalog=${encodeURIComponent(catName)}&schema=${encodeURIComponent(schName)}`
+        ).then(r => r.json())
+        if (d.error) throw new Error(d.error)
+        setTables(p => ({ ...p, [key]: d.tables || [] }))
         setSchemas(p => ({
           ...p,
           [catName]: p[catName].map(s => s.name === schName ? { ...s, tablesLoaded: true, loading: false, expanded: true } : s)
