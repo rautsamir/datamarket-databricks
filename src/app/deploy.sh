@@ -523,17 +523,29 @@ else
     SCHEMA_SQL="${SCRIPT_DIR}/../../schema/schema.sql"
     PG_CONN="host=${LAKEBASE_HOST} port=5432 dbname=databricks_postgres sslmode=require user=${DATABRICKS_USER:-${ADMIN_EMAIL}}"
 
-    PGPASSWORD="$PG_TOKEN" psql "$PG_CONN" \
+    SCHEMA_OUT=$(PGPASSWORD="$PG_TOKEN" psql "$PG_CONN" \
       -c "CREATE SCHEMA IF NOT EXISTS ${APP_NAME}; SET search_path TO ${APP_NAME};" \
-      2>&1 | grep -v "^$" | grep -v "^NOTICE" || true
+      2>&1 || true)
+    if echo "$SCHEMA_OUT" | grep -qi "FATAL\|error:"; then
+      warn "Lakebase connection failed during schema create:"
+      echo "$SCHEMA_OUT" | grep -i "FATAL\|error:" | head -3
+      warn "The app will try to auto-create tables on first start."
+      warn "If this persists, ensure your CLI profile uses OAuth (not PAT):"
+      warn "  databricks auth login --profile ${PROFILE} --host ${DATABRICKS_HOST}"
+    fi
 
     if [[ -f "$SCHEMA_SQL" ]]; then
-      PGPASSWORD="$PG_TOKEN" psql "$PG_CONN" \
+      SQL_OUT=$(PGPASSWORD="$PG_TOKEN" psql "$PG_CONN" \
         -v ON_ERROR_STOP=0 \
         -c "SET search_path TO ${APP_NAME};" \
         -f "$SCHEMA_SQL" \
-        2>&1 | grep -v "^$" | grep -v "^NOTICE" | grep -v "already exists" || true
-      ok "schema.sql applied"
+        2>&1 || true)
+      if echo "$SQL_OUT" | grep -qi "FATAL\|error:"; then
+        warn "schema.sql could not be applied — connection issue (see above)"
+      else
+        echo "$SQL_OUT" | grep -v "^$" | grep -v "^NOTICE" | grep -v "already exists" || true
+        ok "schema.sql applied"
+      fi
     else
       warn "schema.sql not found at ${SCHEMA_SQL} — tables will be auto-created by the app on first start"
     fi
@@ -562,7 +574,7 @@ else
     fi
 
     # Step 2: Grant the SP full access
-    PGPASSWORD="$PG_TOKEN" psql \
+    GRANT_OUT=$(PGPASSWORD="$PG_TOKEN" psql \
       "host=${LAKEBASE_HOST} port=5432 dbname=databricks_postgres sslmode=require user=${DATABRICKS_USER:-${ADMIN_EMAIL}}" \
       -c "
         GRANT USAGE  ON SCHEMA ${APP_NAME} TO \"${SP_UUID}\";
@@ -571,9 +583,16 @@ else
         GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA ${APP_NAME} TO \"${SP_UUID}\";
         ALTER DEFAULT PRIVILEGES IN SCHEMA ${APP_NAME} GRANT ALL ON TABLES    TO \"${SP_UUID}\";
         ALTER DEFAULT PRIVILEGES IN SCHEMA ${APP_NAME} GRANT ALL ON SEQUENCES TO \"${SP_UUID}\";
-      " 2>&1 | grep -v "^$" || warn "psql encountered warnings (may be safe to ignore)"
+      " 2>&1 || true)
 
-    ok "Schema initialized and grants applied"
+    if echo "$GRANT_OUT" | grep -qi "FATAL\|error:"; then
+      warn "SP grants failed — Lakebase connection issue:"
+      echo "$GRANT_OUT" | grep -i "FATAL\|error:" | head -3
+      warn "The app SP won't have write access until grants are applied."
+      warn "Re-run deploy after fixing auth (see above)."
+    else
+      ok "Schema initialized and grants applied"
+    fi
 
     # Step 3: Redeploy so the app starts with a ready database
     info "Restarting app..."
@@ -633,7 +652,7 @@ else
   WAREHOUSE_PERM_PAYLOAD="{\"access_control_list\":[{\"service_principal_name\":\"${SP_UUID}\",\"permission_level\":\"CAN_USE\"}]}"
   WAREHOUSE_PERM_RESULT=$(databricks api patch "2.0/permissions/warehouses/${WAREHOUSE_ID}" \
     --profile "$PROFILE" \
-    --body "$WAREHOUSE_PERM_PAYLOAD" 2>&1 || echo "error")
+    --json "$WAREHOUSE_PERM_PAYLOAD" 2>&1 || echo "error")
 
   if echo "$WAREHOUSE_PERM_RESULT" | grep -qi "error\|Error\|INTERNAL"; then
     warn "Warehouse permission grant returned a warning (may already be set or partial):"
@@ -678,12 +697,12 @@ except: print('')
       GRANT_SQL="GRANT USE CATALOG ON CATALOG \`${CATALOG}\` TO \`${SP_UUID}\`; GRANT USE SCHEMA ON ALL SCHEMAS IN CATALOG \`${CATALOG}\` TO \`${SP_UUID}\`;"
       GRANT_RESULT=$(databricks api post "2.0/sql/statements" \
         --profile "$PROFILE" \
-        --body "{\"warehouse_id\":\"${WAREHOUSE_ID}\",\"statement\":\"GRANT USE CATALOG ON CATALOG \`${CATALOG}\` TO \`${SP_UUID}\`\",\"wait_timeout\":\"10s\"}" \
+        --json "{\"warehouse_id\":\"${WAREHOUSE_ID}\",\"statement\":\"GRANT USE CATALOG ON CATALOG \`${CATALOG}\` TO \`${SP_UUID}\`\",\"wait_timeout\":\"10s\"}" \
         2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('status',{}).get('state','UNKNOWN'))" 2>/dev/null || echo "ERROR")
 
       GRANT_SCHEMA_RESULT=$(databricks api post "2.0/sql/statements" \
         --profile "$PROFILE" \
-        --body "{\"warehouse_id\":\"${WAREHOUSE_ID}\",\"statement\":\"GRANT USE SCHEMA ON ALL SCHEMAS IN CATALOG \`${CATALOG}\` TO \`${SP_UUID}\`\",\"wait_timeout\":\"10s\"}" \
+        --json "{\"warehouse_id\":\"${WAREHOUSE_ID}\",\"statement\":\"GRANT USE SCHEMA ON ALL SCHEMAS IN CATALOG \`${CATALOG}\` TO \`${SP_UUID}\`\",\"wait_timeout\":\"10s\"}" \
         2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('status',{}).get('state','UNKNOWN'))" 2>/dev/null || echo "ERROR")
 
       if [[ "$GRANT_RESULT" == "SUCCEEDED" && "$GRANT_SCHEMA_RESULT" == "SUCCEEDED" ]]; then
