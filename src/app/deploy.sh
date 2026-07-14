@@ -757,35 +757,48 @@ except: print('')
     info "Found catalogs: ${CATALOGS}"
     GRANT_ERRORS=0
     for CATALOG in $CATALOGS; do
-      # Grant USE CATALOG + USE SCHEMA via SQL warehouse
-      GRANT_SQL="GRANT USE CATALOG ON CATALOG \`${CATALOG}\` TO \`${SP_UUID}\`; GRANT USE SCHEMA ON ALL SCHEMAS IN CATALOG \`${CATALOG}\` TO \`${SP_UUID}\`;"
+      # 1. Grant USE CATALOG
       GRANT_RESULT=$(databricks api post "/api/2.0/sql/statements" \
         --profile "$PROFILE" \
         --json "{\"warehouse_id\":\"${WAREHOUSE_ID}\",\"statement\":\"GRANT USE CATALOG ON CATALOG \`${CATALOG}\` TO \`${SP_UUID}\`\",\"wait_timeout\":\"10s\"}" \
         2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('status',{}).get('state','UNKNOWN'))" 2>/dev/null || echo "ERROR")
 
-      GRANT_SCHEMA_RESULT=$(databricks api post "/api/2.0/sql/statements" \
-        --profile "$PROFILE" \
-        --json "{\"warehouse_id\":\"${WAREHOUSE_ID}\",\"statement\":\"GRANT USE SCHEMA ON CATALOG \`${CATALOG}\` TO \`${SP_UUID}\`\",\"wait_timeout\":\"10s\"}" \
-        2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('status',{}).get('state','UNKNOWN'))" 2>/dev/null || echo "ERROR")
-
-      # BROWSE lets the SP see all schema/table metadata including schemas added after deploy.
-      # This is a metadata-only privilege — it does not grant SELECT on any data.
-      GRANT_BROWSE_RESULT=$(databricks api post "/api/2.0/sql/statements" \
+      # 2. Grant BROWSE so the SP can list all schemas/tables metadata
+      databricks api post "/api/2.0/sql/statements" \
         --profile "$PROFILE" \
         --json "{\"warehouse_id\":\"${WAREHOUSE_ID}\",\"statement\":\"GRANT BROWSE ON CATALOG \`${CATALOG}\` TO \`${SP_UUID}\`\",\"wait_timeout\":\"10s\"}" \
-        2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('status',{}).get('state','UNKNOWN'))" 2>/dev/null || echo "ERROR")
+        2>/dev/null >/dev/null || true
 
-      if [[ "$GRANT_RESULT" == "SUCCEEDED" && "$GRANT_SCHEMA_RESULT" == "SUCCEEDED" ]]; then
-        ok "  ✓ ${CATALOG} — USE CATALOG + USE SCHEMA granted"
-        [[ "$GRANT_BROWSE_RESULT" == "SUCCEEDED" ]] && ok "  ✓ ${CATALOG} — BROWSE granted (new schemas visible without redeploy)" \
-          || warn "  ⚠ ${CATALOG} — BROWSE grant failed (new schemas may require redeploy to appear in Import modal)"
+      # 3. Grant USE SCHEMA per schema (required for table listing via UC REST API)
+      SCHEMAS_IN_CAT=$(databricks api get "/api/2.1/unity-catalog/schemas?catalog_name=${CATALOG}" \
+        --profile "$PROFILE" 2>/dev/null \
+        | python3 -c "
+import sys,json
+try:
+    d=json.load(sys.stdin)
+    names=[s['name'] for s in d.get('schemas',[]) if s.get('name') not in ('information_schema',)]
+    print(' '.join(names))
+except: print('')
+" 2>/dev/null || true)
+
+      SCHEMA_GRANT_OK=0; SCHEMA_GRANT_FAIL=0
+      for SCHEMA in $SCHEMAS_IN_CAT; do
+        SR=$(databricks api post "/api/2.0/sql/statements" \
+          --profile "$PROFILE" \
+          --json "{\"warehouse_id\":\"${WAREHOUSE_ID}\",\"statement\":\"GRANT USE SCHEMA ON SCHEMA \`${CATALOG}\`.\`${SCHEMA}\` TO \`${SP_UUID}\`\",\"wait_timeout\":\"10s\"}" \
+          2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('status',{}).get('state','UNKNOWN'))" 2>/dev/null || echo "ERROR")
+        [[ "$SR" == "SUCCEEDED" ]] && SCHEMA_GRANT_OK=$((SCHEMA_GRANT_OK+1)) || SCHEMA_GRANT_FAIL=$((SCHEMA_GRANT_FAIL+1))
+      done
+
+      if [[ "$GRANT_RESULT" == "SUCCEEDED" ]]; then
+        ok "  ✓ ${CATALOG} — USE CATALOG granted, USE SCHEMA on ${SCHEMA_GRANT_OK} schema(s)"
+        [[ $SCHEMA_GRANT_FAIL -gt 0 ]] && warn "  ⚠ ${CATALOG} — ${SCHEMA_GRANT_FAIL} schema(s) could not be granted (may be owned by another user — use wizard to fix)"
       else
-        warn "  ⚠ ${CATALOG} — grant may have failed (${GRANT_RESULT} / ${GRANT_SCHEMA_RESULT}). May lack privileges on this catalog."
+        warn "  ⚠ ${CATALOG} — USE CATALOG grant failed. Use the onboarding wizard to generate the correct SQL."
         GRANT_ERRORS=$((GRANT_ERRORS + 1))
       fi
     done
-    [[ $GRANT_ERRORS -eq 0 ]] && ok "UC catalog grants complete" || warn "${GRANT_ERRORS} catalog(s) could not be granted — check above. These may be restricted catalogs."
+    [[ $GRANT_ERRORS -eq 0 ]] && ok "UC catalog grants complete" || warn "${GRANT_ERRORS} catalog(s) could not be granted — the onboarding wizard will show the exact SQL to run."
   fi
 fi
 

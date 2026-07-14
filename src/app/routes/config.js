@@ -114,26 +114,56 @@ export function registerRoutes(app) {
       const catalogs = (catalogData.catalogs || [])
         .filter(c => !['system', '__databricks_internal', 'hive_metastore'].includes(c.name));
 
-      // For each catalog, check if the SP can see any schemas (beyond information_schema).
+      // For each catalog, check schemas and whether the SP can list tables in them.
       const results = await Promise.all(catalogs.map(async (cat) => {
+        let schemas = [];
+        let schemasVisible = false;
         try {
           const d = await ucApiRequest(host, token,
             `/api/2.1/unity-catalog/schemas?catalog_name=${encodeURIComponent(cat.name)}`);
-          const schemas = (d.schemas || []).filter(s => s.name !== 'information_schema');
-          return { name: cat.name, accessible: schemas.length > 0, schemaCount: schemas.length };
-        } catch {
-          return { name: cat.name, accessible: false, schemaCount: 0 };
-        }
+          schemas = (d.schemas || []).filter(s => s.name !== 'information_schema');
+          schemasVisible = schemas.length > 0;
+        } catch { /* no access */ }
+
+        // Check if tables are visible in each schema
+        const schemaDetails = await Promise.all(schemas.map(async (sch) => {
+          try {
+            const td = await ucApiRequest(host, token,
+              `/api/2.1/unity-catalog/tables?catalog_name=${encodeURIComponent(cat.name)}&schema_name=${encodeURIComponent(sch.name)}&omit_columns=true&max_results=1`);
+            return { name: sch.name, tablesVisible: true, tableCount: (td.tables || []).length };
+          } catch {
+            return { name: sch.name, tablesVisible: false, tableCount: 0 };
+          }
+        }));
+
+        const schemasNeedingGrant = schemaDetails.filter(s => !s.tablesVisible);
+        const accessible = schemasVisible && schemasNeedingGrant.length === 0;
+        return { name: cat.name, accessible, schemasVisible, schemas: schemaDetails, schemasNeedingGrant };
       }));
 
+      // Generate targeted per-schema grants for schemas where tables aren't visible,
+      // plus catalog-level grants for catalogs where schemas themselves aren't visible.
+      const grantLines = [];
+      for (const cat of results) {
+        if (!cat.accessible && spId) {
+          if (!cat.schemasVisible) {
+            // Can't even list schemas — need catalog-level grants
+            grantLines.push(
+              `GRANT USE CATALOG ON CATALOG \`${cat.name}\` TO \`${spId}\`;`,
+              `GRANT BROWSE ON CATALOG \`${cat.name}\` TO \`${spId}\`;`
+            );
+          }
+          // Grant USE SCHEMA per schema where tables aren't visible
+          for (const sch of cat.schemasNeedingGrant) {
+            grantLines.push(
+              `GRANT USE SCHEMA ON SCHEMA \`${cat.name}\`.\`${sch.name}\` TO \`${spId}\`;`
+            );
+          }
+        }
+      }
+
       const needsGrant = results.filter(c => !c.accessible);
-      const grantSql = needsGrant.length > 0 && spId
-        ? needsGrant.map(c =>
-            `GRANT USE CATALOG ON CATALOG \`${c.name}\` TO \`${spId}\`;\n` +
-            `GRANT USE SCHEMA ON CATALOG \`${c.name}\` TO \`${spId}\`;\n` +
-            `GRANT BROWSE ON CATALOG \`${c.name}\` TO \`${spId}\`;`
-          ).join('\n\n')
-        : '';
+      const grantSql = grantLines.join('\n');
 
       const sqlEditorUrl = databricksHost ? `${databricksHost}/sql/editor` : '';
 
