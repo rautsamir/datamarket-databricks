@@ -578,29 +578,50 @@ else
       info "Seed data skipped (production mode). Pass --seed true to load demo data."
     fi
 
-    # Step 2: Grant the SP full access
-    GRANT_OUT=$(PGPASSWORD="$PG_TOKEN" psql \
-      "host=${LAKEBASE_HOST} port=5432 dbname=databricks_postgres sslmode=require user=${DATABRICKS_USER:-${ADMIN_EMAIL}}" \
-      -c "
-        GRANT USAGE  ON SCHEMA ${APP_NAME} TO \"${SP_UUID}\";
-        GRANT CREATE ON SCHEMA ${APP_NAME} TO \"${SP_UUID}\";
-        GRANT ALL PRIVILEGES ON ALL TABLES    IN SCHEMA ${APP_NAME} TO \"${SP_UUID}\";
-        GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA ${APP_NAME} TO \"${SP_UUID}\";
-        ALTER DEFAULT PRIVILEGES IN SCHEMA ${APP_NAME} GRANT ALL ON TABLES    TO \"${SP_UUID}\";
-        ALTER DEFAULT PRIVILEGES IN SCHEMA ${APP_NAME} GRANT ALL ON SEQUENCES TO \"${SP_UUID}\";
-      " 2>&1 || true)
+    # Step 2: Restart the app first so it connects to Lakebase and creates its SP role
+    info "Restarting app so it connects to Lakebase and creates its SP role..."
+    databricks apps deploy "$APP_NAME" \
+      --source-code-path "$WORKSPACE_PATH" \
+      --profile "$PROFILE" 2>&1 | tail -3
+    ok "App restarted — waiting 45s for SP role to be created in Lakebase..."
+    sleep 45
 
-    if echo "$GRANT_OUT" | grep -qi "FATAL\|error:"; then
-      warn "SP grants failed — Lakebase connection issue:"
-      echo "$GRANT_OUT" | grep -i "FATAL\|error:" | head -3
-      warn "The app SP won't have write access until grants are applied."
-      warn "Re-run deploy after fixing auth (see above)."
-    else
-      ok "Schema initialized and grants applied"
+    # Step 3: Grant the SP full access (retry up to 3x — role may take a moment to appear)
+    GRANT_SUCCESS=false
+    for grant_attempt in 1 2 3; do
+      GRANT_OUT=$(PGPASSWORD="$PG_TOKEN" psql \
+        "host=${LAKEBASE_HOST} port=5432 dbname=databricks_postgres sslmode=require user=${DATABRICKS_USER:-${ADMIN_EMAIL}}" \
+        -c "
+          GRANT USAGE  ON SCHEMA ${APP_NAME} TO \"${SP_UUID}\";
+          GRANT CREATE ON SCHEMA ${APP_NAME} TO \"${SP_UUID}\";
+          GRANT ALL PRIVILEGES ON ALL TABLES    IN SCHEMA ${APP_NAME} TO \"${SP_UUID}\";
+          GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA ${APP_NAME} TO \"${SP_UUID}\";
+          ALTER DEFAULT PRIVILEGES IN SCHEMA ${APP_NAME} GRANT ALL ON TABLES    TO \"${SP_UUID}\";
+          ALTER DEFAULT PRIVILEGES IN SCHEMA ${APP_NAME} GRANT ALL ON SEQUENCES TO \"${SP_UUID}\";
+        " 2>&1 || true)
+
+      if echo "$GRANT_OUT" | grep -qi "does not exist"; then
+        warn "SP role not yet created (attempt ${grant_attempt}/3) — waiting 30s more..."
+        sleep 30
+      elif echo "$GRANT_OUT" | grep -qi "FATAL\|error:"; then
+        warn "SP grants failed:"
+        echo "$GRANT_OUT" | grep -i "FATAL\|error:" | head -3
+        warn "Re-run deploy to retry grants."
+        break
+      else
+        ok "Schema grants applied to SP"
+        GRANT_SUCCESS=true
+        break
+      fi
+    done
+
+    if [[ "$GRANT_SUCCESS" != "true" ]]; then
+      warn "SP grants could not be applied — the app will start but data may not persist."
+      warn "Re-run deploy once the app is fully running to retry."
     fi
 
-    # Step 3: Redeploy so the app starts with a ready database
-    info "Restarting app..."
+    # Step 4: Final restart with grants in place
+    info "Final app restart with grants applied..."
     databricks apps deploy "$APP_NAME" \
       --source-code-path "$WORKSPACE_PATH" \
       --profile "$PROFILE" 2>&1 | tail -3
