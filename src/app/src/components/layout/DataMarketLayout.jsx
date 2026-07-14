@@ -204,7 +204,9 @@ export function DataMarketLayout({ currentPage, onNavigate, children }) {
                   <div className={`w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold ${avatarBadgeClass}`}>
                     {persona.avatar}
                   </div>
-                  <span className="text-sm hidden sm:block">{(persona.name || '').split(' ')[0] || persona.name}</span>
+                  <span className="text-sm hidden sm:block">{
+                    (() => { const n = persona.name || ''; return n.includes('@') ? n.split('@')[0] : (n.split(' ')[0] || n); })()
+                  }</span>
                   <ChevronDown className="h-3 w-3 hidden sm:block" />
                 </button>
 

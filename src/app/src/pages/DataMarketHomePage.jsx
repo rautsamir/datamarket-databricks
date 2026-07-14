@@ -146,7 +146,12 @@ export function DataMarketHomePage({ onNavigate, onOpenProduct }) {
           <img src="/la-county-seal.png" alt="DataMarket" className="w-16 h-16 rounded-full shadow-md ring-2 ring-gray-200" />
         </div>
         <h1 className="text-3xl sm:text-4xl font-bold text-gray-900">
-          Hi {(persona.name || '').split(' ')[0] || (persona.email || '').split('@')[0]},
+          Hi {(() => {
+            const name = persona.name || '';
+            // If name looks like an email, use the local part before @
+            const display = name.includes('@') ? name.split('@')[0] : name.split(' ')[0];
+            return display || name;
+          })()},
         </h1>
         <p className="text-xl text-gray-500">Search for data or ask a question in plain English.</p>
 
