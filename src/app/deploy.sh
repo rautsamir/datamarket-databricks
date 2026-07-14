@@ -769,8 +769,17 @@ except: print('')
         --json "{\"warehouse_id\":\"${WAREHOUSE_ID}\",\"statement\":\"GRANT USE SCHEMA ON ALL SCHEMAS IN CATALOG \`${CATALOG}\` TO \`${SP_UUID}\`\",\"wait_timeout\":\"10s\"}" \
         2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('status',{}).get('state','UNKNOWN'))" 2>/dev/null || echo "ERROR")
 
+      # BROWSE lets the SP see all schema/table metadata including schemas added after deploy.
+      # This is a metadata-only privilege — it does not grant SELECT on any data.
+      GRANT_BROWSE_RESULT=$(databricks api post "/api/2.0/sql/statements" \
+        --profile "$PROFILE" \
+        --json "{\"warehouse_id\":\"${WAREHOUSE_ID}\",\"statement\":\"GRANT BROWSE ON CATALOG \`${CATALOG}\` TO \`${SP_UUID}\`\",\"wait_timeout\":\"10s\"}" \
+        2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('status',{}).get('state','UNKNOWN'))" 2>/dev/null || echo "ERROR")
+
       if [[ "$GRANT_RESULT" == "SUCCEEDED" && "$GRANT_SCHEMA_RESULT" == "SUCCEEDED" ]]; then
         ok "  ✓ ${CATALOG} — USE CATALOG + USE SCHEMA granted"
+        [[ "$GRANT_BROWSE_RESULT" == "SUCCEEDED" ]] && ok "  ✓ ${CATALOG} — BROWSE granted (new schemas visible without redeploy)" \
+          || warn "  ⚠ ${CATALOG} — BROWSE grant failed (new schemas may require redeploy to appear in Import modal)"
       else
         warn "  ⚠ ${CATALOG} — grant may have failed (${GRANT_RESULT} / ${GRANT_SCHEMA_RESULT}). May lack privileges on this catalog."
         GRANT_ERRORS=$((GRANT_ERRORS + 1))

@@ -376,19 +376,9 @@ export function registerRoutes(app) {
   });
 
   // ─── Admin: UC Catalog Browser ────────────────────────────────────────────────
-  // Use the logged-in admin's forwarded token for UC browsing so they see all
-  // schemas/tables they personally have access to — not just what the SP was granted.
-  // Falls back to SP token for local dev where no forwarded token exists.
-  async function getAdminUcAuth(req) {
-    const forwarded = req.headers['x-forwarded-access-token'];
-    const { host } = await getUcAuth();
-    if (forwarded) return { host, token: forwarded };
-    return getUcAuth();
-  }
-
   app.get('/api/portal/admin/uc-catalogs', async (req, res) => {
     try {
-      const { host, token } = await getAdminUcAuth(req);
+      const { host, token } = await getUcAuth();
       const data = await ucApiRequest(host, token, '/api/2.1/unity-catalog/catalogs');
       const catalogs = (data.catalogs || []).map(c => ({ name: c.name, comment: c.comment }));
       res.json({ catalogs });
@@ -401,7 +391,7 @@ export function registerRoutes(app) {
     try {
       const { catalog } = req.query;
       if (!catalog) return res.status(400).json({ error: 'catalog param required' });
-      const { host, token } = await getAdminUcAuth(req);
+      const { host, token } = await getUcAuth();
       const data = await ucApiRequest(host, token,
         `/api/2.1/unity-catalog/schemas?catalog_name=${encodeURIComponent(catalog)}`);
       const schemas = (data.schemas || [])
@@ -417,7 +407,7 @@ export function registerRoutes(app) {
     try {
       const { catalog, schema } = req.query;
       if (!catalog || !schema) return res.status(400).json({ error: 'catalog and schema params required' });
-      const { host, token } = await getAdminUcAuth(req);
+      const { host, token } = await getUcAuth();
       const { rows: existing } = await query(
         `SELECT uc_full_name FROM data_products WHERE uc_full_name IS NOT NULL AND uc_full_name != ''`);
       const registered = new Set(existing.map(r => r.uc_full_name));
