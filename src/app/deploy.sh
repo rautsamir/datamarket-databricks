@@ -578,50 +578,88 @@ else
       info "Seed data skipped (production mode). Pass --seed true to load demo data."
     fi
 
-    # Step 2: Restart the app first so it connects to Lakebase and creates its SP role
-    info "Restarting app so it connects to Lakebase and creates its SP role..."
-    databricks apps deploy "$APP_NAME" \
-      --source-code-path "$WORKSPACE_PATH" \
-      --profile "$PROFILE" 2>&1 | tail -3
-    ok "App restarted — waiting 45s for SP role to be created in Lakebase..."
-    sleep 45
+    # Step 2: Create the SP OAuth role in Lakebase (required before app can authenticate)
+    # Lakebase uses LAKEBASE_OAUTH_V1 auth — the SP role must be pre-registered via the API,
+    # not via psql CREATE ROLE (which creates a native password role that won't accept OAuth tokens).
+    info "Registering SP as OAuth role in Lakebase..."
+    EXISTING_LAKEBASE_ROLE=$(databricks postgres list-roles \
+      "projects/${LAKEBASE_PROJECT}/branches/${BRANCH_NAME}" \
+      --profile "$PROFILE" -o json 2>/dev/null \
+      | python3 -c "
+import sys, json
+try:
+    roles = json.load(sys.stdin)
+    match = next((r for r in roles if r.get('status',{}).get('postgres_role','') == '${SP_UUID}'), None)
+    if match:
+        method = match.get('status',{}).get('auth_method','')
+        print(method)
+    else:
+        print('')
+except: print('')
+" 2>/dev/null || true)
 
-    # Step 3: Grant the SP full access (retry up to 3x — role may take a moment to appear)
-    GRANT_SUCCESS=false
-    for grant_attempt in 1 2 3; do
-      GRANT_OUT=$(PGPASSWORD="$PG_TOKEN" psql \
-        "host=${LAKEBASE_HOST} port=5432 dbname=databricks_postgres sslmode=require user=${DATABRICKS_USER:-${ADMIN_EMAIL}}" \
-        -c "
-          GRANT USAGE  ON SCHEMA ${APP_NAME} TO \"${SP_UUID}\";
-          GRANT CREATE ON SCHEMA ${APP_NAME} TO \"${SP_UUID}\";
-          GRANT ALL PRIVILEGES ON ALL TABLES    IN SCHEMA ${APP_NAME} TO \"${SP_UUID}\";
-          GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA ${APP_NAME} TO \"${SP_UUID}\";
-          ALTER DEFAULT PRIVILEGES IN SCHEMA ${APP_NAME} GRANT ALL ON TABLES    TO \"${SP_UUID}\";
-          ALTER DEFAULT PRIVILEGES IN SCHEMA ${APP_NAME} GRANT ALL ON SEQUENCES TO \"${SP_UUID}\";
-        " 2>&1 || true)
-
-      if echo "$GRANT_OUT" | grep -qi "does not exist"; then
-        warn "SP role not yet created (attempt ${grant_attempt}/3) — waiting 30s more..."
-        sleep 30
-      elif echo "$GRANT_OUT" | grep -qi "FATAL\|error:"; then
-        warn "SP grants failed:"
-        echo "$GRANT_OUT" | grep -i "FATAL\|error:" | head -3
-        warn "Re-run deploy to retry grants."
-        break
-      else
-        ok "Schema grants applied to SP"
-        GRANT_SUCCESS=true
-        break
+    if [[ "$EXISTING_LAKEBASE_ROLE" == "LAKEBASE_OAUTH_V1" ]]; then
+      ok "SP OAuth role already registered in Lakebase."
+    else
+      if [[ -n "$EXISTING_LAKEBASE_ROLE" ]]; then
+        # Wrong auth method — find and delete the existing role first
+        WRONG_ROLE_NAME=$(databricks postgres list-roles \
+          "projects/${LAKEBASE_PROJECT}/branches/${BRANCH_NAME}" \
+          --profile "$PROFILE" -o json 2>/dev/null \
+          | python3 -c "
+import sys, json
+try:
+    roles = json.load(sys.stdin)
+    match = next((r for r in roles if r.get('status',{}).get('postgres_role','') == '${SP_UUID}'), None)
+    print(match.get('name','') if match else '')
+except: print('')
+" 2>/dev/null || true)
+        [[ -n "$WRONG_ROLE_NAME" ]] && \
+          databricks postgres delete-role "$WRONG_ROLE_NAME" --profile "$PROFILE" 2>/dev/null || true
+        # Also clean up the manually-created postgres role if it exists
+        PGPASSWORD="$PG_TOKEN" psql "$PG_CONN" \
+          -c "REVOKE ALL ON ALL TABLES IN SCHEMA ${APP_NAME} FROM \"${SP_UUID}\"; \
+              REVOKE ALL ON ALL SEQUENCES IN SCHEMA ${APP_NAME} FROM \"${SP_UUID}\"; \
+              REVOKE ALL ON SCHEMA ${APP_NAME} FROM \"${SP_UUID}\"; \
+              DROP ROLE IF EXISTS \"${SP_UUID}\";" \
+          2>/dev/null || true
       fi
-    done
 
-    if [[ "$GRANT_SUCCESS" != "true" ]]; then
-      warn "SP grants could not be applied — the app will start but data may not persist."
-      warn "Re-run deploy once the app is fully running to retry."
+      CREATE_ROLE_OUT=$(databricks postgres create-role \
+        "projects/${LAKEBASE_PROJECT}/branches/${BRANCH_NAME}" \
+        --json "{\"spec\": {\"identity_type\": \"SERVICE_PRINCIPAL\", \"postgres_role\": \"${SP_UUID}\"}}" \
+        --profile "$PROFILE" -o json 2>&1 || true)
+
+      if echo "$CREATE_ROLE_OUT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('status',{}).get('auth_method',''))" 2>/dev/null | grep -q "LAKEBASE_OAUTH_V1"; then
+        ok "SP OAuth role created in Lakebase"
+      else
+        warn "Could not create SP OAuth role: ${CREATE_ROLE_OUT:0:150}"
+        warn "App may fall back to demo mode. Re-run deploy to retry."
+      fi
     fi
 
-    # Step 4: Final restart with grants in place
-    info "Final app restart with grants applied..."
+    # Step 3: Grant the SP schema access
+    GRANT_OUT=$(PGPASSWORD="$PG_TOKEN" psql \
+      "host=${LAKEBASE_HOST} port=5432 dbname=databricks_postgres sslmode=require user=${DATABRICKS_USER:-${ADMIN_EMAIL}}" \
+      -c "
+        GRANT CONNECT ON DATABASE databricks_postgres TO \"${SP_UUID}\";
+        GRANT USAGE  ON SCHEMA ${APP_NAME} TO \"${SP_UUID}\";
+        GRANT CREATE ON SCHEMA ${APP_NAME} TO \"${SP_UUID}\";
+        GRANT ALL PRIVILEGES ON ALL TABLES    IN SCHEMA ${APP_NAME} TO \"${SP_UUID}\";
+        GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA ${APP_NAME} TO \"${SP_UUID}\";
+        ALTER DEFAULT PRIVILEGES IN SCHEMA ${APP_NAME} GRANT ALL ON TABLES    TO \"${SP_UUID}\";
+        ALTER DEFAULT PRIVILEGES IN SCHEMA ${APP_NAME} GRANT ALL ON SEQUENCES TO \"${SP_UUID}\";
+      " 2>&1 || true)
+
+    if echo "$GRANT_OUT" | grep -qi "FATAL\|error:"; then
+      warn "SP grants failed:"
+      echo "$GRANT_OUT" | grep -i "FATAL\|error:" | head -3
+    else
+      ok "Schema grants applied to SP"
+    fi
+
+    # Step 4: Restart app with role + grants in place
+    info "Restarting app..."
     databricks apps deploy "$APP_NAME" \
       --source-code-path "$WORKSPACE_PATH" \
       --profile "$PROFILE" 2>&1 | tail -3
