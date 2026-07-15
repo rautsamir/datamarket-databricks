@@ -844,7 +844,9 @@ else
 fi
 
 info "Tags flow into system.billing.usage under the custom_tags column."
-info "Note: Lakebase and FMAPI usage is not resource-taggable — filter by sku_name instead."
+info "Note: Lakebase custom_tags are UI-only (CLI API does not expose the field yet)."
+info "  → Workspace → Lakebase → ${APP_NAME} → Settings → Custom tags → add app=datamarket"
+info "Note: FMAPI (Ask AI) usage has no taggable resource — filter by sku_name instead."
 info "Full DataMarket spend query:"
 cat <<'QUERY'
 
