@@ -69,7 +69,7 @@ Pass the same flags you used originally (e.g. `--lakebase-project datamarket-app
 
 ## How it works
 
-The script runs 9 steps end-to-end with no manual input:
+The script runs 10 steps end-to-end with no manual input:
 
 | Step | What happens |
 |---|---|
@@ -81,7 +81,8 @@ The script runs 9 steps end-to-end with no manual input:
 | 6 | Uploads source + built assets, deploys the Databricks App |
 | 7 | Creates Lakebase schema via `schema.sql`, registers the SP as an OAuth role, applies grants |
 | 8 | Auto-detects a running SQL Warehouse, grants SP `CAN USE` |
-| 9 | Grants SP `USE CATALOG + USE SCHEMA` on all Unity Catalog catalogs |
+| 9 | Grants SP `USE CATALOG + BROWSE + SELECT` on all Unity Catalog catalogs and schemas |
+| 10 | Tags the App and SQL Warehouse (`app=datamarket`) for spend observability in `system.billing.usage` |
 
 After deploy, an onboarding wizard opens in the app. The SQL Warehouse ID is auto-filled from what the script detected — just verify and continue.
 
@@ -95,7 +96,8 @@ After deploy, an onboarding wizard opens in the app. The SQL Warehouse ID is aut
 |---|---|---|---|
 | Lakebase | App SP | `USAGE + CREATE` on schema, `ALL PRIVILEGES` on tables | 7 |
 | SQL Warehouse | App SP | `CAN USE` | 8 |
-| Unity Catalog | App SP | `USE CATALOG + USE SCHEMA` on all catalogs | 9 |
+| Unity Catalog | App SP | `USE CATALOG + BROWSE + SELECT` on all catalogs/schemas | 9 |
+| Databricks App + Warehouse | — | Tagged `app=datamarket` for cost attribution | 10 |
 | Unity Catalog | End users | `SELECT` on approved tables | via approval flow |
 
 ---
@@ -112,6 +114,8 @@ After deploy, an onboarding wizard opens in the app. The SQL Warehouse ID is aut
 
 **Approvals don't issue UC grants** — Warehouse missing or SP lacks `CAN USE`. Re-run; Step 8 re-applies automatically.
 
-**UC Import shows no catalogs or schemas** — SP lacks UC permissions. Re-run; Step 9 re-applies `USE CATALOG + USE SCHEMA`.
+**UC Import shows no catalogs or schemas** — SP lacks UC permissions. Re-run; Step 9 re-applies `USE CATALOG + BROWSE + SELECT ON SCHEMA`. If a new schema was created after deploy, use **Manage → Settings → Re-open setup wizard → Catalog Access** to generate the exact `GRANT SELECT ON SCHEMA` SQL and run it in the SQL editor.
+
+**Lakebase custom tags** — The Lakebase API doesn't expose tags via CLI yet. Set them manually: Compute → Lakebase → your project → Settings → Custom tags → add `app = datamarket`.
 
 **Want to switch from Demo to Production mode** — redeploy without the flag: `./deploy.sh --profile my-profile` (default is `--demo-mode false`).
