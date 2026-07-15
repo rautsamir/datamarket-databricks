@@ -619,6 +619,8 @@ export function registerRoutes(app) {
         let ucTags = [];
         let ucOwner = '';
         let ucUpdatedAt = null;
+        let hasPii = false;
+        let hasConf = false;
         try {
           const ucMeta = await ucApiRequest(host, token,
             `/api/2.1/unity-catalog/tables/${encodeURIComponent(t.full_name)}`);
@@ -628,17 +630,26 @@ export function registerRoutes(app) {
 
           // UC tags are a key-value map — use the keys as tags (values often empty)
           const rawTags = ucMeta?.tags || {};
-          ucTags = Object.keys(rawTags).filter(k => k && k !== 'UC Import');
+          ucTags = Object.keys(rawTags).filter(k => k && k.trim());
+
+          // Infer sensitivity from column names using same patterns as schema panel
+          const piiPatterns = /^(ssn|social_security|dob|date_of_birth|birth_date|email|phone|address|bank_account|credit_card|salary|compensation|wage)/i;
+          const confPatterns = /^(cost_center|approver|budget_code|account_number|internal_id)/i;
+          const cols = ucMeta?.columns || [];
+          hasPii  = cols.some(c => piiPatterns.test(c.name || ''));
+          hasConf = !hasPii && cols.some(c => confPatterns.test(c.name || ''));
         } catch (_) { /* non-fatal — proceed without enrichment */ }
 
-        // Build final tag array: UC tags + domain + catalog/schema context
+        // Build final tag array: domain + sensitivity + existing UC tags
+        // Intentionally excludes catalog/schema names (already structured fields)
+        // and 'UC Import' (source method, not a discovery attribute)
         const domain = t.domain || inferDomain(catalogName, schemaName);
-        const tagSet = new Set(['UC Import']);
-        if (domain !== 'Other') tagSet.add(domain);
+        const tagSet = new Set();
+        if (domain && domain !== 'Other') tagSet.add(domain);
+        if (hasPii)  tagSet.add('Contains PII');
+        if (hasConf) tagSet.add('Confidential');
         ucTags.forEach(tag => tagSet.add(tag));
-        // Add catalog/schema as context tags if they're meaningful (not 'samples')
-        if (catalogName && catalogName !== 'samples' && catalogName !== 'main') tagSet.add(catalogName);
-        if (schemaName && schemaName.length > 3) tagSet.add(schemaName.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()));
+        if (tagSet.size === 0) tagSet.add('Dataset');
         const finalTags = `{${[...tagSet].map(tag => `"${tag.replace(/"/g, '')}"`).join(',')}}`;
 
         const description = ucComment || t.description || `Imported from Unity Catalog: ${t.full_name}`;
