@@ -28,7 +28,7 @@ warn() { echo -e "${YELLOW}⚠${NC} $*"; }
 fail() { echo -e "${RED}✗ ERROR:${NC} $*"; exit 1; }
 step() { echo -e "\n${BOLD}${BLUE}[$1/$TOTAL_STEPS]${NC} ${BOLD}$2${NC}"; }
 
-TOTAL_STEPS=9
+TOTAL_STEPS=10
 
 # ── Defaults ─────────────────────────────────────────────────────────────────
 PROFILE="DEFAULT"
@@ -258,7 +258,7 @@ print('app.yaml patched with real Lakebase hostname')
   fi
 
   # Skip to grants — app is already deployed via bundle
-  TOTAL_STEPS=9
+  TOTAL_STEPS=10
   SP_UUID=$(databricks apps get "$APP_NAME" --profile "$PROFILE" --output json 2>/dev/null \
     | python3 -c "
 import sys, json
@@ -811,6 +811,44 @@ except: print('')
     [[ $GRANT_ERRORS -eq 0 ]] && ok "UC catalog grants complete" || warn "${GRANT_ERRORS} catalog(s) could not be granted — the onboarding wizard will show the exact SQL to run."
   fi
 fi
+
+# ── Resource tagging for spend/consumption observability ─────────────────────
+step 10 "Tagging Databricks resources for spend observability"
+
+TAGS_JSON="{\"app\":\"datamarket\",\"purpose\":\"data_marketplace\",\"environment\":\"${DEMO_MODE_FLAG:-production}\"}"
+
+# Tag the Databricks App
+APP_TAG_RESULT=$(databricks api patch "/api/2.0/apps/${APP_NAME}" \
+  --profile "$PROFILE" \
+  --json "{\"custom_tags\":${TAGS_JSON}}" 2>&1 || echo "error")
+if echo "$APP_TAG_RESULT" | grep -qi "error\|INTERNAL"; then
+  warn "App tagging skipped (API may not support PATCH custom_tags in this workspace version)"
+else
+  ok "App tagged: app=datamarket, purpose=data_marketplace"
+fi
+
+# Tag the SQL Warehouse
+if [[ -n "$WAREHOUSE_ID" ]]; then
+  WH_TAGS_PAYLOAD="{\"tags\":{\"custom_tags\":[{\"key\":\"app\",\"value\":\"datamarket\"},{\"key\":\"purpose\",\"value\":\"data_marketplace\"},{\"key\":\"environment\",\"value\":\"${DEMO_MODE_FLAG:-production}\"}]}}"
+  WH_TAG_RESULT=$(databricks api post "/api/2.0/sql/warehouses/${WAREHOUSE_ID}/edit" \
+    --profile "$PROFILE" \
+    --json "$WH_TAGS_PAYLOAD" 2>&1 || echo "error")
+  if echo "$WH_TAG_RESULT" | grep -qi "error\|INTERNAL"; then
+    warn "Warehouse tagging skipped — apply manually in SQL Warehouse settings"
+    info "  Tag key: app, value: datamarket"
+  else
+    ok "Warehouse ${WAREHOUSE_ID} tagged: app=datamarket"
+  fi
+else
+  info "No warehouse ID — warehouse tagging skipped"
+fi
+
+info "Tags flow into system.billing.usage under the custom_tags column."
+info "Example query:"
+info "  SELECT usage_date, usage_type, SUM(usage_quantity) AS DBUs"
+info "    FROM system.billing.usage"
+info "   WHERE custom_tags['app'] = 'datamarket'"
+info "   GROUP BY 1, 2 ORDER BY 1 DESC"
 
 
 APP_URL=$(databricks apps get "$APP_NAME" --profile "$PROFILE" --output json 2>/dev/null \
