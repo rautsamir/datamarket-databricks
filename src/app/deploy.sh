@@ -844,11 +844,31 @@ else
 fi
 
 info "Tags flow into system.billing.usage under the custom_tags column."
-info "Example query:"
-info "  SELECT usage_date, usage_type, SUM(usage_quantity) AS DBUs"
-info "    FROM system.billing.usage"
-info "   WHERE custom_tags['app'] = 'datamarket'"
-info "   GROUP BY 1, 2 ORDER BY 1 DESC"
+info "Note: Lakebase and FMAPI usage is not resource-taggable — filter by sku_name instead."
+info "Full DataMarket spend query:"
+cat <<'QUERY'
+
+  -- Full DataMarket spend across all resource types
+  SELECT usage_date,
+         usage_type,
+         CASE
+           WHEN custom_tags['app'] = 'datamarket'           THEN 'App / Warehouse'
+           WHEN sku_name LIKE '%LAKEBASE%'                  THEN 'Lakebase (Postgres)'
+           WHEN sku_name LIKE '%FOUNDATION_MODEL%'
+             OR sku_name LIKE '%LLAMA%'
+             OR sku_name LIKE '%PREMIUM_SERVING%'           THEN 'Ask AI (FMAPI)'
+           ELSE 'Other'
+         END AS resource,
+         SUM(usage_quantity) AS dbus
+  FROM system.billing.usage
+  WHERE (custom_tags['app'] = 'datamarket'
+      OR sku_name LIKE '%LAKEBASE%'
+      OR sku_name LIKE '%FOUNDATION_MODEL%'
+      OR sku_name LIKE '%PREMIUM_SERVING%')
+  GROUP BY 1, 2, 3
+  ORDER BY 1 DESC, dbus DESC;
+
+QUERY
 
 
 APP_URL=$(databricks apps get "$APP_NAME" --profile "$PROFILE" --output json 2>/dev/null \
