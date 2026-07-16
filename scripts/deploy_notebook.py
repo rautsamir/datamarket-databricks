@@ -12,8 +12,8 @@
 # MAGIC 4. Initializes Lakebase schema and grants permissions
 # MAGIC
 # MAGIC **Prerequisites (workspace admin):**
-# MAGIC - Permission to create **Databricks Apps** and **Lakebase** projects
-# MAGIC - A **Lakebase Autoscaling** project (create in Compute → Lakebase if missing)
+# MAGIC - A **Lakebase Autoscaling** project already created (Compute → Lakebase)
+# MAGIC - Copy its **hostname** into the `lakebase_host` widget if auto-detect fails
 # MAGIC - A **SQL Warehouse** for UC grants on approval
 # MAGIC - Cluster with **outbound internet** (GitHub, npm)
 # MAGIC
@@ -37,7 +37,7 @@ dbutils.widgets.text("git_branch", "main", "Git branch")
 dbutils.widgets.text("admin_email", "", "Admin email (blank = your SSO email)")
 dbutils.widgets.text("app_name", "datamarket", "Databricks App name")
 dbutils.widgets.text("lakebase_project", "datamarket", "Lakebase project name")
-dbutils.widgets.text("lakebase_host", "", "Lakebase hostname (optional)")
+dbutils.widgets.text("lakebase_host", "", "Lakebase hostname (required if project not found)")
 dbutils.widgets.text("warehouse_id", "", "SQL Warehouse ID (optional)")
 dbutils.widgets.dropdown("demo_mode", "false", ["false", "true"], "Demo mode")
 
@@ -262,7 +262,7 @@ if APP_URL:
 # MAGIC |---|---|
 # MAGIC | `npm not found` | Attach a **cluster** (not Serverless), re-run Step 3 |
 # MAGIC | `CLI only supported in web terminal` | Expected on some workspaces — Steps 3–4 use SDK, not CLI |
-# MAGIC | `Lakebase hostname` | Create project in Compute → Lakebase, or set **lakebase_host** widget |
+# MAGIC | `Lakebase project not found` | Compute → Lakebase → create project → paste hostname in **lakebase_host** widget → re-run Step 4 |
 # MAGIC | `Could not read workspace host/token` | Attach a **cluster** (not Serverless), re-run Step 2 |
 # MAGIC | `Deploy did not reach SUCCEEDED` | Apps → your app → logs; need Apps create permission |
 # MAGIC | `psql` / schema warnings | Non-fatal — app creates tables on first start |
