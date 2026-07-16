@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react'
-import { ArrowLeft, BarChart3, FileText, Database, X, Calendar, User, RefreshCw, Tag, Lock, ExternalLink, CheckCircle2, Clock, Eye, EyeOff, ShieldAlert, ShieldCheck, Shield, Bot, LayoutDashboard, AppWindow, Cpu, Layers, Edit3, ClipboardList, Check } from 'lucide-react'
+import React, { useState, useEffect, useCallback } from 'react'
+import { ArrowLeft, BarChart3, FileText, Database, X, Calendar, User, RefreshCw, Tag, Lock, ExternalLink, CheckCircle2, Clock, Eye, EyeOff, ShieldAlert, ShieldCheck, Shield, Bot, LayoutDashboard, AppWindow, Cpu, Layers, Edit3, ClipboardList, Check, XCircle } from 'lucide-react'
 import { usePersona } from '../context/PersonaContext'
 import { useAppConfig } from '../context/AppConfigContext'
 
@@ -602,15 +602,13 @@ export function DataMarketProductDetailPage({ product, onBack, onNavigate }) {
   const [showModal, setShowModal] = useState(false)
   const [ucDescription, setUcDescription] = useState('')
   const [descExpanded, setDescExpanded] = useState(false)
-  const { hasAccess, myRequests, isAdmin } = usePersona()
+  const { getProductAccessState, isAdmin, revokeRequest, refreshRequests } = usePersona()
   const { databricksHost } = useAppConfig()
   const [copied, setCopied] = useState(false)
   const Icon = typeIcons[product.type] || BarChart3
   const productRef = product.product_ref || product.id
-  const existingRequest = myRequests.find(r =>
-    r.product_ref === productRef || r.productRef === productRef || r.productId === product.id
-  )
-  const accessGranted = hasAccess(productRef)
+  const accessState = getProductAccessState(productRef)
+  const accessGranted = accessState.canQuery
 
   // Strip markdown syntax for plain-text display
   const stripMarkdown = (text) => (text || '')
@@ -686,11 +684,19 @@ export function DataMarketProductDetailPage({ product, onBack, onNavigate }) {
                 <ArrowLeft className="h-4 w-4" /> Back
               </button>
 
-              {accessGranted ? (
+              {accessState.state === 'granted' ? (
                 <span className="flex items-center gap-2 px-4 py-2 bg-emerald-50 border border-emerald-200 rounded-lg text-sm font-medium text-emerald-700">
                   <CheckCircle2 className="h-4 w-4" /> Access Granted
                 </span>
-              ) : existingRequest?.status === 'Pending' ? (
+              ) : accessState.state === 'admin' ? (
+                <span className="flex items-center gap-2 px-4 py-2 bg-purple-50 border border-purple-200 rounded-lg text-sm font-medium text-purple-700">
+                  <ShieldCheck className="h-4 w-4" /> Admin Access
+                </span>
+              ) : accessState.state === 'revoked' ? (
+                <span className="flex items-center gap-2 px-4 py-2 bg-orange-50 border border-orange-200 rounded-lg text-sm font-medium text-orange-700">
+                  <XCircle className="h-4 w-4" /> Access Revoked
+                </span>
+              ) : accessState.state === 'pending' ? (
                 <span className="flex items-center gap-2 px-4 py-2 bg-amber-50 border border-amber-200 rounded-lg text-sm font-medium text-amber-700">
                   <Clock className="h-4 w-4" /> Request Pending
                 </span>
@@ -701,6 +707,15 @@ export function DataMarketProductDetailPage({ product, onBack, onNavigate }) {
                   style={{ backgroundColor: DataMarket_BLUE }}
                 >
                   <Lock className="h-4 w-4" /> Request Access
+                </button>
+              )}
+
+              {accessState.state === 'revoked' && (
+                <button
+                  onClick={() => setShowModal(true)}
+                  className="px-4 py-2 border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50"
+                >
+                  Request Again
                 </button>
               )}
 
@@ -880,7 +895,109 @@ export function DataMarketProductDetailPage({ product, onBack, onNavigate }) {
         onTableComment={setUcDescription}
       />
 
+      {isAdmin && (
+        <ProductGrantedAccessPanel
+          productRef={productRef}
+          revokeRequest={revokeRequest}
+          onRevoked={refreshRequests}
+        />
+      )}
+
       {showModal && <AccessRequestModal product={product} onClose={() => setShowModal(false)} />}
+    </div>
+  )
+}
+
+function ProductGrantedAccessPanel({ productRef, revokeRequest, onRevoked }) {
+  const [grants, setGrants] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [revoking, setRevoking] = useState(null)
+  const [revokeReason, setRevokeReason] = useState('')
+
+  const loadGrants = useCallback(() => {
+    setLoading(true)
+    fetch(`/api/portal/products/${encodeURIComponent(productRef)}/granted-access`)
+      .then(r => r.json())
+      .then(rows => { if (Array.isArray(rows)) setGrants(rows) })
+      .catch(() => setGrants([]))
+      .finally(() => setLoading(false))
+  }, [productRef])
+
+  useEffect(() => { loadGrants() }, [loadGrants])
+
+  const handleRevoke = async (requestRef) => {
+    setRevoking(requestRef)
+    await revokeRequest(requestRef, revokeReason || 'Access revoked by administrator')
+    setRevokeReason('')
+    setRevoking(null)
+    loadGrants()
+    onRevoked?.()
+  }
+
+  return (
+    <div className="mt-8 bg-white rounded-2xl border border-gray-200 p-6">
+      <div className="flex items-center gap-2 mb-1">
+        <ShieldCheck className="h-5 w-5" style={{ color: DataMarket_BLUE }} />
+        <h3 className="font-semibold text-gray-900">Granted Access</h3>
+      </div>
+      <p className="text-xs text-gray-500 mb-4">
+        Users with approved access to this product. Revoking issues a Unity Catalog REVOKE and updates their portal status.
+      </p>
+
+      {loading && <p className="text-sm text-gray-400 py-4 text-center">Loading...</p>}
+      {!loading && grants.length === 0 && (
+        <p className="text-sm text-gray-400 py-4 text-center border border-dashed border-gray-200 rounded-lg">
+          No approved access grants for this product yet.
+        </p>
+      )}
+      {!loading && grants.length > 0 && (
+        <div className="space-y-3">
+          {grants.map(g => (
+            <div key={g.request_ref} className="flex items-center justify-between gap-4 p-3 rounded-xl border border-gray-100 bg-gray-50/50">
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-gray-900">{g.requester_name || g.requester_email}</p>
+                <p className="text-xs text-gray-500">{g.requester_email}</p>
+                {g.resolved_at && (
+                  <p className="text-[10px] text-gray-400 mt-0.5">
+                    Approved {new Date(g.resolved_at).toLocaleDateString()}
+                    {g.expires_at ? ` · expires ${new Date(g.expires_at).toLocaleDateString()}` : ''}
+                  </p>
+                )}
+              </div>
+              {revoking === g.request_ref ? (
+                <div className="flex items-center gap-2 shrink-0">
+                  <input
+                    type="text"
+                    placeholder="Reason (optional)"
+                    value={revokeReason}
+                    onChange={e => setRevokeReason(e.target.value)}
+                    className="px-2 py-1 border border-gray-200 rounded text-xs w-36 focus:outline-none focus:ring-1 focus:ring-orange-300"
+                  />
+                  <button
+                    onClick={() => handleRevoke(g.request_ref)}
+                    className="px-3 py-1.5 rounded-lg text-xs font-medium text-white bg-orange-600 hover:bg-orange-700"
+                  >
+                    Confirm
+                  </button>
+                  <button
+                    onClick={() => { setRevoking(null); setRevokeReason('') }}
+                    className="px-2 py-1.5 rounded-lg text-xs text-gray-500 hover:bg-gray-100"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setRevoking(g.request_ref)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-orange-700 border border-orange-200 hover:bg-orange-50 shrink-0"
+                >
+                  <XCircle className="h-3.5 w-3.5" /> Revoke
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

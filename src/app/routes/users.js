@@ -1,5 +1,6 @@
 import { query, DEMO_MODE } from '../db.js';
 import { ucApiRequest, getUcAuth } from '../databricks.js';
+import { normalizeRole } from '../lib/roles.js';
 
 function callerEmail(req) {
   return req.headers['x-forwarded-email'] || req.headers['x-forwarded-user'] || req.body?.requester_email || 'anonymous';
@@ -30,10 +31,10 @@ export function registerRoutes(app) {
           const groupNames = scimUser.groups.map(g => g.display).filter(Boolean);
           const { rows: matched } = await query(
             `SELECT role FROM portal_groups WHERE group_name = ANY($1) ORDER BY
-               CASE role WHEN 'admin' THEN 1 WHEN 'steward' THEN 2 WHEN 'manager' THEN 3 ELSE 4 END LIMIT 1`,
+               CASE role WHEN 'admin' THEN 1 WHEN 'steward' THEN 2 ELSE 3 END LIMIT 1`,
             [groupNames]
           );
-          return matched[0]?.role || null;
+          return matched[0]?.role ? normalizeRole(matched[0].role) : null;
         } catch (_) { return null; }
       };
 
@@ -45,7 +46,15 @@ export function registerRoutes(app) {
           await query(`UPDATE users SET role = 'admin' WHERE email = $1`, [email]);
           user.role = 'admin';
           console.info(`[identity] Promoted ${email} to admin (ADMIN_EMAIL match)`);
+        } else if (!isHardcodedAdmin) {
+          const groupRole = await resolveGroupRole();
+          if (groupRole && user.role !== groupRole) {
+            await query(`UPDATE users SET role = $1 WHERE email = $2`, [groupRole, email]);
+            user.role = groupRole;
+            console.info(`[identity] ${email} → role '${groupRole}' via group sync`);
+          }
         }
+        user.role = normalizeRole(user.role);
         return res.json({ mode: 'sso', user });
       }
 
@@ -61,9 +70,9 @@ export function registerRoutes(app) {
       const displayName = email.split('@')[0].replace(/[._]/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
       const { rows: [newUser] } = await query(
         `INSERT INTO users (email, display_name, role, department)
-         VALUES ($1, $2, $3, 'General') RETURNING *`, [email, displayName, role]);
-      console.info(`[identity] Auto-registered ${email} as ${role}`);
-      return res.json({ mode: 'sso', user: newUser, new_user: true });
+         VALUES ($1, $2, $3, 'General') RETURNING *`, [email, displayName, normalizeRole(role)]);
+      console.info(`[identity] Auto-registered ${email} as ${normalizeRole(role)}`);
+      return res.json({ mode: 'sso', user: { ...newUser, role: normalizeRole(newUser.role) }, new_user: true });
     } catch (e) {
       console.warn('[/api/portal/identity]', e.message);
       return res.json({ mode: 'demo', reason: e.message });
@@ -75,7 +84,7 @@ export function registerRoutes(app) {
     try {
       const { rows } = await query(
         `SELECT user_id, email, display_name, role, department, created_at FROM users ORDER BY display_name`);
-      res.json(rows);
+      res.json(rows.map(u => ({ ...u, role: normalizeRole(u.role) })));
     } catch (e) {
       res.status(500).json({ error: e.message });
     }
@@ -85,6 +94,7 @@ export function registerRoutes(app) {
     try {
       const { email, display_name, role, department } = req.body;
       if (!email) return res.status(400).json({ error: 'email is required' });
+      const normalizedRole = normalizeRole(role);
       const { rows: [user] } = await query(
         `INSERT INTO users (email, display_name, role, department)
          VALUES ($1, $2, $3, $4)
@@ -93,9 +103,9 @@ export function registerRoutes(app) {
                role         = EXCLUDED.role,
                department   = EXCLUDED.department
          RETURNING *`,
-        [email.trim().toLowerCase(), display_name || '', role || 'analyst', department || '']
+        [email.trim().toLowerCase(), display_name || '', normalizedRole, department || '']
       );
-      res.status(201).json(user);
+      res.status(201).json({ ...user, role: normalizeRole(user.role) });
     } catch (e) {
       res.status(500).json({ error: e.message });
     }
@@ -107,7 +117,7 @@ export function registerRoutes(app) {
       const { role, department, display_name } = req.body;
       const sets = [];
       const params = [];
-      if (role)         { params.push(role);         sets.push(`role = $${params.length}`); }
+      if (role)         { params.push(normalizeRole(role)); sets.push(`role = $${params.length}`); }
       if (department)   { params.push(department);   sets.push(`department = $${params.length}`); }
       if (display_name) { params.push(display_name); sets.push(`display_name = $${params.length}`); }
       if (sets.length === 0) return res.status(400).json({ error: 'Nothing to update' });
@@ -115,7 +125,7 @@ export function registerRoutes(app) {
       const { rows: [user] } = await query(
         `UPDATE users SET ${sets.join(', ')} WHERE user_id = $${params.length}::uuid RETURNING *`, params);
       if (!user) return res.status(404).json({ error: 'User not found' });
-      res.json(user);
+      res.json({ ...user, role: normalizeRole(user.role) });
     } catch (e) {
       res.status(500).json({ error: e.message });
     }
@@ -169,7 +179,7 @@ export function registerRoutes(app) {
   app.get('/api/portal/admin/groups', async (req, res) => {
     try {
       const { rows } = await query(`SELECT * FROM portal_groups ORDER BY group_name`);
-      res.json(rows);
+      res.json(rows.map(g => ({ ...g, role: normalizeRole(g.role) })));
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
@@ -182,9 +192,9 @@ export function registerRoutes(app) {
          VALUES ($1, $2, $3, $4)
          ON CONFLICT (group_name) DO UPDATE SET role=$3, department=$4, scim_id=$2
          RETURNING *`,
-        [group_name, scim_id || null, role || 'analyst', department || 'General']
+        [group_name, scim_id || null, normalizeRole(role), department || 'General']
       );
-      res.json(g);
+      res.json({ ...g, role: normalizeRole(g.role) });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 

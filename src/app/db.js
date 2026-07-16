@@ -169,9 +169,8 @@ export async function runMigrations() {
     // Always ensure the three core demo users exist — safe upsert, never overwrites existing rows
     await query(`
       INSERT INTO users (email, display_name, role, department) VALUES
-        ('analyst@example.org',     'Alex Analyst',   'analyst',      'Finance'),
-        ('manager@example.org',     'Morgan Manager', 'manager',      'Operations'),
-        ('datasteward@example.org', 'Dana Steward',   'data_steward', 'Data Governance')
+        ('analyst@example.org',     'Alex Analyst',   'analyst', 'Finance'),
+        ('datasteward@example.org', 'Dana Steward',   'admin',   'Data Governance')
       ON CONFLICT (email) DO NOTHING
     `);
 
@@ -196,6 +195,11 @@ export async function runMigrations() {
         UNIQUE(group_name)
       )
     `);
+
+    // Migrate legacy role values → analyst | admin
+    await query(`UPDATE users SET role = 'admin' WHERE role IN ('steward', 'data_steward')`);
+    await query(`UPDATE users SET role = 'analyst' WHERE role IN ('manager')`);
+    await query(`UPDATE portal_groups SET role = 'admin' WHERE role IN ('steward', 'data_steward', 'manager')`);
 
     // Feature requests + votes
     await query(`

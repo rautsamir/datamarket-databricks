@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react'
+import { isAdminRole, normalizeRole, roleDisplayName } from '../lib/roles'
 
 export const personas = {
   richard: {
@@ -23,7 +24,7 @@ export const personas = {
     avatar: 'JP',
     color: '#10B981',
     approvedProductRefs: ['DP-001', 'DP-002', 'DP-003', 'DP-007', 'DP-010'],
-    description: 'Finance Manager — pre-approved for financial data'
+    description: 'Finance Manager — pre-approved for financial data (demo only)'
   },
   admin: {
     id: 'admin',
@@ -41,6 +42,12 @@ export const personas = {
 
 const PersonaContext = createContext(null)
 
+function toProductRef(productRef) {
+  return typeof productRef === 'number'
+    ? `DP-${String(productRef).padStart(3, '0')}`
+    : productRef
+}
+
 export function PersonaProvider({ children }) {
   const [currentPersona, setCurrentPersona] = useState('richard')
   const [requests, setRequests] = useState([])
@@ -54,22 +61,22 @@ export function PersonaProvider({ children }) {
   const [rfaEnabled, setRfaEnabled] = useState(false)
   const [ucGrantsEnabled, setUcGrantsEnabled] = useState(false)
 
-  const isAdminRole = ssoUser && !demoMode && (ssoUser.role === 'admin' || ssoUser.role === 'steward')
+  const ssoIsAdmin = ssoUser && !demoMode && isAdminRole(ssoUser.role)
 
   const persona = ssoUser && !demoMode ? {
-    id: isAdminRole ? 'admin' : 'sso',
+    id: ssoIsAdmin ? 'admin' : 'sso',
     name: ssoUser.display_name?.split(' ')[0] || 'User',
     fullName: ssoUser.display_name || ssoUser.email,
     email: ssoUser.email,
-    role: isAdminRole ? 'Data Steward' : ssoUser.role === 'manager' ? 'Manager' : 'Data Analyst',
+    role: roleDisplayName(ssoUser.role),
     department: ssoUser.department || 'General',
     avatar: (ssoUser.display_name || ssoUser.email).split(' ').map(w => w[0]).join('').substring(0, 2).toUpperCase(),
-    color: isAdminRole ? '#8B5CF6' : ssoUser.role === 'manager' ? '#10B981' : '#3B82F6',
-    approvedProductRefs: isAdminRole ? 'all' : [],
-    description: isAdminRole ? 'Data Steward — authenticated via SSO' : `${ssoUser.role} — authenticated via SSO`
+    color: ssoIsAdmin ? '#8B5CF6' : '#3B82F6',
+    approvedProductRefs: ssoIsAdmin ? 'all' : [],
+    description: ssoIsAdmin ? 'Data Steward — authenticated via SSO' : 'Data Analyst — authenticated via SSO'
   } : personas[currentPersona]
 
-  const isAdmin = persona.id === 'admin' || isAdminRole
+  const isAdmin = persona.id === 'admin' || ssoIsAdmin
 
   // ── Check API availability and identity mode ───────────────────────────────
   useEffect(() => {
@@ -86,7 +93,11 @@ export function PersonaProvider({ children }) {
         if (data.demo_mode === false) {
           fetch('/api/portal/identity')
             .then(r => r.json())
-            .then(id => { if (id.mode === 'sso' && id.user) setSsoUser(id.user) })
+            .then(id => {
+              if (id.mode === 'sso' && id.user) {
+                setSsoUser({ ...id.user, role: normalizeRole(id.user.role) })
+              }
+            })
             .catch(() => {})
         }
       })
@@ -124,7 +135,7 @@ export function PersonaProvider({ children }) {
       const r = await fetch(`/api/portal/notifications?email=${encodeURIComponent(persona.email)}`)
       if (r.ok) setNotifications(await r.json())
     } catch (e) { console.warn('notifications load failed', e) }
-  }, [apiAvailable, persona.email, persona.id])
+  }, [apiAvailable, persona.email, isAdmin])
 
   useEffect(() => {
     if (apiAvailable) {
@@ -164,7 +175,6 @@ export function PersonaProvider({ children }) {
         }
       } catch (e) { console.warn('submitRequest API failed, falling back', e) }
     }
-    // Optimistic local fallback
     const newReq = {
       request_ref: `REQ-${String(requests.length + 1).padStart(3, '0')}`,
       product_ref: productRef,
@@ -229,6 +239,7 @@ export function PersonaProvider({ children }) {
           body: JSON.stringify({ adminEmail: persona.email, reason })
         })
         await loadRequests()
+        await loadLibrary()
         await loadNotifications()
         return
       } catch (e) { console.warn('revokeRequest API failed', e) }
@@ -240,24 +251,61 @@ export function PersonaProvider({ children }) {
     ))
   }
 
-  // ── Access check — respects expiry ────────────────────────────────────────
-  const hasAccess = (productRef) => {
-    if (persona.approvedProductRefs === 'all') return true
-    const refStr = typeof productRef === 'number'
-      ? `DP-${String(productRef).padStart(3, '0')}`
-      : productRef
+  const myProductRequests = useCallback((productRef) => {
+    const refStr = toProductRef(productRef)
+    return requests.filter(r => {
+      const matchesProduct = r.product_ref === refStr || r.productRef === refStr
+      const matchesUser = r.requester_email === persona.email || r.requestedBy === currentPersona
+      return matchesProduct && matchesUser
+    }).sort((a, b) => new Date(b.resolved_at || b.requested_at) - new Date(a.resolved_at || a.requested_at))
+  }, [requests, persona.email, currentPersona])
+
+  const hasApprovedAccess = useCallback((productRef) => {
+    const refStr = toProductRef(productRef)
+    if (persona.approvedProductRefs === 'all') return false
     if (persona.approvedProductRefs.includes(refStr)) return true
-    // Check approved requests (must not be expired or revoked)
-    return requests.some(r => {
-      if ((r.product_ref !== refStr && r.productRef !== refStr)) return false
-      if ((r.requester_email !== persona.email && r.requestedBy !== currentPersona)) return false
+    return myProductRequests(productRef).some(r => {
       if (r.status !== 'Approved') return false
       if (r.expires_at && new Date(r.expires_at) < new Date()) return false
       return true
     })
-  }
+  }, [persona, myProductRequests])
 
-  // ── Unread notification count ─────────────────────────────────────────────
+  const getProductAccessState = useCallback((productRef) => {
+    const refStr = toProductRef(productRef)
+    const mine = myProductRequests(productRef)
+    const approved = mine.find(r => {
+      if (r.status !== 'Approved') return false
+      if (r.expires_at && new Date(r.expires_at) < new Date()) return false
+      return true
+    })
+    if (approved) {
+      return { state: 'granted', requestRef: approved.request_ref || approved.id, canQuery: true }
+    }
+    const revoked = mine.find(r => r.status === 'Revoked')
+    if (revoked) {
+      return {
+        state: 'revoked',
+        requestRef: revoked.request_ref || revoked.id,
+        reason: revoked.denial_reason || revoked.denyReason,
+        canQuery: false,
+      }
+    }
+    const pending = mine.find(r => r.status === 'Pending')
+    if (pending) {
+      return { state: 'pending', requestRef: pending.request_ref || pending.id, canQuery: false }
+    }
+    if (isAdmin) {
+      return { state: 'admin', canQuery: true }
+    }
+    return { state: 'none', canQuery: false }
+  }, [myProductRequests, isAdmin])
+
+  const hasAccess = useCallback((productRef) => {
+    const access = getProductAccessState(productRef)
+    return access.canQuery
+  }, [getProductAccessState])
+
   const unreadNotificationCount = useMemo(() => notifications.length, [notifications])
 
   const myRequests = requests.filter(r =>
@@ -288,6 +336,8 @@ export function PersonaProvider({ children }) {
       denyRequest,
       revokeRequest,
       hasAccess,
+      hasApprovedAccess,
+      getProductAccessState,
       refreshRequests: loadRequests,
       refreshLibrary: loadLibrary,
       refreshNotifications: loadNotifications

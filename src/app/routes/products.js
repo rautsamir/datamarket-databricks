@@ -348,21 +348,26 @@ export function registerRoutes(app) {
     try {
       const { ref } = req.params;
       const {
-        uc_full_name, source_type, refresh_frequency, report_url, domain,
+        uc_full_name, type, source, source_type, refresh_frequency, report_url, domain,
         description, display_name, owner_email, data_classification, tags
       } = req.body;
       const sets = [];
       const params = [];
-      if (uc_full_name !== undefined)        { params.push(uc_full_name);          sets.push(`uc_full_name = $${params.length}`); }
-      if (source_type !== undefined)         { params.push(source_type);            sets.push(`source_system = $${params.length}`); }
-      if (refresh_frequency !== undefined)   { params.push(refresh_frequency);      sets.push(`refresh_frequency = $${params.length}`); }
-      if (report_url !== undefined)          { params.push(report_url);             sets.push(`report_url = $${params.length}`); }
-      if (domain !== undefined)              { params.push(domain);                 sets.push(`domain = $${params.length}`); }
-      if (description !== undefined)         { params.push(description);            sets.push(`description = $${params.length}`); }
-      if (display_name !== undefined)        { params.push(display_name);           sets.push(`display_name = $${params.length}`); }
-      if (owner_email !== undefined)         { params.push(owner_email);            sets.push(`owner_email = $${params.length}`); }
-      if (data_classification !== undefined) { params.push(data_classification);    sets.push(`data_classification = $${params.length}`); }
-      if (tags !== undefined)                { params.push(JSON.stringify(tags));   sets.push(`tags = $${params.length}`); }
+      if (uc_full_name !== undefined)        { params.push(uc_full_name);            sets.push(`uc_full_name = $${params.length}`); }
+      // 'type' = data product type (Dataset, Dashboard, Power BI…)
+      // 'source_type' is a legacy alias for the same field kept for backward compat
+      const productType = type ?? source_type;
+      if (productType !== undefined)         { params.push(productType);             sets.push(`type = $${params.length}`); }
+      // 'source' = the upstream source system (ERP, HRIS, Unity Catalog…)
+      if (source !== undefined)              { params.push(source);                  sets.push(`source_system = $${params.length}`); }
+      if (refresh_frequency !== undefined)   { params.push(refresh_frequency);       sets.push(`refresh_frequency = $${params.length}`); }
+      if (report_url !== undefined)          { params.push(report_url);              sets.push(`report_url = $${params.length}`); }
+      if (domain !== undefined)              { params.push(domain);                  sets.push(`domain = $${params.length}`); }
+      if (description !== undefined)         { params.push(description);             sets.push(`description = $${params.length}`); }
+      if (display_name !== undefined)        { params.push(display_name);            sets.push(`display_name = $${params.length}`); }
+      if (owner_email !== undefined)         { params.push(owner_email);             sets.push(`owner_email = $${params.length}`); }
+      if (data_classification !== undefined) { params.push(data_classification);     sets.push(`data_classification = $${params.length}`); }
+      if (tags !== undefined)                { params.push(tags);                    sets.push(`tags = $${params.length}`); }
       if (sets.length === 0) return res.status(400).json({ error: 'Nothing to update' });
       sets.push('updated_at = NOW()');
       params.push(ref);
@@ -460,23 +465,79 @@ export function registerRoutes(app) {
         `SELECT MAX(CAST(SUBSTRING(product_ref FROM 4) AS INTEGER)) AS max_id FROM data_products`);
       let nextId = (maxRow.max_id || 16) + 1;
 
+      // Domain inference from catalog/schema name — broadens left-nav filter options
+      const inferDomain = (catalogName = '', schemaName = '') => {
+        const s = `${catalogName} ${schemaName}`.toLowerCase();
+        if (/finance|budget|payroll|revenue|billing|accounting|expenditure/.test(s)) return 'Finance';
+        if (/hr|human.resource|employee|headcount|workforce|hris/.test(s)) return 'HR';
+        if (/health|clinical|patient|medical|pharma/.test(s)) return 'Healthcare';
+        if (/fire|police|ems|safety|emergency|incident|911/.test(s)) return 'Public Safety';
+        if (/sales|customer|crm|marketing|retail|ecommerce/.test(s)) return 'Sales & Marketing';
+        if (/geo|gis|spatial|map|location|address/.test(s)) return 'Geospatial';
+        if (/weather|forecast|climate|accuweather/.test(s)) return 'Weather';
+        if (/tax|property|assessment|parcel/.test(s)) return 'Property Tax';
+        if (/supply|inventory|logistics|warehouse|procurement/.test(s)) return 'Operations';
+        if (/nyctaxi|transit|transport|trip|vehicle/.test(s)) return 'Transportation';
+        if (/bakehouse|restaurant|food|hospitality|hotel|wander/.test(s)) return 'Hospitality';
+        if (/audit|compliance|risk|governance/.test(s)) return 'Compliance';
+        return 'Other';
+      };
+
+      const { host, token } = await getUcAuth();
       const imported = [];
+
       for (const t of tables) {
         const ref = `DP-${String(nextId++).padStart(3, '0')}`;
-        const displayName = (t.table_name || t.full_name.split('.').pop())
+        const parts = (t.full_name || '').split('.');
+        const catalogName = parts[0] || '';
+        const schemaName  = parts[1] || '';
+        const tableName   = parts[2] || t.table_name || '';
+
+        const displayName = (tableName || t.full_name.split('.').pop())
           .replace(/_/g, ' ').replace(/\bgold\b/i, '').trim()
           .replace(/\b\w/g, c => c.toUpperCase());
-        const { rows: [product] } = await query(
-          `INSERT INTO data_products
-             (product_ref, display_name, description, type, domain, tags, source_system,
-              refresh_frequency, owner_email, classification, uc_full_name, is_active, status,
-              last_refreshed)
-           VALUES ($1, $2, $3, 'Dataset', $4, $5, 'Unity Catalog', 'Daily',
-                   $6, 'Internal', $7, TRUE, 'Published', NOW())
-           ON CONFLICT (product_ref) DO NOTHING RETURNING *`,
-          [ref, t.display_name || displayName, t.description || `Imported from Unity Catalog: ${t.full_name}`,
-           t.domain || 'Other', `{${(t.domain || 'UC Import').replace(/'/g, '')}}`,
-           t.owner_email || 'datasteward@example.org', t.full_name]);
+
+        // ── Enrich from UC REST API ──────────────────────────────────────────
+        let ucComment = '';
+        let ucTags = [];
+        let ucOwner = '';
+        let ucUpdatedAt = null;
+        try {
+          const ucMeta = await ucApiRequest(host, token,
+            `/api/2.1/unity-catalog/tables/${encodeURIComponent(t.full_name)}`);
+          ucComment  = ucMeta?.comment || '';
+          ucOwner    = ucMeta?.owner   || '';
+          ucUpdatedAt = ucMeta?.updated_at ? new Date(ucMeta.updated_at).toISOString() : null;
+
+          // UC tags are a key-value map — use the keys as tags (values often empty)
+          const rawTags = ucMeta?.tags || {};
+          ucTags = Object.keys(rawTags).filter(k => k && k !== 'UC Import');
+        } catch (_) { /* non-fatal — proceed without enrichment */ }
+
+        // Build final tag array: UC tags + domain + catalog/schema context
+        const domain = t.domain || inferDomain(catalogName, schemaName);
+        const tagSet = new Set(['UC Import']);
+        if (domain !== 'Other') tagSet.add(domain);
+        ucTags.forEach(tag => tagSet.add(tag));
+        // Add catalog/schema as context tags if they're meaningful (not 'samples')
+        if (catalogName && catalogName !== 'samples' && catalogName !== 'main') tagSet.add(catalogName);
+        if (schemaName && schemaName.length > 3) tagSet.add(schemaName.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()));
+        const finalTags = [...tagSet];
+
+              const description = ucComment || t.description || `Imported from Unity Catalog: ${t.full_name}`;
+              const ownerEmail  = ucOwner || t.owner_email || 'datasteward@example.org';
+
+              const { rows: [product] } = await query(
+                `INSERT INTO data_products
+                   (product_ref, display_name, description, type, domain, tags, source_system,
+                    refresh_frequency, owner_email, classification, uc_full_name, is_active, status,
+                    last_refreshed)
+                 VALUES ($1, $2, $3, 'Dataset', $4, $5, 'Unity Catalog', 'Daily',
+                         $6, 'Internal', $7, TRUE, 'Published', COALESCE($8, NOW()))
+                 ON CONFLICT (product_ref) DO NOTHING RETURNING *`,
+                [ref, t.display_name || displayName, description,
+                 domain, finalTags,
+           ownerEmail, t.full_name, ucUpdatedAt]);
         if (product) imported.push(product);
       }
       res.json({ imported: imported.length, products: imported });

@@ -199,6 +199,25 @@ export function registerRoutes(app) {
     }
   });
 
+  // ─── Granted access for a product (admin revoke UI) ───────────────────────────
+  app.get('/api/portal/products/:ref/granted-access', async (req, res) => {
+    try {
+      const { ref } = req.params;
+      const { rows } = await query(`
+        SELECT ar.request_ref, ar.requested_at, ar.resolved_at, ar.expires_at,
+               u.email AS requester_email, u.display_name AS requester_name
+        FROM access_requests ar
+        JOIN data_products dp ON dp.product_id = ar.product_id
+        JOIN users u ON u.user_id = ar.requester_id
+        WHERE dp.product_ref = $1 AND ar.status = 'Approved'
+        ORDER BY ar.resolved_at DESC`, [ref]);
+      res.json(rows);
+    } catch (e) {
+      console.error('[GET granted-access]', e.message);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   // ─── Get notifications for a user ─────────────────────────────────────────────
   app.get('/api/portal/notifications', async (req, res) => {
     try {
