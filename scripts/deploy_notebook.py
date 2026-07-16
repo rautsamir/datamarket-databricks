@@ -158,44 +158,19 @@ print(f"✅ User: {USER}")
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Step 3 — Bootstrap, build, and deploy (~5–10 min)
+# MAGIC ## Step 3 — Build frontend (~3 min)
 # MAGIC
-# MAGIC Do not interrupt this cell.
+# MAGIC Clones the repo and runs `npm run build`. **No Databricks CLI** — some workspaces block CLI in notebooks.
 
 # COMMAND ----------
 
-import shlex
+import shlex, subprocess
 
 WORKDIR = "/tmp/datamarket-deploy"
 REPO_DIR = f"{WORKDIR}/datamarket-databricks"
 
-deploy_flags = [
-    f"--profile {shlex.quote(PROFILE)}",
-    f"--admin-email {shlex.quote(ADMIN_EMAIL)}",
-    f"--app-name {shlex.quote(APP_NAME)}",
-    f"--lakebase-project {shlex.quote(LAKEBASE_PROJECT)}",
-    f"--demo-mode {shlex.quote(DEMO_MODE)}",
-]
-if WAREHOUSE_ID:
-    deploy_flags.append(f"--warehouse-id {shlex.quote(WAREHOUSE_ID)}")
-
-cache_cmd = ""
-if LAKEBASE_HOST:
-    cache_cmd = f'mkdir -p "{REPO_DIR}/src/app" && echo {shlex.quote(LAKEBASE_HOST)} > "{REPO_DIR}/src/app/.lakebase-{APP_NAME}.cache"'
-
-deploy_script = f"""
+build_script = f"""
 set -euo pipefail
-export PATH="$HOME/.databricks/bin:$PATH"
-
-echo "════════════════════════════════════════"
-echo " Installing Databricks CLI"
-echo "════════════════════════════════════════"
-if ! command -v databricks >/dev/null 2>&1; then
-  curl -fsSL https://raw.githubusercontent.com/databricks/setup-cli/main/install.sh | sh
-  export PATH="$HOME/.databricks/bin:$PATH"
-fi
-databricks -v
-
 echo "════════════════════════════════════════"
 echo " Installing Node.js 20 (nvm)"
 echo "════════════════════════════════════════"
@@ -204,7 +179,6 @@ mkdir -p "$NVM_DIR"
 if [ ! -s "$NVM_DIR/nvm.sh" ]; then
   curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
 fi
-# shellcheck disable=SC1091
 . "$NVM_DIR/nvm.sh"
 nvm install 20
 nvm use 20
@@ -217,45 +191,58 @@ rm -rf "{WORKDIR}"
 mkdir -p "{WORKDIR}"
 cd "{WORKDIR}"
 git clone --depth 1 --branch {shlex.quote(GIT_BRANCH)} {shlex.quote(REPO_URL)} datamarket-databricks
-cd datamarket-databricks
-{cache_cmd}
-
-echo "════════════════════════════════════════"
-echo " Running deploy.sh"
-echo "════════════════════════════════════════"
-chmod +x deploy.sh src/app/deploy.sh
-./deploy.sh {' '.join(deploy_flags)}
+cd datamarket-databricks/src/app
+npm install --silent
+npm run build:local
+echo "Build complete"
 """
 
-print("Starting deploy — expect 5–10 minutes...")
-proc = subprocess.run(["bash", "-c", deploy_script], check=False)
+print("Building frontend — expect ~3 minutes...")
+proc = subprocess.run(["bash", "-c", build_script], check=False)
 if proc.returncode != 0:
-    raise RuntimeError(f"deploy.sh failed (exit {proc.returncode}). See output above.")
-print("✅ Deploy finished")
+    raise RuntimeError(f"Frontend build failed (exit {proc.returncode}). See output above.")
+if LAKEBASE_HOST:
+    cache = f"{REPO_DIR}/src/app/.lakebase-{APP_NAME}.cache"
+    Path(cache).parent.mkdir(parents=True, exist_ok=True)
+    Path(cache).write_text(LAKEBASE_HOST)
+print("✅ Frontend built")
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Step 4 — App URL
+# MAGIC ## Step 4 — Deploy via Python SDK (~3 min)
+# MAGIC
+# MAGIC Uses the Databricks Python SDK (not the CLI). Works on workspaces that block CLI in notebooks.
 
 # COMMAND ----------
 
-import json, subprocess, os
+# MAGIC %pip install psycopg2-binary --quiet
 
-cli = str(Path.home() / ".databricks" / "bin" / "databricks")
-env = {**os.environ, "PATH": f"{Path.home() / '.databricks' / 'bin'}:{os.environ.get('PATH', '')}"}
+# COMMAND ----------
 
-out = subprocess.run(
-    [cli, "apps", "get", APP_NAME, "--profile", PROFILE, "-o", "json"],
-    capture_output=True, text=True, env=env, check=True,
+import sys
+from databricks.sdk import WorkspaceClient
+
+sys.path.insert(0, f"{REPO_DIR}/scripts")
+from notebook_deploy_lib import deploy_from_notebook
+
+w = WorkspaceClient(host=HOST, token=TOKEN)
+result = deploy_from_notebook(
+    w,
+    repo_dir=REPO_DIR,
+    admin_email=ADMIN_EMAIL,
+    app_name=APP_NAME,
+    lakebase_project=LAKEBASE_PROJECT,
+    lakebase_host=LAKEBASE_HOST,
+    warehouse_id=WAREHOUSE_ID,
+    demo_mode=DEMO_MODE,
 )
-app = json.loads(out.stdout)
-url = app.get("url") or ""
+APP_URL = result.get("url") or ""
 
 print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 print("  DataMarket is live")
 print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-print(f"  URL   : {url or f'Apps UI → {APP_NAME}'}")
+print(f"  URL   : {APP_URL or f'Apps UI → {APP_NAME}'}")
 print(f"  Admin : {ADMIN_EMAIL}")
 print()
 print("Next steps:")
@@ -263,8 +250,8 @@ print("  1. Open the URL → log in with SSO")
 print("  2. Manage → Import from UC")
 print("  3. Manage → Settings → confirm SQL Warehouse ID")
 
-if url:
-    displayHTML(f'<h3><a href="{url}" target="_blank">Open DataMarket →</a></h3>')
+if APP_URL:
+    displayHTML(f'<h3><a href="{APP_URL}" target="_blank">Open DataMarket →</a></h3>')
 
 # COMMAND ----------
 
@@ -273,10 +260,11 @@ if url:
 # MAGIC
 # MAGIC | Error | Fix |
 # MAGIC |---|---|
-# MAGIC | `npm not found` | Run on a **cluster notebook**, not Web Terminal |
-# MAGIC | `Lakebase hostname is required` | Create project in Compute → Lakebase, or set **lakebase_host** widget |
+# MAGIC | `npm not found` | Attach a **cluster** (not Serverless), re-run Step 3 |
+# MAGIC | `CLI only supported in web terminal` | Expected on some workspaces — Steps 3–4 use SDK, not CLI |
+# MAGIC | `Lakebase hostname` | Create project in Compute → Lakebase, or set **lakebase_host** widget |
 # MAGIC | `Could not read workspace host/token` | Attach a **cluster** (not Serverless), re-run Step 2 |
 # MAGIC | `Deploy did not reach SUCCEEDED` | Apps → your app → logs; need Apps create permission |
-# MAGIC | `psql not found` (warning) | Non-fatal — app creates tables on first start |
+# MAGIC | `psql` / schema warnings | Non-fatal — app creates tables on first start |
 # MAGIC
-# MAGIC **Scott / locked-down laptop:** Only need browser + this notebook — no brew, no local Node.
+# MAGIC **Scott / locked-down laptop:** Browser + this notebook on a cluster — no local Node or CLI.
