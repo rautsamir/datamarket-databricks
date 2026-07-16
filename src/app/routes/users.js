@@ -19,23 +19,28 @@ export function registerRoutes(app) {
     const isHardcodedAdmin = ADMIN_EMAILS.includes(email.toLowerCase());
 
     try {
-      // Helper: look up user's SCIM groups and resolve role from portal_groups
-      const resolveGroupRole = async () => {
+      const resolveScim = async () => {
         try {
           const { host, token } = await getUcAuth();
           const filter = encodeURIComponent(`userName eq "${email}"`);
           const scimData = await ucApiRequest(host, token,
-            `/api/2.0/preview/scim/v2/Users?filter=${filter}&count=1&attributes=groups,displayName`);
+            `/api/2.0/preview/scim/v2/Users?filter=${filter}&count=1&attributes=groups,displayName,name`);
           const scimUser = (scimData.Resources || [])[0];
-          if (!scimUser?.groups?.length) return null;
-          const groupNames = scimUser.groups.map(g => g.display).filter(Boolean);
-          const { rows: matched } = await query(
-            `SELECT role FROM portal_groups WHERE group_name = ANY($1) ORDER BY
-               CASE role WHEN 'admin' THEN 1 WHEN 'steward' THEN 2 ELSE 3 END LIMIT 1`,
-            [groupNames]
-          );
-          return matched[0]?.role ? normalizeRole(matched[0].role) : null;
-        } catch (_) { return null; }
+          const displayName = scimUser?.displayName
+            || [scimUser?.name?.givenName, scimUser?.name?.familyName].filter(Boolean).join(' ')
+            || null;
+          const groupNames = (scimUser?.groups || []).map(g => g.display).filter(Boolean);
+          let groupRole = null;
+          if (groupNames.length) {
+            const { rows: matched } = await query(
+              `SELECT role FROM portal_groups WHERE group_name = ANY($1) ORDER BY
+                 CASE role WHEN 'admin' THEN 1 WHEN 'steward' THEN 2 ELSE 3 END LIMIT 1`,
+              [groupNames]
+            );
+            groupRole = matched[0]?.role ? normalizeRole(matched[0].role) : null;
+          }
+          return { displayName, groupRole };
+        } catch (_) { return { displayName: null, groupRole: null }; }
       };
 
       const { rows: [user] } = await query(
@@ -47,31 +52,39 @@ export function registerRoutes(app) {
           user.role = 'admin';
           console.info(`[identity] Promoted ${email} to admin (ADMIN_EMAIL match)`);
         } else if (!isHardcodedAdmin) {
-          const groupRole = await resolveGroupRole();
+          const { groupRole } = await resolveScim();
           if (groupRole && user.role !== groupRole) {
             await query(`UPDATE users SET role = $1 WHERE email = $2`, [groupRole, email]);
             user.role = groupRole;
             console.info(`[identity] ${email} → role '${groupRole}' via group sync`);
           }
         }
+        if (!user.display_name || user.display_name === user.email || user.display_name.includes('@')) {
+          const { displayName: scimName } = await resolveScim();
+          if (scimName) {
+            await query(`UPDATE users SET display_name = $1 WHERE email = $2`, [scimName, email]);
+            user.display_name = scimName;
+          }
+        }
         user.role = normalizeRole(user.role);
         return res.json({ mode: 'sso', user });
       }
 
-      // New user — resolve role from hardcoded admin list, then group membership
+      const { displayName: scimDisplayName, groupRole } = await resolveScim();
       let role = 'analyst';
       if (isHardcodedAdmin) {
         role = 'admin';
-      } else {
-        const groupRole = await resolveGroupRole();
-        if (groupRole) { role = groupRole; console.info(`[identity] ${email} → role '${role}' via group`); }
+      } else if (groupRole) {
+        role = groupRole;
+        console.info(`[identity] ${email} → role '${role}' via group`);
       }
 
-      const displayName = email.split('@')[0].replace(/[._]/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+      const displayName = scimDisplayName
+        || email.split('@')[0].replace(/[._]/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
       const { rows: [newUser] } = await query(
         `INSERT INTO users (email, display_name, role, department)
          VALUES ($1, $2, $3, 'General') RETURNING *`, [email, displayName, normalizeRole(role)]);
-      console.info(`[identity] Auto-registered ${email} as ${normalizeRole(role)}`);
+      console.info(`[identity] Auto-registered ${email} as ${normalizeRole(role)} (name: ${displayName})`);
       return res.json({ mode: 'sso', user: { ...newUser, role: normalizeRole(newUser.role) }, new_user: true });
     } catch (e) {
       console.warn('[/api/portal/identity]', e.message);

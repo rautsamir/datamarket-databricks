@@ -23,6 +23,10 @@ function cacheGet(key) {
 function cacheSet(key, value, ttlMs) {
   _cache.set(key, { value, expiresAt: Date.now() + ttlMs });
 }
+function cacheClear(prefix = '') {
+  if (!prefix) { _cache.clear(); return; }
+  for (const k of _cache.keys()) { if (k.startsWith(prefix)) _cache.delete(k); }
+}
 
 // ─── Background auto-discover (runs once after startup if enabled) ────────────
 export async function maybeAutoDiscover() {
@@ -344,30 +348,43 @@ export function registerRoutes(app) {
   });
 
   // ─── Admin: Product inline update ─────────────────────────────────────────────
+  app.delete('/api/portal/products/:ref', async (req, res) => {
+    try {
+      const { ref } = req.params;
+      // Delete dependent rows first, then the product
+      await query(`DELETE FROM access_requests WHERE product_id IN (SELECT product_id FROM data_products WHERE product_ref = $1)`, [ref]);
+      await query(`DELETE FROM audit_log WHERE target_name = $1`, [ref]);
+      const { rows: [deleted] } = await query(
+        `DELETE FROM data_products WHERE product_ref = $1 RETURNING product_ref, display_name`, [ref]);
+      if (!deleted) return res.status(404).json({ error: 'Product not found' });
+      cacheClear(`schema:${ref}`);
+      cacheClear(`preview:${ref}`);
+      res.json({ deleted: true, ref: deleted.product_ref, name: deleted.display_name });
+    } catch (e) {
+      console.error('[DELETE /api/portal/products/:ref]', e.message);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   app.put('/api/portal/products/:ref', async (req, res) => {
     try {
       const { ref } = req.params;
       const {
-        uc_full_name, type, source, source_type, refresh_frequency, report_url, domain,
+        uc_full_name, source_type, refresh_frequency, report_url, domain,
         description, display_name, owner_email, data_classification, tags
       } = req.body;
       const sets = [];
       const params = [];
-      if (uc_full_name !== undefined)        { params.push(uc_full_name);            sets.push(`uc_full_name = $${params.length}`); }
-      // 'type' = data product type (Dataset, Dashboard, Power BI…)
-      // 'source_type' is a legacy alias for the same field kept for backward compat
-      const productType = type ?? source_type;
-      if (productType !== undefined)         { params.push(productType);             sets.push(`type = $${params.length}`); }
-      // 'source' = the upstream source system (ERP, HRIS, Unity Catalog…)
-      if (source !== undefined)              { params.push(source);                  sets.push(`source_system = $${params.length}`); }
-      if (refresh_frequency !== undefined)   { params.push(refresh_frequency);       sets.push(`refresh_frequency = $${params.length}`); }
-      if (report_url !== undefined)          { params.push(report_url);              sets.push(`report_url = $${params.length}`); }
-      if (domain !== undefined)              { params.push(domain);                  sets.push(`domain = $${params.length}`); }
-      if (description !== undefined)         { params.push(description);             sets.push(`description = $${params.length}`); }
-      if (display_name !== undefined)        { params.push(display_name);            sets.push(`display_name = $${params.length}`); }
-      if (owner_email !== undefined)         { params.push(owner_email);             sets.push(`owner_email = $${params.length}`); }
-      if (data_classification !== undefined) { params.push(data_classification);     sets.push(`data_classification = $${params.length}`); }
-      if (tags !== undefined)                { params.push(tags);                    sets.push(`tags = $${params.length}`); }
+      if (uc_full_name !== undefined)        { params.push(uc_full_name);          sets.push(`uc_full_name = $${params.length}`); }
+      if (source_type !== undefined)         { params.push(source_type);            sets.push(`source_system = $${params.length}`); }
+      if (refresh_frequency !== undefined)   { params.push(refresh_frequency);      sets.push(`refresh_frequency = $${params.length}`); }
+      if (report_url !== undefined)          { params.push(report_url);             sets.push(`report_url = $${params.length}`); }
+      if (domain !== undefined)              { params.push(domain);                 sets.push(`domain = $${params.length}`); }
+      if (description !== undefined)         { params.push(description);            sets.push(`description = $${params.length}`); }
+      if (display_name !== undefined)        { params.push(display_name);           sets.push(`display_name = $${params.length}`); }
+      if (owner_email !== undefined)         { params.push(owner_email);            sets.push(`owner_email = $${params.length}`); }
+      if (data_classification !== undefined) { params.push(data_classification);    sets.push(`data_classification = $${params.length}`); }
+      if (tags !== undefined)                { params.push(tags);                  sets.push(`tags = $${params.length}`); }
       if (sets.length === 0) return res.status(400).json({ error: 'Nothing to update' });
       sets.push('updated_at = NOW()');
       params.push(ref);
@@ -381,6 +398,33 @@ export function registerRoutes(app) {
   });
 
   // ─── Admin: UC Catalog Browser ────────────────────────────────────────────────
+  // Returns already-registered UC table names so the frontend can mark them.
+  app.get('/api/portal/admin/uc-registered', async (req, res) => {
+    try {
+      const { rows } = await query(
+        `SELECT uc_full_name FROM data_products WHERE uc_full_name IS NOT NULL AND uc_full_name != ''`);
+      res.json({ names: rows.map(r => r.uc_full_name) });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Local-dev proxy: forwards UC API calls as the SP (used when databricksHost isn't
+  // available in the browser, e.g. running locally). Not used in Databricks Apps.
+  app.get('/api/portal/admin/uc-proxy', async (req, res) => {
+    try {
+      const path = req.query.path;
+      if (!path || !path.startsWith('/api/2.1/unity-catalog/')) {
+        return res.status(400).json({ error: 'Invalid path' });
+      }
+      const { host, token } = await getUcAuth();
+      const data = await ucApiRequest(host, token, path);
+      res.json(data);
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   app.get('/api/portal/admin/uc-catalogs', async (req, res) => {
     try {
       const { host, token } = await getUcAuth();
@@ -399,7 +443,9 @@ export function registerRoutes(app) {
       const { host, token } = await getUcAuth();
       const data = await ucApiRequest(host, token,
         `/api/2.1/unity-catalog/schemas?catalog_name=${encodeURIComponent(catalog)}`);
-      const schemas = (data.schemas || []).map(s => ({ name: s.name, full_name: s.full_name, comment: s.comment }));
+      const schemas = (data.schemas || [])
+        .filter(s => s.name !== 'information_schema')
+        .map(s => ({ name: s.name, full_name: s.full_name, comment: s.comment }));
       res.json({ schemas });
     } catch (e) {
       res.status(500).json({ error: e.message });
@@ -410,19 +456,87 @@ export function registerRoutes(app) {
     try {
       const { catalog, schema } = req.query;
       if (!catalog || !schema) return res.status(400).json({ error: 'catalog and schema params required' });
-      const { host, token } = await getUcAuth();
+
       const { rows: existing } = await query(
         `SELECT uc_full_name FROM data_products WHERE uc_full_name IS NOT NULL AND uc_full_name != ''`);
       const registered = new Set(existing.map(r => r.uc_full_name));
-      const data = await ucApiRequest(host, token,
-        `/api/2.1/unity-catalog/tables?catalog_name=${encodeURIComponent(catalog)}&schema_name=${encodeURIComponent(schema)}&omit_columns=true`);
-      const tables = (data.tables || []).map(t => ({
-        full_name: t.full_name, table_name: t.name,
-        schema_name: schema, catalog_name: catalog,
-        table_type: t.table_type, comment: t.comment,
-        registered: registered.has(t.full_name),
-      }));
-      res.json({ tables });
+
+      let tables = [];
+
+      const warehouseId = getSetting('sql_warehouse_id', '');
+      if (warehouseId) {
+        // Primary: query information_schema.tables — works with USE SCHEMA + USE CATALOG only
+        try {
+          const stmt = await databricksApi('POST', '/api/2.0/sql/statements', {
+            warehouse_id: warehouseId,
+            statement: `SELECT table_name, table_type FROM \`${catalog}\`.information_schema.tables WHERE table_schema = '${schema}' ORDER BY table_name`,
+            wait_timeout: '15s',
+          });
+          if (stmt.data?.status?.state === 'SUCCEEDED') {
+            const rows = stmt.data.result?.data_array || [];
+            // rows: [table_name, table_type]
+            tables = rows.map(r => {
+              const tName = r[0];
+              const full = `${catalog}.${schema}.${tName}`;
+              return { full_name: full, table_name: tName, schema_name: schema, catalog_name: catalog, table_type: r[1], registered: registered.has(full) };
+            });
+          }
+        } catch (e) {
+          console.warn('[uc-tables-browse] information_schema query failed:', e.message);
+        }
+
+        // Secondary: SHOW TABLES (requires SELECT on tables)
+        if (tables.length === 0) {
+          try {
+            const stmt = await databricksApi('POST', '/api/2.0/sql/statements', {
+              warehouse_id: warehouseId,
+              statement: `SHOW TABLES IN \`${catalog}\`.\`${schema}\``,
+              wait_timeout: '15s',
+            });
+            if (stmt.data?.status?.state === 'SUCCEEDED') {
+              const rows = stmt.data.result?.data_array || [];
+              tables = rows.map(r => {
+                const tName = r[1] || r[0];
+                const full = `${catalog}.${schema}.${tName}`;
+                return { full_name: full, table_name: tName, schema_name: schema, catalog_name: catalog, registered: registered.has(full) };
+              });
+            }
+          } catch (e) {
+            console.warn('[uc-tables-browse] SHOW TABLES failed:', e.message);
+          }
+        }
+      }
+
+      // Final fallback: UC REST API
+      if (tables.length === 0) {
+        try {
+          const { host, token } = await getUcAuth();
+          const data = await ucApiRequest(host, token,
+            `/api/2.1/unity-catalog/tables?catalog_name=${encodeURIComponent(catalog)}&schema_name=${encodeURIComponent(schema)}`);
+          tables = (data.tables || []).map(t => ({
+            full_name: t.full_name, table_name: t.name,
+            schema_name: schema, catalog_name: catalog,
+            table_type: t.table_type, comment: t.comment,
+            registered: registered.has(t.full_name),
+          }));
+        } catch (_) {}
+      }
+
+      // If still empty, offer the grant SQL — the SP needs SELECT on the schema to list tables
+      let needsGrant = false;
+      let grantSql = '';
+      let sqlEditorUrl = '';
+      if (tables.length === 0) {
+        const spId = process.env.DATABRICKS_CLIENT_ID || '';
+        if (spId) {
+          needsGrant = true;
+          const databricksHost = (process.env.DATABRICKS_HOST || '').replace(/\/$/, '');
+          grantSql = `GRANT SELECT ON SCHEMA \`${catalog}\`.\`${schema}\` TO \`${spId}\`;`;
+          sqlEditorUrl = databricksHost ? `${databricksHost}/sql/editor` : '';
+        }
+      }
+
+      res.json({ tables, needsGrant, grantSql, sqlEditorUrl });
     } catch (e) {
       res.status(500).json({ error: e.message });
     }
@@ -484,6 +598,9 @@ export function registerRoutes(app) {
       };
 
       const { host, token } = await getUcAuth();
+      // Clear any cached synthetic schema for tables about to be imported
+      cacheClear('schema:');
+
       const imported = [];
 
       for (const t of tables) {
@@ -502,6 +619,8 @@ export function registerRoutes(app) {
         let ucTags = [];
         let ucOwner = '';
         let ucUpdatedAt = null;
+        let hasPii = false;
+        let hasConf = false;
         try {
           const ucMeta = await ucApiRequest(host, token,
             `/api/2.1/unity-catalog/tables/${encodeURIComponent(t.full_name)}`);
@@ -511,32 +630,41 @@ export function registerRoutes(app) {
 
           // UC tags are a key-value map — use the keys as tags (values often empty)
           const rawTags = ucMeta?.tags || {};
-          ucTags = Object.keys(rawTags).filter(k => k && k !== 'UC Import');
+          ucTags = Object.keys(rawTags).filter(k => k && k.trim());
+
+          // Infer sensitivity from column names using same patterns as schema panel
+          const piiPatterns = /^(ssn|social_security|dob|date_of_birth|birth_date|email|phone|address|bank_account|credit_card|salary|compensation|wage)/i;
+          const confPatterns = /^(cost_center|approver|budget_code|account_number|internal_id)/i;
+          const cols = ucMeta?.columns || [];
+          hasPii  = cols.some(c => piiPatterns.test(c.name || ''));
+          hasConf = !hasPii && cols.some(c => confPatterns.test(c.name || ''));
         } catch (_) { /* non-fatal — proceed without enrichment */ }
 
-        // Build final tag array: UC tags + domain + catalog/schema context
+        // Build final tag array: domain + sensitivity + existing UC tags
+        // Intentionally excludes catalog/schema names (already structured fields)
+        // and 'UC Import' (source method, not a discovery attribute)
         const domain = t.domain || inferDomain(catalogName, schemaName);
-        const tagSet = new Set(['UC Import']);
-        if (domain !== 'Other') tagSet.add(domain);
+        const tagSet = new Set();
+        if (domain && domain !== 'Other') tagSet.add(domain);
+        if (hasPii)  tagSet.add('Contains PII');
+        if (hasConf) tagSet.add('Confidential');
         ucTags.forEach(tag => tagSet.add(tag));
-        // Add catalog/schema as context tags if they're meaningful (not 'samples')
-        if (catalogName && catalogName !== 'samples' && catalogName !== 'main') tagSet.add(catalogName);
-        if (schemaName && schemaName.length > 3) tagSet.add(schemaName.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()));
-        const finalTags = [...tagSet];
+        if (tagSet.size === 0) tagSet.add('Dataset');
+        const finalTags = `{${[...tagSet].map(tag => `"${tag.replace(/"/g, '')}"`).join(',')}}`;
 
-              const description = ucComment || t.description || `Imported from Unity Catalog: ${t.full_name}`;
-              const ownerEmail  = ucOwner || t.owner_email || 'datasteward@example.org';
+        const description = ucComment || t.description || `Imported from Unity Catalog: ${t.full_name}`;
+        const ownerEmail  = ucOwner || t.owner_email || 'datasteward@example.org';
 
-              const { rows: [product] } = await query(
-                `INSERT INTO data_products
-                   (product_ref, display_name, description, type, domain, tags, source_system,
-                    refresh_frequency, owner_email, classification, uc_full_name, is_active, status,
-                    last_refreshed)
-                 VALUES ($1, $2, $3, 'Dataset', $4, $5, 'Unity Catalog', 'Daily',
-                         $6, 'Internal', $7, TRUE, 'Published', COALESCE($8, NOW()))
-                 ON CONFLICT (product_ref) DO NOTHING RETURNING *`,
-                [ref, t.display_name || displayName, description,
-                 domain, finalTags,
+        const { rows: [product] } = await query(
+          `INSERT INTO data_products
+             (product_ref, display_name, description, type, domain, tags, source_system,
+              refresh_frequency, owner_email, classification, uc_full_name, is_active, status,
+              last_refreshed)
+           VALUES ($1, $2, $3, 'Dataset', $4, $5, 'Unity Catalog', 'Daily',
+                   $6, 'Internal', $7, TRUE, 'Published', COALESCE($8, NOW()))
+           ON CONFLICT (product_ref) DO NOTHING RETURNING *`,
+          [ref, t.display_name || displayName, description,
+           domain, finalTags,
            ownerEmail, t.full_name, ucUpdatedAt]);
         if (product) imported.push(product);
       }

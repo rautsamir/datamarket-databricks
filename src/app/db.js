@@ -37,7 +37,7 @@ export const RFA_ENABLED      = (process.env.RFA_ENABLED || 'false').toLowerCase
 // ─── App branding (customize via env vars in app.yaml) ────────────────────────
 export const APP_NAME     = process.env.APP_NAME     || 'DataMarket';
 export const APP_SUBTITLE = process.env.APP_SUBTITLE || 'Data Discovery & Access';
-export const APP_LOGO_URL = process.env.APP_LOGO_URL || '/la-county-seal.png';
+export const APP_LOGO_URL = process.env.APP_LOGO_URL || '/datamarket-logo.svg';
 
 let dbPool = null;
 let poolCreatedAt = 0;

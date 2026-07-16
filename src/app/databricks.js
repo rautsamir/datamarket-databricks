@@ -79,8 +79,9 @@ export async function fetchUcSchema(ucFullName) {
   try {
     const colResult = await databricksApi('POST', '/api/2.0/sql/statements', {
       warehouse_id: warehouseId,
-      statement: `SELECT column_name, data_type, comment FROM system.information_schema.columns
-                  WHERE table_catalog = '${catalog}' AND table_schema = '${schema}' AND table_name = '${table}'
+      // Query the catalog's own information_schema, not system.information_schema
+      statement: `SELECT column_name, data_type, comment FROM \`${catalog}\`.information_schema.columns
+                  WHERE table_schema = '${schema}' AND table_name = '${table}'
                   ORDER BY ordinal_position`,
       wait_timeout: '10s'
     });
@@ -93,8 +94,8 @@ export async function fetchUcSchema(ucFullName) {
     try {
       const tagResult = await databricksApi('POST', '/api/2.0/sql/statements', {
         warehouse_id: getWarehouseId(),
-        statement: `SELECT column_name, tag_name, tag_value FROM system.information_schema.column_tags
-                    WHERE table_catalog = '${catalog}' AND table_schema = '${schema}' AND table_name = '${table}'`,
+        statement: `SELECT column_name, tag_name, tag_value FROM \`${catalog}\`.information_schema.column_tags
+                    WHERE table_schema = '${schema}' AND table_name = '${table}'`,
         wait_timeout: '10s'
       });
       if (tagResult.data?.status?.state === 'SUCCEEDED') {

@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { Search, Edit3, Check, X, ExternalLink, Link2, Database, AlertTriangle, CheckCircle2 } from 'lucide-react'
+import { Search, Edit3, Check, X, ExternalLink, Link2, Database, AlertTriangle, CheckCircle2, Trash2 } from 'lucide-react'
 import { statusConfig } from './adminConstants'
 
 // ─── Inline Edit Row for Product ───────────────────────────────────────────────
@@ -156,11 +156,25 @@ export function AdminProductsTab({
                       </td>
                       <td className="py-3 px-4 text-center">
                         <div className="flex items-center justify-center gap-1">
-                          <button onClick={() => setEditingRef(p.product_ref)} title="Quick edit (technical fields)" className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-700">
+                          <button onClick={() => setEditingRef(p.product_ref)} title="Quick edit" className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-700">
                             <Edit3 className="h-3.5 w-3.5" />
                           </button>
-                          <button onClick={() => onNavigate('register', { editProduct: p })} title="Full edit (all fields)" className="p-1 rounded hover:bg-blue-100 text-blue-400 hover:text-blue-700">
+                          <button onClick={() => onNavigate('register', { editProduct: p })} title="Full edit" className="p-1 rounded hover:bg-blue-100 text-blue-400 hover:text-blue-700">
                             <ExternalLink className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            title="Delete product"
+                            className="p-1 rounded hover:bg-red-50 text-gray-300 hover:text-red-500 transition-colors"
+                            onClick={async () => {
+                              if (!window.confirm(`Delete "${p.display_name}"? This cannot be undone.`)) return
+                              try {
+                                const r = await fetch(`/api/portal/products/${p.product_ref}`, { method: 'DELETE' })
+                                if (!r.ok) throw new Error(await r.text())
+                                loadAllProducts()
+                              } catch (e) { alert('Delete failed: ' + e.message) }
+                            }}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
                           </button>
                         </div>
                       </td>
