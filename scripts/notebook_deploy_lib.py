@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import json
 import os
-import time
 from pathlib import Path
 
 from databricks.sdk import WorkspaceClient
@@ -19,61 +17,102 @@ def _api(w: WorkspaceClient, method: str, path: str, body=None):
 
 
 def _lakebase_branch(w: WorkspaceClient, project: str) -> str:
-    try:
-        data = _api(w, "GET", f"/api/2.0/postgres/autoscaling/projects/{project}/branches")
-        branches = data.get("branches") or data.get("items") or []
-        names = []
-        for b in branches:
-            name = b.get("name") or ""
-            names.append(name.split("/")[-1] if "/" in name else name)
-        return next((n for n in names if n == "production"), names[0] if names else "")
-    except Exception:
-        return ""
+    # SDK postgres commands (matches `databricks postgres list-branches`)
+    if hasattr(w, "postgres"):
+        try:
+            items = list(w.postgres.list_branches(parent=f"projects/{project}"))
+            names = []
+            for item in items:
+                name = getattr(item, "name", "") or ""
+                names.append(name.split("/")[-1] if "/" in name else name)
+            if names:
+                return next((n for n in names if n == "production"), names[0])
+        except Exception:
+            pass
+    # REST fallback
+    for path in (
+        f"/api/2.0/postgres/autoscaling/projects/{project}/branches",
+        f"/api/2.0/postgres/projects/{project}/branches",
+    ):
+        try:
+            data = _api(w, "GET", path)
+            branches = data if isinstance(data, list) else data.get("branches") or data.get("items") or []
+            names = []
+            for b in branches:
+                name = b.get("name") or ""
+                names.append(name.split("/")[-1] if "/" in name else name)
+            if names:
+                return next((n for n in names if n == "production"), names[0])
+        except Exception:
+            continue
+    return ""
 
 
 def _lakebase_host(w: WorkspaceClient, project: str, branch: str) -> str:
+    parent = f"projects/{project}/branches/{branch}"
+    if hasattr(w, "postgres"):
+        try:
+            items = list(w.postgres.list_endpoints(parent=parent))
+            for ep in items:
+                status = getattr(ep, "status", None)
+                hosts = getattr(status, "hosts", None) if status else None
+                host = getattr(hosts, "host", None) if hosts else None
+                if host:
+                    return host
+        except Exception:
+            pass
     try:
-        data = _api(
-            w, "GET",
-            f"/api/2.0/postgres/autoscaling/projects/{project}/branches/{branch}/endpoints",
-        )
+        data = _api(w, "GET", f"/api/2.0/postgres/autoscaling/{parent}/endpoints")
         endpoints = data if isinstance(data, list) else data.get("endpoints") or data.get("items") or []
         for ep in endpoints:
             host = (ep.get("status") or {}).get("hosts", {}).get("host", "")
             if host:
                 return host
-            host = ep.get("read_write_dns") or ep.get("dns") or ""
-            if host:
-                return host
     except Exception:
         pass
     try:
-        path = f"projects/{project}/branches/{branch}/endpoints/primary"
+        path = f"{parent}/endpoints/primary"
         data = _api(w, "GET", f"/api/2.0/postgres/endpoints/{path}")
         return data.get("read_write_dns") or data.get("dns") or ""
     except Exception:
         return ""
 
 
-def _ensure_lakebase_project(w: WorkspaceClient, project: str) -> str:
-    branch = _lakebase_branch(w, project)
-    if branch:
-        return branch
-    print(f"  Creating Lakebase project '{project}' (~2–3 min)...")
-    try:
-        _api(w, "POST", "/api/2.0/postgres/autoscaling/projects", body={"project_id": project})
-    except Exception as e:
-        print(f"  create-project note: {e}")
-    for _ in range(36):
-        branch = _lakebase_branch(w, project)
-        if branch:
-            print(f"  Branch ready: {branch}")
-            return branch
-        time.sleep(5)
-    raise RuntimeError(
-        f"Lakebase project '{project}' not ready. Create it in Compute → Lakebase "
-        "or set the lakebase_host widget."
+def _lakebase_setup_error(project: str) -> RuntimeError:
+    return RuntimeError(
+        f"Lakebase project '{project}' was not found in this workspace.\n\n"
+        "Create it in the UI first (notebook deploy cannot provision Lakebase on all workspaces):\n"
+        "  1. Compute → Lakebase → + Create → Autoscaling\n"
+        f"  2. Project name: {project}  →  wait until status is Running\n"
+        "  3. Open the project → Connection details → copy the hostname (ep-....database....)\n"
+        "  4. Paste it into the lakebase_host widget at the top of this notebook\n"
+        "  5. Re-run Step 4 only (Step 3 build does not need to re-run)"
     )
+
+
+def _resolve_lakebase(
+    w: WorkspaceClient, project: str, lakebase_host_override: str = "",
+) -> tuple[str, str, str]:
+    """Return (branch, hostname, endpoint path)."""
+    if lakebase_host_override:
+        branch = _lakebase_branch(w, project) or "production"
+        endpoint = f"projects/{project}/branches/{branch}/endpoints/primary"
+        print(f"  using lakebase_host widget → {lakebase_host_override}")
+        return branch, lakebase_host_override.strip(), endpoint
+
+    branch = _lakebase_branch(w, project)
+    if not branch:
+        raise _lakebase_setup_error(project)
+
+    host = _lakebase_host(w, project, branch)
+    if not host:
+        raise RuntimeError(
+            f"Lakebase project '{project}' exists but hostname is not ready yet.\n"
+            "Wait until the endpoint shows Running, copy the hostname into lakebase_host widget, "
+            "then re-run Step 4."
+        )
+    endpoint = f"projects/{project}/branches/{branch}/endpoints/primary"
+    return branch, host, endpoint
 
 
 def _workspace_user_path(email: str) -> str:
@@ -261,18 +300,13 @@ def deploy_from_notebook(
     workspace_path = f"/Workspace/Users/{_workspace_user_path(user_email)}/{app_name}"
 
     print("[1/6] Resolving Lakebase...")
-    branch = _ensure_lakebase_project(w, lakebase_project)
-    lb_host = lakebase_host or _lakebase_host(w, lakebase_project, branch)
+    branch, lb_host, lb_endpoint = _resolve_lakebase(w, lakebase_project, lakebase_host)
     cache_file = app_dir / f".lakebase-{app_name}.cache"
     if not lb_host and cache_file.is_file():
         lb_host = cache_file.read_text().strip()
     if not lb_host:
-        raise RuntimeError(
-            "Could not resolve Lakebase hostname. Set the lakebase_host widget "
-            f"(Compute → Lakebase → {lakebase_project} → Connection details)."
-        )
+        raise _lakebase_setup_error(lakebase_project)
     cache_file.write_text(lb_host)
-    lb_endpoint = f"projects/{lakebase_project}/branches/{branch}/endpoints/primary"
     print(f"  host: {lb_host}")
 
     print("[2/6] Writing app.yaml...")
