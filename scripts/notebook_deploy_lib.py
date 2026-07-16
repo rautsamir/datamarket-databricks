@@ -1,117 +1,108 @@
-"""SDK-based DataMarket deploy for notebook environments (CLI blocked)."""
+"""SDK-based DataMarket deploy — mirrors src/app/deploy.sh Lakebase logic via w.postgres."""
 
 from __future__ import annotations
 
 import os
+import time
 from pathlib import Path
 
 from databricks.sdk import WorkspaceClient
 from databricks.sdk.errors import NotFound
+from databricks.sdk.service.postgres import Project, ProjectSpec, Role, RoleIdentityType, RoleRoleSpec
 from databricks.sdk.service.workspace import ImportFormat
 
 
-def _api(w: WorkspaceClient, method: str, path: str, body=None):
-    if body is not None:
-        return w.api_client.do(method, path, body=body)
-    return w.api_client.do(method, path)
-
-
-def _lakebase_branch(w: WorkspaceClient, project: str) -> str:
-    # SDK postgres commands (matches `databricks postgres list-branches`)
-    if hasattr(w, "postgres"):
-        try:
-            items = list(w.postgres.list_branches(parent=f"projects/{project}"))
-            names = []
-            for item in items:
-                name = getattr(item, "name", "") or ""
-                names.append(name.split("/")[-1] if "/" in name else name)
-            if names:
-                return next((n for n in names if n == "production"), names[0])
-        except Exception:
-            pass
-    # REST fallback
-    for path in (
-        f"/api/2.0/postgres/autoscaling/projects/{project}/branches",
-        f"/api/2.0/postgres/projects/{project}/branches",
-    ):
-        try:
-            data = _api(w, "GET", path)
-            branches = data if isinstance(data, list) else data.get("branches") or data.get("items") or []
-            names = []
-            for b in branches:
-                name = b.get("name") or ""
-                names.append(name.split("/")[-1] if "/" in name else name)
-            if names:
-                return next((n for n in names if n == "production"), names[0])
-        except Exception:
-            continue
-    return ""
-
-
-def _lakebase_host(w: WorkspaceClient, project: str, branch: str) -> str:
-    parent = f"projects/{project}/branches/{branch}"
-    if hasattr(w, "postgres"):
-        try:
-            items = list(w.postgres.list_endpoints(parent=parent))
-            for ep in items:
-                status = getattr(ep, "status", None)
-                hosts = getattr(status, "hosts", None) if status else None
-                host = getattr(hosts, "host", None) if hosts else None
-                if host:
-                    return host
-        except Exception:
-            pass
+def _get_branch(w: WorkspaceClient, project: str) -> str:
+    """Same as deploy.sh _get_branch — `databricks postgres list-branches`."""
     try:
-        data = _api(w, "GET", f"/api/2.0/postgres/autoscaling/{parent}/endpoints")
-        endpoints = data if isinstance(data, list) else data.get("endpoints") or data.get("items") or []
-        for ep in endpoints:
-            host = (ep.get("status") or {}).get("hosts", {}).get("host", "")
-            if host:
-                return host
-    except Exception:
-        pass
-    try:
-        path = f"{parent}/endpoints/primary"
-        data = _api(w, "GET", f"/api/2.0/postgres/endpoints/{path}")
-        return data.get("read_write_dns") or data.get("dns") or ""
+        items = list(w.postgres.list_branches(parent=f"projects/{project}"))
+        names = []
+        for b in items:
+            name = getattr(b, "name", "") or ""
+            names.append(name.split("/")[-1] if "/" in name else name)
+        return next((n for n in names if n == "production"), names[0] if names else "")
     except Exception:
         return ""
 
 
-def _lakebase_setup_error(project: str) -> RuntimeError:
-    return RuntimeError(
-        f"Lakebase project '{project}' was not found in this workspace.\n\n"
-        "Create it in the UI first (notebook deploy cannot provision Lakebase on all workspaces):\n"
-        "  1. Compute → Lakebase → + Create → Autoscaling\n"
-        f"  2. Project name: {project}  →  wait until status is Running\n"
-        "  3. Open the project → Connection details → copy the hostname (ep-....database....)\n"
-        "  4. Paste it into the lakebase_host widget at the top of this notebook\n"
-        "  5. Re-run Step 4 only (Step 3 build does not need to re-run)"
-    )
+def _get_host(w: WorkspaceClient, project: str, branch: str) -> str:
+    """Same as deploy.sh _get_host — `databricks postgres list-endpoints`."""
+    try:
+        parent = f"projects/{project}/branches/{branch}"
+        for ep in w.postgres.list_endpoints(parent=parent):
+            status = getattr(ep, "status", None)
+            hosts = getattr(status, "hosts", None) if status else None
+            host = getattr(hosts, "host", None) if hosts else None
+            if host:
+                return host
+    except Exception:
+        pass
+    return ""
 
 
-def _resolve_lakebase(
-    w: WorkspaceClient, project: str, lakebase_host_override: str = "",
+def _ensure_lakebase(
+    w: WorkspaceClient,
+    project: str,
+    cache_file: Path,
+    host_override: str = "",
 ) -> tuple[str, str, str]:
-    """Return (branch, hostname, endpoint path)."""
-    if lakebase_host_override:
-        branch = _lakebase_branch(w, project) or "production"
-        endpoint = f"projects/{project}/branches/{branch}/endpoints/primary"
-        print(f"  using lakebase_host widget → {lakebase_host_override}")
-        return branch, lakebase_host_override.strip(), endpoint
+    """
+    Mirror deploy.sh step 3: detect → create-project if missing → poll → resolve host.
+    Returns (branch, hostname, endpoint path).
+    """
+    if host_override:
+        branch = _get_branch(w, project) or "production"
+        return branch, host_override.strip(), f"projects/{project}/branches/{branch}/endpoints/primary"
 
-    branch = _lakebase_branch(w, project)
+    print(f"  Looking up Lakebase project: {project}")
+    branch = _get_branch(w, project)
+
     if not branch:
-        raise _lakebase_setup_error(project)
+        print(f"  Project '{project}' not found — creating Lakebase Autoscaling project...")
+        print("  (This takes ~2–3 minutes on first deploy)")
+        try:
+            op = w.postgres.create_project(
+                project=Project(spec=ProjectSpec(pg_version=17, enable_pg_native_login=False)),
+                project_id=project,
+            )
+            op.wait()
+            print(f"  Project '{project}' created")
+        except Exception as e:
+            print(f"  create-project note: {e}")
 
-    host = _lakebase_host(w, project, branch)
+        print("  Waiting for Lakebase branch to be ready...")
+        for _ in range(36):
+            branch = _get_branch(w, project)
+            if branch:
+                print(f"  Branch ready: {branch}")
+                break
+            print(".", end="", flush=True)
+            time.sleep(5)
+        print()
+
+        if not branch:
+            raise RuntimeError(
+                f"Lakebase branch unavailable for project '{project}' after 3 min.\n"
+                "Options:\n"
+                f"  1. Try a different project name in the lakebase_project widget\n"
+                f"  2. Delete the broken project in Compute → Lakebase and re-run Step 4"
+            )
+
+    endpoint = f"projects/{project}/branches/{branch}/endpoints/primary"
+    host = _get_host(w, project, branch)
+
+    if not host and cache_file.is_file():
+        host = cache_file.read_text().strip()
+        if host:
+            print("  Lakebase hostname loaded from cache")
+
     if not host:
         raise RuntimeError(
-            f"Lakebase project '{project}' exists but hostname is not ready yet.\n"
-            "Wait until the endpoint shows Running, copy the hostname into lakebase_host widget, "
-            "then re-run Step 4."
+            f"Could not resolve Lakebase hostname for '{project}' (endpoint may still be provisioning).\n"
+            "Wait a minute and re-run Step 4, or paste the hostname into the lakebase_host widget."
         )
-    endpoint = f"projects/{project}/branches/{branch}/endpoints/primary"
+
+    cache_file.write_text(host)
     return branch, host, endpoint
 
 
@@ -202,6 +193,44 @@ def _grant_warehouse(w: WorkspaceClient, warehouse_id: str, sp_uuid: str) -> Non
     )
 
 
+def _ensure_sp_oauth_role(w: WorkspaceClient, branch_parent: str, sp_uuid: str) -> None:
+    """Mirror deploy.sh — register SP as LAKEBASE_OAUTH_V1 role via w.postgres."""
+    existing_auth = ""
+    wrong_role_name = ""
+    try:
+        for role in w.postgres.list_roles(parent=branch_parent):
+            status = getattr(role, "status", None)
+            if status and getattr(status, "postgres_role", None) == sp_uuid:
+                existing_auth = str(getattr(status, "auth_method", "") or "")
+                wrong_role_name = getattr(role, "name", "") or ""
+                break
+    except Exception:
+        pass
+
+    if existing_auth == "LAKEBASE_OAUTH_V1":
+        print("  SP OAuth role already registered in Lakebase")
+        return
+
+    if wrong_role_name and existing_auth and existing_auth != "LAKEBASE_OAUTH_V1":
+        try:
+            w.postgres.delete_role(name=wrong_role_name)
+        except Exception:
+            pass
+
+    try:
+        op = w.postgres.create_role(
+            parent=branch_parent,
+            role=Role(spec=RoleRoleSpec(
+                identity_type=RoleIdentityType.SERVICE_PRINCIPAL,
+                postgres_role=sp_uuid,
+            )),
+        )
+        op.wait()
+        print("  SP OAuth role created in Lakebase")
+    except Exception as e:
+        print(f"  SP OAuth role warning: {e}")
+
+
 def _lakebase_schema_grants(
     w: WorkspaceClient,
     *,
@@ -211,15 +240,16 @@ def _lakebase_schema_grants(
     branch: str,
     lakebase_host: str,
     sp_uuid: str,
-    demo_mode: str,
+    admin_email: str,
 ) -> None:
+    """Mirror deploy.sh step 7 — schema.sql + OAuth role + psql grants."""
     try:
         import psycopg2
     except ImportError:
         print("  psycopg2 not installed — skipping schema grants (app creates tables on start)")
         return
 
-    user = w.config.username or ""
+    user = w.config.username or admin_email
     token = w.config.token or ""
     if not token:
         print("  No OAuth token — skipping Lakebase grants")
@@ -240,30 +270,8 @@ def _lakebase_schema_grants(
                 cur.execute(schema_sql.read_text())
                 print("  schema.sql applied")
 
-    branch_path = f"projects/{lakebase_project}/branches/{branch}"
-    roles = []
-    try:
-        roles = _api(w, "GET", f"/api/2.0/postgres/autoscaling/{branch_path}/roles") or []
-    except Exception:
-        pass
-    if not isinstance(roles, list):
-        roles = roles.get("roles") or roles.get("items") or []
-
-    has_oauth = any(
-        (r.get("status") or {}).get("postgres_role") == sp_uuid
-        and (r.get("status") or {}).get("auth_method") == "LAKEBASE_OAUTH_V1"
-        for r in roles
-    )
-    if not has_oauth:
-        try:
-            _api(
-                w, "POST",
-                f"/api/2.0/postgres/autoscaling/{branch_path}/roles",
-                body={"spec": {"identity_type": "SERVICE_PRINCIPAL", "postgres_role": sp_uuid}},
-            )
-            print("  SP OAuth role registered in Lakebase")
-        except Exception as e:
-            print(f"  SP OAuth role warning: {e}")
+    branch_parent = f"projects/{lakebase_project}/branches/{branch}"
+    _ensure_sp_oauth_role(w, branch_parent, sp_uuid)
 
     grant_sql = f"""
         GRANT CONNECT ON DATABASE databricks_postgres TO "{sp_uuid}";
@@ -271,6 +279,8 @@ def _lakebase_schema_grants(
         GRANT CREATE ON SCHEMA {app_name} TO "{sp_uuid}";
         GRANT ALL PRIVILEGES ON ALL TABLES    IN SCHEMA {app_name} TO "{sp_uuid}";
         GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA {app_name} TO "{sp_uuid}";
+        ALTER DEFAULT PRIVILEGES IN SCHEMA {app_name} GRANT ALL ON TABLES    TO "{sp_uuid}";
+        ALTER DEFAULT PRIVILEGES IN SCHEMA {app_name} GRANT ALL ON SEQUENCES TO "{sp_uuid}";
     """
     with psycopg2.connect(**conn_str) as conn:
         conn.autocommit = True
@@ -290,23 +300,17 @@ def deploy_from_notebook(
     warehouse_id: str = "",
     demo_mode: str = "false",
 ) -> dict:
-    """Deploy DataMarket using the Python SDK (no Databricks CLI)."""
+    """Deploy DataMarket using w.postgres + w.apps (same APIs as deploy.sh CLI)."""
     host = (w.config.host or "").rstrip("/")
     app_dir = Path(repo_dir) / "src" / "app"
     if not (app_dir / "app.js").is_file():
         raise FileNotFoundError(f"Expected app at {app_dir}/app.js — run the build cell first")
 
-    user_email = admin_email
-    workspace_path = f"/Workspace/Users/{_workspace_user_path(user_email)}/{app_name}"
-
-    print("[1/6] Resolving Lakebase...")
-    branch, lb_host, lb_endpoint = _resolve_lakebase(w, lakebase_project, lakebase_host)
+    workspace_path = f"/Workspace/Users/{_workspace_user_path(admin_email)}/{app_name}"
     cache_file = app_dir / f".lakebase-{app_name}.cache"
-    if not lb_host and cache_file.is_file():
-        lb_host = cache_file.read_text().strip()
-    if not lb_host:
-        raise _lakebase_setup_error(lakebase_project)
-    cache_file.write_text(lb_host)
+
+    print("[1/6] Resolving Lakebase (same as deploy.sh)...")
+    branch, lb_host, lb_endpoint = _ensure_lakebase(w, lakebase_project, cache_file, lakebase_host)
     print(f"  host: {lb_host}")
 
     print("[2/6] Writing app.yaml...")
@@ -323,12 +327,10 @@ def deploy_from_notebook(
         fpath = app_dir / fname
         if fpath.is_file():
             _upload_file(w, str(fpath), f"{workspace_path}/{fname}")
-    routes_dir = app_dir / "routes"
-    if routes_dir.is_dir():
-        _upload_tree(w, str(routes_dir), f"{workspace_path}/routes")
-    lib_dir = app_dir / "lib"
-    if lib_dir.is_dir():
-        _upload_tree(w, str(lib_dir), f"{workspace_path}/lib")
+    for subdir in ("routes", "lib"):
+        d = app_dir / subdir
+        if d.is_dir():
+            _upload_tree(w, str(d), f"{workspace_path}/{subdir}")
     print(f"  → {workspace_path}")
 
     print("[4/6] Deploying Databricks App...")
@@ -344,7 +346,7 @@ def deploy_from_notebook(
     if sp_uuid:
         _lakebase_schema_grants(
             w, repo_dir=repo_dir, app_name=app_name, lakebase_project=lakebase_project,
-            branch=branch, lakebase_host=lb_host, sp_uuid=sp_uuid, demo_mode=demo_mode,
+            branch=branch, lakebase_host=lb_host, sp_uuid=sp_uuid, admin_email=admin_email,
         )
         w.apps.deploy(app_name=app_name, source_code_path=workspace_path)
     else:
