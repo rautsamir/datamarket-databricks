@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { Upload, X, Check, Database, ChevronRight, ChevronDown, Loader2, Search, Table2 } from 'lucide-react'
+import { Upload, X, Check, Database, FolderOpen, Folder, ChevronRight, ChevronDown, Loader2, Search, Table2, ShieldAlert, Copy, ExternalLink, CheckCircle2 } from 'lucide-react'
 
 const BLUE = '#003865'
 
@@ -15,15 +15,17 @@ function Checkbox({ checked, indeterminate, disabled, onChange, className = '' }
 
 // ─── Main modal ───────────────────────────────────────────────────────────────
 export function ImportUCModal({ onClose, onImported }) {
-  const [catalogs, setCatalogs]   = useState([])   // [{name, comment, expanded, loading, schemasLoaded}]
-  const [schemas,  setSchemas]    = useState({})   // {catalogName: [{name, expanded, loading, tablesLoaded}]}
-  const [tables,   setTables]     = useState({})   // {'cat.schema': [{full_name, table_name, registered, ...}]}
+  const [catalogs, setCatalogs]   = useState([])
+  const [schemas,  setSchemas]    = useState({})
+  const [tables,   setTables]     = useState({})
+  const [tablesMeta, setTablesMeta] = useState({}) // { [catName.schName]: { needsGrant, grantSql, sqlEditorUrl } }
   const [selected, setSelected]   = useState(new Set())
   const [search,   setSearch]     = useState('')
   const [initLoad, setInitLoad]   = useState(true)
   const [importing, setImporting] = useState(false)
   const [result,   setResult]     = useState(null)
   const [initError, setInitError] = useState(null)
+  const [copiedKey, setCopiedKey] = useState(null)
 
   // Load catalog list on mount
   useEffect(() => {
@@ -48,6 +50,7 @@ export function ImportUCModal({ onClose, onImported }) {
       setCatalogs(p => p.map(c => c.name === name ? { ...c, loading: true } : c))
       try {
         const d = await fetch(`/api/portal/admin/uc-schemas?catalog=${encodeURIComponent(name)}`).then(r => r.json())
+        if (d.error) throw new Error(d.error)
         setSchemas(p => ({
           ...p,
           [name]: (d.schemas || []).map(s => ({
@@ -74,7 +77,11 @@ export function ImportUCModal({ onClose, onImported }) {
         const d = await fetch(
           `/api/portal/admin/uc-tables-browse?catalog=${encodeURIComponent(catName)}&schema=${encodeURIComponent(schName)}`
         ).then(r => r.json())
+        if (d.error) throw new Error(d.error)
         setTables(p => ({ ...p, [key]: d.tables || [] }))
+        if (d.needsGrant) {
+          setTablesMeta(p => ({ ...p, [key]: { needsGrant: true, grantSql: d.grantSql, sqlEditorUrl: d.sqlEditorUrl } }))
+        }
         setSchemas(p => ({
           ...p,
           [catName]: p[catName].map(s => s.name === schName ? { ...s, tablesLoaded: true, loading: false, expanded: true } : s)
@@ -233,7 +240,7 @@ export function ImportUCModal({ onClose, onImported }) {
                             ? <ChevronDown className="h-3.5 w-3.5 text-gray-500 shrink-0" />
                             : <ChevronRight className="h-3.5 w-3.5 text-gray-500 shrink-0" />
                         }
-                        <span className="text-base leading-none">🗂️</span>
+                        <Database className="h-4 w-4 text-gray-500 shrink-0" />
                         <span className="font-semibold text-gray-800 truncate">{cat.name}</span>
                         {cat.schemasLoaded && (
                           <span className="text-xs text-gray-400 shrink-0">
@@ -280,7 +287,10 @@ export function ImportUCModal({ onClose, onImported }) {
                                         ? <ChevronDown className="h-3 w-3 text-gray-500 shrink-0" />
                                         : <ChevronRight className="h-3 w-3 text-gray-500 shrink-0" />
                                     }
-                                    <span className="text-sm leading-none">📁</span>
+                                    {sch.expanded
+                                      ? <FolderOpen className="h-3.5 w-3.5 text-amber-500 shrink-0" />
+                                      : <Folder className="h-3.5 w-3.5 text-amber-500 shrink-0" />
+                                    }
                                     <span className="text-gray-700 truncate">{sch.name}</span>
                                     {sch.tablesLoaded && (
                                       <span className="text-xs text-gray-400 shrink-0">
@@ -300,9 +310,51 @@ export function ImportUCModal({ onClose, onImported }) {
                                 {/* ── Tables ── */}
                                 {sch.expanded && (
                                   <div className="ml-4 pl-3 border-l-2 border-gray-100 space-y-0.5 mt-0.5 mb-1">
-                                    {schTables.length === 0 && !sch.loading && (
-                                      <div className="py-1 px-2 text-xs text-gray-400 italic">No tables</div>
-                                    )}
+                                    {schTables.length === 0 && !sch.loading && (() => {
+                                      const meta = tablesMeta[`${cat.name}.${sch.name}`]
+                                      if (meta?.needsGrant) {
+                                        return (
+                                          <div className="py-2 px-2 space-y-2">
+                                            <div className="flex items-start gap-1.5 text-xs text-amber-700">
+                                              <ShieldAlert className="h-3.5 w-3.5 shrink-0 mt-0.5 text-amber-500" />
+                                              <span>App service principal needs <code className="bg-amber-100 px-1 rounded font-mono">USE SCHEMA</code> to see tables here.</span>
+                                            </div>
+                                            <div className="bg-gray-950 rounded-lg px-3 py-2 flex items-center gap-2">
+                                              <code className="text-xs text-emerald-300 font-mono flex-1 break-all">{meta.grantSql}</code>
+                                              <button
+                                                onClick={() => {
+                                                  navigator.clipboard.writeText(meta.grantSql)
+                                                  setCopiedKey(`${cat.name}.${sch.name}`)
+                                                  setTimeout(() => setCopiedKey(null), 2000)
+                                                }}
+                                                className="shrink-0 text-gray-500 hover:text-gray-300"
+                                                title="Copy SQL"
+                                              >
+                                                {copiedKey === `${cat.name}.${sch.name}`
+                                                  ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
+                                                  : <Copy className="h-3.5 w-3.5" />}
+                                              </button>
+                                            </div>
+                                            {meta.sqlEditorUrl && (
+                                              <a href={meta.sqlEditorUrl} target="_blank" rel="noopener noreferrer"
+                                                className="flex items-center gap-1 text-xs text-blue-600 hover:underline">
+                                                <ExternalLink className="h-3 w-3" /> Open SQL Editor
+                                              </a>
+                                            )}
+                                            <button
+                                              onClick={() => {
+                                                setTablesMeta(p => { const n = {...p}; delete n[`${cat.name}.${sch.name}`]; return n })
+                                                setSchemas(p => ({ ...p, [cat.name]: p[cat.name].map(s => s.name === sch.name ? { ...s, tablesLoaded: false, expanded: false } : s) }))
+                                              }}
+                                              className="text-xs text-gray-400 hover:text-gray-600"
+                                            >
+                                              Re-check after running SQL
+                                            </button>
+                                          </div>
+                                        )
+                                      }
+                                      return <div className="py-1 px-2 text-xs text-gray-400 italic">No tables</div>
+                                    })()}
                                     {visibleTables.map(t => (
                                       <label
                                         key={t.full_name}

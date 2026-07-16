@@ -61,7 +61,7 @@ export function DataMarketHomePage({ onNavigate, onOpenProduct }) {
   const [recentlyAccessed, setRecentlyAccessed] = useState([])
   const [chips, setChips] = useState([])
   const { persona, hasAccess, myRequests } = usePersona()
-  const { searchChips: configChips } = useAppConfig()
+  const { searchChips: configChips, appLogoUrl } = useAppConfig()
 
   // Load featured (3 most recently published products)
   useEffect(() => {
@@ -143,10 +143,15 @@ export function DataMarketHomePage({ onNavigate, onOpenProduct }) {
       {/* Hero Search */}
       <div className="text-center space-y-4">
         <div className="flex flex-col items-center gap-2 mb-2">
-          <img src="/la-county-seal.png" alt="DataMarket" className="w-16 h-16 rounded-full shadow-md ring-2 ring-gray-200" />
+          <img src={appLogoUrl || '/datamarket-logo.svg'} alt="DataMarket" className="w-16 h-16 rounded-full shadow-md ring-2 ring-gray-200" />
         </div>
         <h1 className="text-3xl sm:text-4xl font-bold text-gray-900">
-          Hi {persona.name},
+          Hi {(() => {
+            const name = persona.name || '';
+            // If name looks like an email, use the local part before @
+            const display = name.includes('@') ? name.split('@')[0] : name.split(' ')[0];
+            return display || name;
+          })()},
         </h1>
         <p className="text-xl text-gray-500">Search for data or ask a question in plain English.</p>
 

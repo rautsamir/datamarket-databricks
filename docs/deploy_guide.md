@@ -1,39 +1,26 @@
 # DataMarket — Deployment Guide
 
-> How to install DataMarket in a brand-new Databricks workspace.
-
 ---
 
-## Before you start — complete these 2 things first
-
-### ✅ 1. Install local dependencies
+## Before you start — install dependencies
 
 ```bash
 # Databricks CLI
 brew tap databricks/tap && brew install databricks
 
-# Node.js (v18 or later)
+# Node.js v18+
 brew install node
 
-# psql — used to run schema grants against Lakebase
+# psql — used for Lakebase schema init and SP grants
+# Optional but strongly recommended; schema step is skipped without it
 brew install postgresql@16
 ```
+
+> **python3** is also required (used for JSON parsing throughout the script). It's pre-installed on macOS and most Linux distros.
 
 Verify they're all present:
 ```bash
 databricks -v && node -v && npm -v && psql --version
-```
-
-### ✅ 2. Authenticate the Databricks CLI
-
-```bash
-databricks auth login \
-  --host https://your-workspace.azuredatabricks.net \
-  --profile my-profile
-
-# Verify
-databricks auth describe --profile my-profile
-# Should print your workspace URL and email
 ```
 
 ---
@@ -53,244 +40,107 @@ The notebook installs Node + Databricks CLI on the cluster driver, clones this r
 
 ---
 
-## Fastest path — copy these 3 commands
+## Deploy
+
+**1. Authenticate the CLI** against the workspace you want to deploy to:
 
 ```bash
-# 1. Clone
-git clone https://github.com/rautsamir/datamarket-databricks.git
-cd datamarket-databricks/lac_dna_portal/src/app
-
-# 2. Deploy (replace values in < >)
-./deploy.sh \
-  --profile      <my-profile> \
-  --admin-email  <you@company.com> \
-  --warehouse-id <your-warehouse-id>
-
-# 3. Open the URL printed at the end and follow the in-app setup wizard
+databricks auth login \
+  --host https://your-workspace.azuredatabricks.net \
+  --profile my-profile
 ```
 
-That's it. The deploy script provisions **everything** — including Lakebase — from scratch. The rest of this guide explains the flags, permissions, and troubleshooting in detail.
-
----
-
-## Step-by-step walkthrough
-
-### Step 1 — Clone the repo
+**2. Clone and run:**
 
 ```bash
 git clone https://github.com/rautsamir/datamarket-databricks.git
-cd datamarket-databricks/lac_dna_portal/src/app
+cd datamarket-databricks
+./deploy.sh --profile my-profile
 ```
 
----
+That's it. Everything else is automatic.
 
-### Step 2 — Run the deploy script
-
-```bash
-./deploy.sh \
-  --profile      my-profile \
-  --admin-email  you@company.com \
-  --warehouse-id YOUR_WAREHOUSE_ID
-```
-
-The script takes ~7 minutes end-to-end on a fresh workspace (Lakebase provisioning is ~2–3 min of that). Don't Ctrl+C — it polls for `SUCCEEDED` before printing your URL.
-
-### What it does automatically
-
-| Step | What happens |
-|---|---|
-| 1 | Validates prerequisites (CLI, Node, psql) |
-| 2 | Reads workspace host and user from your CLI profile |
-| 3 | **Provisions Lakebase** — creates project + branch + endpoint if they don't exist, polls until ready |
-| 4 | Writes `app.yaml` with all required environment variables |
-| 5 | Builds the React frontend (`npm run build:local`) |
-| 6 | Uploads source code and built assets to your workspace |
-| 7 | Deploys the Databricks App (waits for `SUCCEEDED`) |
-| 8 | Gets the app's service principal UUID from the deployed app |
-| 9 | Connects to Lakebase, creates schema, runs migrations, grants SP permissions |
-| 10 | Restarts the app so it starts with a ready database |
-| 11 | Grants SP "Can use" on the SQL Warehouse (if `--warehouse-id` provided) |
-| 12 | Grants SP `USE CATALOG` + `USE SCHEMA` on all UC catalogs (if `--warehouse-id` provided) |
-| 13 | Prints your live URL |
-
-> If Lakebase already exists the provisioning step is instant — it detects the running project and skips creation.
-
-### All flags
+### Optional flags
 
 | Flag | Default | Description |
 |---|---|---|
-| `--profile` | `DEFAULT` | Databricks CLI profile to use |
-| `--admin-email` | prompted | **Required.** Your email — auto-promoted to admin on first login |
-| `--lakebase-project` | `datamarket` | Name of your Lakebase Autoscaling project |
-| `--app-name` | `datamarket` | Databricks App name and workspace folder |
-| `--warehouse-id` | none | SQL Warehouse ID — script auto-grants SP "Can use" permission |
-| `--grant-catalogs` | `true` | Auto-grant SP `USE CATALOG` + `USE SCHEMA` on all UC catalogs |
-| `--demo-mode` | `false` | `true` = persona switcher (demos/POCs); `false` = real SSO + UC grants |
-| `--use-bundle` | `false` | `true` = use DAB for Lakebase+app deploy (requires CLI ≥ 0.287.0) |
+| `--profile` | `DEFAULT` | Databricks CLI profile |
+| `--admin-email` | auto-detected from CLI | Your email — auto-promoted to admin on first login |
+| `--lakebase-project` | `datamarket` | Lakebase project name — created automatically if missing |
+| `--app-name` | `datamarket` | Databricks App name |
+| `--warehouse-id` | auto-detected | SQL Warehouse ID — script picks the best running one |
+| `--grant-catalogs` | `true` | Grant SP `USE CATALOG + USE SCHEMA` on all UC catalogs |
+| `--demo-mode` | `false` | `true` = persona switcher for demos; `false` = real SSO + UC grants |
+| `--seed` | auto | Load demo products/users/requests. Defaults `true` when `--demo-mode true` |
+| `--use-bundle` | `false` | Use Databricks Asset Bundle (DAB) instead of direct deploy |
 | `--bundle-target` | `prod` | DAB target: `dev` or `prod` |
-
----
-
-### Step 3 — Open the app and finish setup
-
-Once the script prints your URL, open it in a browser. Because you set `--admin-email`, you'll land with the **Manage** tab visible.
-
-A **first-run setup wizard** appears automatically. It walks you through the two critical configuration steps:
-
-### Wizard Step 1 — SQL Warehouse ID
-
-**Why it matters:** Without this, approving an access request logs the approval in the portal but does **nothing** in Unity Catalog — the user can't actually query the table. It also enables live Data Schema and Sample Data Preview on every product detail page.
-
-**With it:** Every approval automatically executes `GRANT SELECT ON <table> TO <user>` in Unity Catalog. The product detail page shows real column names, types, and 5 live sample rows.
-
-**How to find it:**
-1. Go to **SQL Warehouses** (under Compute)
-2. Click your warehouse → **Connection details**
-3. Copy the ID shown next to the warehouse name, or the last segment of the HTTP path after `/sql/1.0/warehouses/`
-
-### Wizard Step 2 — Grant the app SP access to the warehouse
-
-After saving the Warehouse ID, you must give the app's service principal permission to use it:
-
-1. Go to **SQL Warehouses → your warehouse → Permissions**
-2. Click **Add permission**
-3. Find the app SP — it's named something like `app-xxxxx datamarket` (visible in **Compute → Apps → datamarket → Details**)
-4. Grant it **Can use**
-
-Without this step, sample data preview and UC grants will silently fail.
-
-### Wizard Step 3 — Import your data catalog
-
-Click **Import from Unity Catalog**, browse your catalog → schema → tables, and import. This populates the portal — users can't discover anything until you do this.
-
-The wizard marks setup complete when you're done. You can revisit both settings any time via **Manage → Settings**.
-
----
-
-## Enabling Optional Features
-
-All optional features are toggled from **Manage → Settings** — no redeployment needed.
-
-| Feature | Where to enable |
-|---|---|
-| Data Requests board | Settings → Features → Data Requests toggle |
-| Ask AI / Insights nav items | Settings → show/hide Ask AI and Insights |
-| About / FAQ / Contact pages | Settings → Page Content — edit text and toggle visibility |
-| Custom homepage search chips | Settings → Search Chips |
-| Demo mode (persona switcher) | Redeploy with `--demo-mode true` — this is the one setting that requires a redeploy |
-
----
-
-## Permissions Reference
-
-DataMarket touches four permission surfaces. This table covers everything — there is no other surface area.
-
-### 1. Lakebase (PostgreSQL)
-
-| Who | What | How to grant | Required for |
-|---|---|---|---|
-| App service principal | `USAGE + CREATE` on schema, `ALL PRIVILEGES` on tables/sequences | `deploy.sh` does this automatically (Step 7) | App to read/write all portal data |
-
-> `deploy.sh` handles this fully. No manual action needed.
-
----
-
-### 2. SQL Warehouse
-
-| Who | What | How to grant | Required for |
-|---|---|---|---|
-| App service principal | **Can use** | `deploy.sh --warehouse-id YOUR_ID` (automated) or Warehouse → Permissions → Add SP (manual) | UC GRANTs on approval, INFORMATION_SCHEMA queries |
-
-> **Automated** with `--warehouse-id` flag. If you skip the flag, grant manually: SQL Warehouses → your warehouse → Permissions → Add SP.
-
----
-
-### 3. Unity Catalog
-
-| Who | What | How to grant | Required for |
-|---|---|---|---|
-| App service principal | `USE CATALOG` + `USE SCHEMA` on all catalogs | `deploy.sh --warehouse-id YOUR_ID` (automated) or SQL `GRANT` (manual) | UC Import browser to see schemas/tables |
-| App service principal | `SELECT` on individual tables | Granted automatically via DataMarket approval flow | Schema panel to show real columns (REST API path) |
-| End users | `SELECT` on approved tables | DataMarket approval flow executes `GRANT SELECT` automatically | Users to actually query the data |
-
-> **Automated** with `--warehouse-id` flag — the script iterates all visible catalogs and grants `USE CATALOG` + `USE SCHEMA ON ALL SCHEMAS`. For `samples.*`, permissions are public by default.
-
-**Quick SQL to grant SP access to your catalog:**
-```sql
--- Run in a Databricks notebook or SQL editor
-GRANT USE CATALOG ON CATALOG your_catalog TO `app-xxxxx datamarket`;
-GRANT USE SCHEMA  ON SCHEMA  your_catalog.your_schema TO `app-xxxxx datamarket`;
--- Optional: so schema panel works for all tables without per-table grants
-GRANT SELECT ON ALL TABLES IN SCHEMA your_catalog.your_schema TO `app-xxxxx datamarket`;
-```
-
----
-
-### 4. Databricks Apps
-
-| Who | What | How to grant | Required for |
-|---|---|---|---|
-| App service principal | Auto-created by platform | Nothing needed | App identity |
-| End users | Access the app URL | Apps → datamarket → Permissions | Users to open the app at all |
-
-> By default Databricks Apps is accessible to all workspace users. Restrict via Apps → Permissions if needed.
-
----
-
-### Summary: what requires manual action
-
-| Step | Automated? | How |
-|---|---|---|
-| Lakebase schema grants | ✅ Always | `deploy.sh` Step 7 |
-| App created & deployed | ✅ Always | `deploy.sh` Step 6 |
-| Warehouse SP "Can use" | ✅ With `--warehouse-id` flag | `deploy.sh` Step 8 |
-| UC catalog/schema visibility for SP | ✅ With `--warehouse-id` flag | `deploy.sh` Step 9 |
-| End-user UC SELECT grants | ✅ Always | DataMarket approval flow |
-
-**Fully automated deploy command:**
-```bash
-./deploy.sh \
-  --profile my-profile \
-  --admin-email you@company.com \
-  --warehouse-id YOUR_WAREHOUSE_ID \
-  --lakebase-project datamarket
-```
-
-With `--warehouse-id` provided, zero manual permission steps are required.
-
----
-
-**No Manage tab after login**
-`ADMIN_EMAIL` in `app.yaml` doesn't match your login email. The deploy script sets this from `--admin-email`. Re-run the script with the correct email.
-
-**Approvals don't issue UC grants**
-SQL Warehouse ID not configured. Go to **Manage → Settings → Integrations**.
-
-**App starts but data doesn't persist / `relation "settings" does not exist`**
-Lakebase schema grants weren't applied. Usually means the `psql` step in the deploy script failed. Re-run the script — it's idempotent. If psql is not installed, install it (`brew install postgresql@16`) and re-run.
-
-**Deploy script times out waiting for Lakebase**
-Lakebase provisioning can take 3–5 minutes. If the script exceeds its timeout it will prompt you to paste the hostname manually (once). Find it at **Compute → Lakebase → your project → Connection details**. After you paste it, the value is cached in `.lakebase-datamarket.cache` — subsequent deploys skip this entirely.
-
-**Sample Data Preview shows "SQL Warehouse required"**
-Either the Warehouse ID isn't saved in **Manage → Settings**, or the app's service principal doesn't have "Can use" permission on the warehouse. See the in-app setup wizard (Step 3 above).
-
-**UC Import shows no catalogs**
-The app's service principal doesn't have Unity Catalog permissions. Ensure the workspace has UC enabled and the app SP has at least `USE CATALOG` privilege.
 
 ---
 
 ## Re-deploying (updates)
 
-Pull the latest code and run the same deploy command. The script is idempotent — it skips steps that are already done and re-uploads everything that changed. The Lakebase hostname is cached so you won't be prompted again.
-
 ```bash
-git pull origin main
-./deploy.sh \
-  --profile my-profile \
-  --admin-email you@company.com \
-  --lakebase-project datamarket
+git pull origin main && ./deploy.sh --profile my-profile
 ```
+
+Pass the same flags you used originally (e.g. `--lakebase-project datamarket-app` if you used a custom name). The script is fully idempotent.
+
+---
+
+## How it works
+
+The script runs 10 steps end-to-end with no manual input:
+
+| Step | What happens |
+|---|---|
+| 1 | Validates prerequisites; warns if psql missing |
+| 2 | Reads workspace host + your email from the CLI profile (admin auto-detected) |
+| 3 | Looks up the Lakebase project; **creates it if missing** (~2–3 min first time) and resolves the endpoint hostname |
+| 4 | Generates `app.yaml` with all required env vars |
+| 5 | Builds the React frontend |
+| 6 | Uploads source + built assets, deploys the Databricks App |
+| 7 | Creates Lakebase schema via `schema.sql`, registers the SP as an OAuth role, applies grants |
+| 8 | Auto-detects a running SQL Warehouse, grants SP `CAN USE` |
+| 9 | Grants SP `USE CATALOG + BROWSE + SELECT` on all Unity Catalog catalogs and schemas |
+| 10 | Tags the App and SQL Warehouse (`app=datamarket`) for spend observability in `system.billing.usage` |
+
+After deploy, an onboarding wizard opens in the app. The SQL Warehouse ID is auto-filled from what the script detected — just verify and continue.
+
+> Branding, integrations, feature toggles, and notifications are all configured in **Manage → Settings** — no redeploy needed. The only thing that requires a redeploy is changing `--demo-mode`.
+
+---
+
+## Permissions set by the script
+
+| Resource | Who | What | Step |
+|---|---|---|---|
+| Lakebase | App SP | `USAGE + CREATE` on schema, `ALL PRIVILEGES` on tables | 7 |
+| SQL Warehouse | App SP | `CAN USE` | 8 |
+| Unity Catalog | App SP | `USE CATALOG + BROWSE + SELECT` on all catalogs/schemas | 9 |
+| Databricks App + Warehouse | — | Tagged `app=datamarket` for cost attribution | 10 |
+| Unity Catalog | End users | `SELECT` on approved tables | via approval flow |
+
+---
+
+## Troubleshooting
+
+**No Manage tab after login** — email mismatch. Re-run deploy or pass `--admin-email you@company.com` explicitly.
+
+**`relation "settings" does not exist`** — `psql` wasn't installed when deploy ran. Install it (`brew install postgresql@16`) and re-run.
+
+**Lakebase not ready after 3 min / "project slug already exists"** — previous deploy was interrupted. Use `--lakebase-project datamarket-app` (or any new name), or delete the broken project in Compute → Lakebase and re-run.
+
+**App shows wrong user / "Hi Richard"** — SP OAuth role wasn't created. Re-run deploy; Step 7 now handles this explicitly.
+
+**Approvals don't issue UC grants** — Warehouse missing or SP lacks `CAN USE`. Re-run; Step 8 re-applies automatically.
+
+**UC Import shows no catalogs or schemas** — SP lacks UC permissions. Re-run; Step 9 re-applies `USE CATALOG + BROWSE + SELECT ON SCHEMA`. If a new schema was created after deploy, use **Manage → Settings → Re-open setup wizard → Catalog Access** to generate the exact `GRANT SELECT ON SCHEMA` SQL and run it in the SQL editor.
+
+**Lakebase custom tags** — The Lakebase API doesn't expose tags via CLI yet. Set them manually: Compute → Lakebase → your project → Settings → Custom tags → add `app = datamarket`.
+
+**Want to switch from Demo to Production mode** — redeploy without the flag: `./deploy.sh --profile my-profile` (default is `--demo-mode false`).
+
+**Sample Data Preview shows "SQL Warehouse required"** — Either the Warehouse ID isn't saved in **Manage → Settings**, or the app's service principal doesn't have "Can use" permission on the warehouse.
 
 ---
 
@@ -301,21 +151,7 @@ If you prefer infrastructure-as-code or are integrating into a CI/CD pipeline, D
 **Requires:** Databricks CLI ≥ 0.287.0
 
 ```bash
-# Check your CLI version
-databricks -v
-
-# Upgrade if needed
-pip install --upgrade databricks-cli
-```
-
-### DAB deploy command
-
-```bash
-# From the repo root (where databricks.yml lives)
-cd datamarket-databricks
-
-# Step 1: Build frontend + generate app.yaml
-cd lac_dna_portal/src/app
+# From repo root
 ./deploy.sh \
   --profile      my-profile \
   --admin-email  you@company.com \
@@ -324,42 +160,4 @@ cd lac_dna_portal/src/app
   --bundle-target prod
 ```
 
-The `--use-bundle true` flag changes the deploy flow:
-
-| Standard (`deploy.sh` only) | Bundle mode (`--use-bundle true`) |
-|---|---|
-| Script detects/prompts for Lakebase | DAB provisions `postgres_projects` + `postgres_branches` + `postgres_endpoints` |
-| Script uploads files + deploys app via CLI | DAB handles `databricks bundle deploy` |
-| Script runs Lakebase schema grants | Script still runs psql grants (DAB can't do this) |
-| Script grants Warehouse + UC permissions | Script still runs API grants |
-
-### Pure DAB (CI/CD usage)
-
-For CI/CD pipelines where you want to use the bundle directly:
-
-```bash
-# From repo root — provision Lakebase + deploy app
-databricks bundle deploy -t prod \
-  --var admin_email=you@company.com \
-  --var demo_mode=false \
-  --var lakebase_project=datamarket \
-  --profile my-profile
-
-# Then run grants (still required — DAB doesn't do psql or permissions API)
-cd lac_dna_portal/src/app
-./deploy.sh \
-  --profile      my-profile \
-  --admin-email  you@company.com \
-  --warehouse-id YOUR_WAREHOUSE_ID \
-  --use-bundle   true   # skips re-deploy, only runs grant steps
-```
-
-### DAB resource overview
-
-```yaml
-# databricks.yml provisions:
-postgres_projects:   datamarket     # Lakebase project
-postgres_branches:   production     # Production branch (no-expiry)
-postgres_endpoints:  primary        # Read-write endpoint (0.5–4 CU autoscaling)
-apps:                datamarket     # Databricks App
-```
+The `--use-bundle true` flag changes the deploy flow: DAB provisions Lakebase and deploys the app; the script still runs psql grants and API permission steps that DAB can't do.

@@ -28,62 +28,6 @@ export function DataMarketRegisterPage({ onNavigate, editProduct = null }) {
   const [submitError, setSubmitError] = useState(null)
   const [customTagInput, setCustomTagInput] = useState('')
 
-  const handleSave = async ({ andExit = false } = {}) => {
-    setSubmitting(true)
-    setSubmitError(null)
-    try {
-      let res
-      if (isEditMode) {
-        res = await fetch(`/api/portal/products/${editProduct.product_ref}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            display_name: form.name,
-            description: form.description,
-            type: form.type,
-            source: form.source,
-            domain: form.source,
-            tags: form.tags,
-            refresh_frequency: form.refreshFrequency,
-            report_url: form.productUrl,
-            owner_email: form.dataOwner || persona.email,
-            data_classification: form.classification,
-          })
-        })
-      } else {
-        res = await fetch('/api/portal/products', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            name: form.name,
-            description: form.description,
-            type: form.type,
-            source: form.source,
-            tags: form.tags,
-            refreshFrequency: form.refreshFrequency,
-            productUrl: form.productUrl,
-            ownerEmail: form.dataOwner || persona.email,
-            classification: form.classification,
-            domain: form.source,
-            hasPII: form.hasPII,
-            submittedBy: persona.email
-          })
-        })
-      }
-      if (!res.ok) throw new Error(await res.text())
-      if (andExit) {
-        onNavigate('discover')
-      } else {
-        setSubmitted(true)
-      }
-    } catch (e) {
-      setSubmitError('Submission failed — please try again.')
-      console.error(e)
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
   const blankForm = {
     name: '', description: '', type: 'Dashboard', source: '', tags: [],
     refreshFrequency: 'Daily', productUrl: '', usageDescription: '', useCases: '',
@@ -594,12 +538,7 @@ export function DataMarketRegisterPage({ onNavigate, editProduct = null }) {
           <button onClick={() => onNavigate('discover')} className="px-4 py-2 text-sm text-gray-500 hover:text-gray-700">
             Discard Draft
           </button>
-          <button
-            disabled={submitting}
-            onClick={() => handleSave({ andExit: true })}
-            className="flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-lg text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-60"
-          >
-            {submitting && <Loader2 className="h-3 w-3 animate-spin" />}
+          <button className="px-4 py-2 border border-gray-200 rounded-lg text-sm text-gray-600 hover:bg-gray-50">
             Save and Exit
           </button>
         </div>
@@ -623,7 +562,56 @@ export function DataMarketRegisterPage({ onNavigate, editProduct = null }) {
           ) : (
             <button
               disabled={submitting}
-              onClick={() => handleSave()}
+              onClick={async () => {
+                setSubmitting(true)
+                setSubmitError(null)
+                try {
+                  let res
+                  if (isEditMode) {
+                    res = await fetch(`/api/portal/products/${editProduct.product_ref}`, {
+                      method: 'PUT',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        display_name: form.name,
+                        description: form.description,
+                        source_type: form.type,
+                        domain: form.source,
+                        tags: form.tags,
+                        refresh_frequency: form.refreshFrequency,
+                        report_url: form.productUrl,
+                        owner_email: form.dataOwner || persona.email,
+                        data_classification: form.classification,
+                      })
+                    })
+                  } else {
+                    res = await fetch('/api/portal/products', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        name: form.name,
+                        description: form.description,
+                        type: form.type,
+                        source: form.source,
+                        tags: form.tags,
+                        refreshFrequency: form.refreshFrequency,
+                        productUrl: form.productUrl,
+                        ownerEmail: form.dataOwner || persona.email,
+                        classification: form.classification,
+                        domain: form.source,
+                        hasPII: form.hasPII,
+                        submittedBy: persona.email
+                      })
+                    })
+                  }
+                  if (!res.ok) throw new Error(await res.text())
+                  setSubmitted(true)
+                } catch (e) {
+                  setSubmitError('Submission failed — please try again.')
+                  console.error(e)
+                } finally {
+                  setSubmitting(false)
+                }
+              }}
               className="flex items-center gap-2 px-6 py-2 rounded-lg text-sm font-medium text-white disabled:opacity-60"
               style={{ backgroundColor: DataMarket_BLUE }}
             >

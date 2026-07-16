@@ -12,6 +12,8 @@
 #   --warehouse-id   ID             SQL Warehouse ID — auto-grants SP 'Can use' permission
 #   --grant-catalogs true|false     Auto-grant SP USE CATALOG/SCHEMA on all UC catalogs (default: true)
 #   --demo-mode      true|false     Enable persona switcher (default: false)
+#   --seed           true|false     Apply schema/seed.sql after schema init — loads demo data products,
+#                                   users, and requests (default: true when --demo-mode true, else false)
 #   --use-bundle     true|false     Use Databricks Asset Bundle (DAB) for Lakebase+app deploy (default: false)
 #   --bundle-target  TARGET         DAB target to deploy: dev or prod (default: prod)
 #   --help                          Show this help
@@ -26,7 +28,7 @@ warn() { echo -e "${YELLOW}⚠${NC} $*"; }
 fail() { echo -e "${RED}✗ ERROR:${NC} $*"; exit 1; }
 step() { echo -e "\n${BOLD}${BLUE}[$1/$TOTAL_STEPS]${NC} ${BOLD}$2${NC}"; }
 
-TOTAL_STEPS=9
+TOTAL_STEPS=10
 
 # ── Defaults ─────────────────────────────────────────────────────────────────
 PROFILE="DEFAULT"
@@ -34,6 +36,7 @@ ADMIN_EMAIL=""
 LAKEBASE_PROJECT="datamarket"
 APP_NAME="datamarket"
 DEMO_MODE="false"
+SEED_DATA=""          # empty = auto (true when demo-mode, false otherwise)
 WAREHOUSE_ID=""
 GRANT_CATALOGS="true"
 USE_BUNDLE="false"
@@ -48,6 +51,7 @@ while [[ $# -gt 0 ]]; do
     --lakebase-project) LAKEBASE_PROJECT="$2"; shift 2 ;;
     --app-name)         APP_NAME="$2";         shift 2 ;;
     --demo-mode)        DEMO_MODE="$2";        shift 2 ;;
+    --seed)             SEED_DATA="$2";        shift 2 ;;
     --warehouse-id)     WAREHOUSE_ID="$2";     shift 2 ;;
     --grant-catalogs)   GRANT_CATALOGS="$2";   shift 2 ;;
     --use-bundle)       USE_BUNDLE="$2";       shift 2 ;;
@@ -254,7 +258,7 @@ print('app.yaml patched with real Lakebase hostname')
   fi
 
   # Skip to grants — app is already deployed via bundle
-  TOTAL_STEPS=9
+  TOTAL_STEPS=10
   SP_UUID=$(databricks apps get "$APP_NAME" --profile "$PROFILE" --output json 2>/dev/null \
     | python3 -c "
 import sys, json
@@ -280,63 +284,102 @@ LAKEBASE_HOST=""
 LAKEBASE_ENDPOINT=""
 LAKEBASE_CACHE_FILE="${SCRIPT_DIR}/.lakebase-${APP_NAME}.cache"
 
-# Step 1: Try to discover the branch name dynamically (Lakebase uses auto-generated names)
-info "Looking up Lakebase project: ${LAKEBASE_PROJECT}"
-
-BRANCH_NAME=$(databricks api get "2.0/postgres/autoscaling/projects/${LAKEBASE_PROJECT}/branches" \
-  --profile "$PROFILE" 2>/dev/null \
+# ── Helper: get the first/production branch name for a project ────────────────
+_get_branch() {
+  databricks postgres list-branches "projects/${LAKEBASE_PROJECT}" \
+    --profile "$PROFILE" -o json 2>/dev/null \
   | python3 -c "
 import sys, json
 try:
-    d = json.load(sys.stdin)
-    branches = d.get('branches', d.get('items', []))
-    # Prefer 'production' if it exists, otherwise take the first branch
-    prod = next((b.get('name','') for b in branches if b.get('name','') == 'production'), '')
-    first = branches[0].get('name','') if branches else ''
-    print(prod or first)
+    items = json.load(sys.stdin)
+    if not isinstance(items, list): items = []
+    # resource names look like 'projects/foo/branches/bar' — extract short name
+    names = [b.get('name','').split('/')[-1] for b in items if b.get('name','')]
+    prod = next((n for n in names if n == 'production'), '')
+    print(prod or (names[0] if names else ''))
 except: print('')
-" 2>/dev/null || true)
+" 2>/dev/null || true
+}
 
-# Step 2: Build endpoint path and try to fetch hostname from API
-if [[ -n "$BRANCH_NAME" ]]; then
-  LAKEBASE_ENDPOINT="projects/${LAKEBASE_PROJECT}/branches/${BRANCH_NAME}/endpoints/primary"
-  info "Found branch: ${BRANCH_NAME} — trying endpoint: ${LAKEBASE_ENDPOINT}"
-  ENDPOINT_JSON=$(databricks api get "2.0/postgres/endpoints/${LAKEBASE_ENDPOINT}" \
-    --profile "$PROFILE" 2>/dev/null || echo '{}')
-  LAKEBASE_HOST=$(echo "$ENDPOINT_JSON" | python3 -c \
-    "import sys,json; d=json.load(sys.stdin); print(d.get('read_write_dns','') or d.get('dns','') or d.get('hostname',''))" \
-    2>/dev/null || true)
-fi
+# ── Helper: get endpoint hostname for a branch ────────────────────────────────
+_get_host() {
+  local branch="$1"
+  databricks postgres list-endpoints "projects/${LAKEBASE_PROJECT}/branches/${branch}" \
+    --profile "$PROFILE" -o json 2>/dev/null \
+  | python3 -c "
+import sys, json
+try:
+    items = json.load(sys.stdin)
+    if not isinstance(items, list): items = []
+    for ep in items:
+        host = ep.get('status', {}).get('hosts', {}).get('host', '')
+        if host:
+            print(host)
+            break
+except: print('')
+" 2>/dev/null || true
+}
 
-# Step 3: Check local cache (written on first manual entry)
-if [[ -z "$LAKEBASE_HOST" && -f "$LAKEBASE_CACHE_FILE" ]]; then
-  CACHED_HOST=$(cat "$LAKEBASE_CACHE_FILE" 2>/dev/null || true)
-  if [[ -n "$CACHED_HOST" ]]; then
-    LAKEBASE_HOST="$CACHED_HOST"
-    ok "Lakebase hostname loaded from cache."
+info "Looking up Lakebase project: ${LAKEBASE_PROJECT}"
+BRANCH_NAME=$(_get_branch)
+
+# ── Project doesn't exist yet — create it ─────────────────────────────────────
+if [[ -z "$BRANCH_NAME" ]]; then
+  info "Project '${LAKEBASE_PROJECT}' not found — creating Lakebase Autoscaling project..."
+  info "(This takes ~2–3 minutes on first deploy — the CLI will wait automatically)"
+
+  CREATE_OUT=$(databricks postgres create-project "$LAKEBASE_PROJECT" \
+    --profile "$PROFILE" -o json 2>&1 || true)
+
+  if echo "$CREATE_OUT" | python3 -c "import sys,json; json.load(sys.stdin)" &>/dev/null; then
+    ok "Project '${LAKEBASE_PROJECT}' created"
+  else
+    # May already exist or be in progress — not fatal
+    warn "create-project output: ${CREATE_OUT:0:200}"
+  fi
+
+  # Poll for branch (provisioned after project creation)
+  info "Waiting for Lakebase branch to be ready..."
+  for i in $(seq 1 36); do
+    BRANCH_NAME=$(_get_branch)
+    [[ -n "$BRANCH_NAME" ]] && { ok "Branch ready: ${BRANCH_NAME}"; break; }
+    echo -n "."; sleep 5
+  done
+  echo ""
+  if [[ -z "$BRANCH_NAME" ]]; then
+    warn "Lakebase branch not ready after 3 min."
+    warn "This can happen if a previous deploy left the project in a broken state."
+    warn "Options:"
+    warn "  1. Try a different project name: ./deploy.sh --lakebase-project datamarket-app"
+    warn "  2. Delete the project from the UI (Compute → Lakebase) and re-run"
+    fail "Lakebase branch unavailable for project '${LAKEBASE_PROJECT}'. See options above."
   fi
 fi
 
-# Step 4: Fallback — prompt the user once and cache the answer
+# ── Resolve endpoint hostname ─────────────────────────────────────────────────
+LAKEBASE_ENDPOINT="projects/${LAKEBASE_PROJECT}/branches/${BRANCH_NAME}/endpoints/primary"
+LAKEBASE_HOST=$(_get_host "$BRANCH_NAME")
+
+# Fall back to cache if API doesn't return a hostname yet (endpoint still provisioning)
+if [[ -z "$LAKEBASE_HOST" && -f "$LAKEBASE_CACHE_FILE" ]]; then
+  LAKEBASE_HOST=$(cat "$LAKEBASE_CACHE_FILE" 2>/dev/null || true)
+  [[ -n "$LAKEBASE_HOST" ]] && ok "Lakebase hostname loaded from cache."
+fi
+
+# Last resort — ask once, cache the answer
 if [[ -z "$LAKEBASE_HOST" ]]; then
-  warn "Could not auto-detect Lakebase hostname."
+  warn "Could not resolve Lakebase hostname from API (endpoint may still be provisioning)."
   warn "Go to: Compute → Lakebase → ${LAKEBASE_PROJECT} → Overview → Connection details"
-  warn "The hostname looks like: ep-your-project.database.region.azuredatabricks.net"
   echo ""
-  read -rp "  Paste your Lakebase hostname: " LAKEBASE_HOST
+  read -rp "  Paste your Lakebase hostname (ep-...): " LAKEBASE_HOST
   [[ -z "$LAKEBASE_HOST" ]] && fail "Lakebase hostname is required."
-  # Cache for next run
-  echo "$LAKEBASE_HOST" > "$LAKEBASE_CACHE_FILE"
-  ok "Hostname saved to cache — won't be asked again."
 fi
 
-# If we still don't have the endpoint path, construct a best-guess one for app.yaml
-if [[ -z "$LAKEBASE_ENDPOINT" ]]; then
-  LAKEBASE_ENDPOINT="projects/${LAKEBASE_PROJECT}/branches/${BRANCH_NAME:-production}/endpoints/primary"
-fi
+# Always cache the resolved hostname for future runs
+echo "$LAKEBASE_HOST" > "$LAKEBASE_CACHE_FILE"
 
-ok "Lakebase host:     $LAKEBASE_HOST"
-ok "Lakebase endpoint: $LAKEBASE_ENDPOINT"
+ok "Lakebase host:     ${LAKEBASE_HOST}"
+ok "Lakebase endpoint: ${LAKEBASE_ENDPOINT}"
 
 # ── Generate app.yaml ─────────────────────────────────────────────────────────
 step 4 "Generating app.yaml"
@@ -381,8 +424,17 @@ step 5 "Building frontend"
 (cd "$SCRIPT_DIR" && npm install --silent 2>/dev/null && npm run build:local 2>&1 | tail -4)
 ok "Build complete"
 
-# ── Upload and deploy ─────────────────────────────────────────────────────────
-step 6 "Uploading and deploying to Databricks"
+# ── Build frontend ────────────────────────────────────────────────────────────
+step 6 "Building frontend and uploading to Databricks"
+
+if command -v node >/dev/null 2>&1 && [[ -f "${SCRIPT_DIR}/vite.config.js" ]]; then
+  info "Running Vite build..."
+  (cd "${SCRIPT_DIR}" && npm run build:local 2>&1 | tail -5) \
+    && ok "Frontend built" \
+    || warn "Vite build failed — uploading existing dist/"
+else
+  info "Node/Vite not found — uploading existing dist/"
+fi
 
 info "Uploading dist/..."
 databricks workspace import-dir "${SCRIPT_DIR}/dist" "${WORKSPACE_PATH}/dist" \
@@ -485,36 +537,137 @@ else
     SCHEMA_SQL="${SCRIPT_DIR}/../../schema/schema.sql"
     PG_CONN="host=${LAKEBASE_HOST} port=5432 dbname=databricks_postgres sslmode=require user=${DATABRICKS_USER:-${ADMIN_EMAIL}}"
 
-    PGPASSWORD="$PG_TOKEN" psql "$PG_CONN" \
+    SCHEMA_OUT=$(PGPASSWORD="$PG_TOKEN" psql "$PG_CONN" \
       -c "CREATE SCHEMA IF NOT EXISTS ${APP_NAME}; SET search_path TO ${APP_NAME};" \
-      2>&1 | grep -v "^$" | grep -v "^NOTICE" || true
+      2>&1 || true)
+    if echo "$SCHEMA_OUT" | grep -qi "FATAL\|error:"; then
+      warn "Lakebase connection failed during schema create:"
+      echo "$SCHEMA_OUT" | grep -i "FATAL\|error:" | head -3
+      warn "The app will try to auto-create tables on first start."
+      warn "If this persists, ensure your CLI profile uses OAuth (not PAT):"
+      warn "  databricks auth login --profile ${PROFILE} --host ${DATABRICKS_HOST}"
+    fi
 
     if [[ -f "$SCHEMA_SQL" ]]; then
-      PGPASSWORD="$PG_TOKEN" psql "$PG_CONN" \
+      SQL_OUT=$(PGPASSWORD="$PG_TOKEN" psql "$PG_CONN" \
         -v ON_ERROR_STOP=0 \
         -c "SET search_path TO ${APP_NAME};" \
         -f "$SCHEMA_SQL" \
-        2>&1 | grep -v "^$" | grep -v "^NOTICE" | grep -v "already exists" || true
-      ok "schema.sql applied"
+        2>&1 || true)
+      if echo "$SQL_OUT" | grep -qi "FATAL\|error:"; then
+        warn "schema.sql could not be applied — connection issue (see above)"
+      else
+        echo "$SQL_OUT" | grep -v "^$" | grep -v "^NOTICE" | grep -v "already exists" || true
+        ok "schema.sql applied"
+      fi
     else
       warn "schema.sql not found at ${SCHEMA_SQL} — tables will be auto-created by the app on first start"
     fi
 
-    # Step 2: Grant the SP full access
-    PGPASSWORD="$PG_TOKEN" psql \
+    # ── Seed data ────────────────────────────────────────────────────────────
+    # Auto-seed when demo-mode is on; can be forced with --seed true|false
+    if [[ -z "$SEED_DATA" ]]; then
+      [[ "$DEMO_MODE" == "true" ]] && SEED_DATA="true" || SEED_DATA="false"
+    fi
+
+    SEED_SQL="${SCRIPT_DIR}/../../schema/seed.sql"
+    if [[ "$SEED_DATA" == "true" ]]; then
+      if [[ -f "$SEED_SQL" ]]; then
+        info "Applying seed data (schema/seed.sql)..."
+        PGPASSWORD="$PG_TOKEN" psql "$PG_CONN" \
+          -v ON_ERROR_STOP=0 \
+          -c "SET search_path TO ${APP_NAME};" \
+          -f "$SEED_SQL" \
+          2>&1 | grep -v "^$" | grep -v "^NOTICE" | grep -v "already exists" || true
+        ok "Seed data applied — demo products + users loaded"
+      else
+        warn "seed.sql not found at ${SEED_SQL} — skipping seed"
+      fi
+    else
+      info "Seed data skipped (production mode). Pass --seed true to load demo data."
+    fi
+
+    # Step 2: Create the SP OAuth role in Lakebase (required before app can authenticate)
+    # Lakebase uses LAKEBASE_OAUTH_V1 auth — the SP role must be pre-registered via the API,
+    # not via psql CREATE ROLE (which creates a native password role that won't accept OAuth tokens).
+    info "Registering SP as OAuth role in Lakebase..."
+    EXISTING_LAKEBASE_ROLE=$(databricks postgres list-roles \
+      "projects/${LAKEBASE_PROJECT}/branches/${BRANCH_NAME}" \
+      --profile "$PROFILE" -o json 2>/dev/null \
+      | python3 -c "
+import sys, json
+try:
+    roles = json.load(sys.stdin)
+    match = next((r for r in roles if r.get('status',{}).get('postgres_role','') == '${SP_UUID}'), None)
+    if match:
+        method = match.get('status',{}).get('auth_method','')
+        print(method)
+    else:
+        print('')
+except: print('')
+" 2>/dev/null || true)
+
+    if [[ "$EXISTING_LAKEBASE_ROLE" == "LAKEBASE_OAUTH_V1" ]]; then
+      ok "SP OAuth role already registered in Lakebase."
+    else
+      if [[ -n "$EXISTING_LAKEBASE_ROLE" ]]; then
+        # Wrong auth method — find and delete the existing role first
+        WRONG_ROLE_NAME=$(databricks postgres list-roles \
+          "projects/${LAKEBASE_PROJECT}/branches/${BRANCH_NAME}" \
+          --profile "$PROFILE" -o json 2>/dev/null \
+          | python3 -c "
+import sys, json
+try:
+    roles = json.load(sys.stdin)
+    match = next((r for r in roles if r.get('status',{}).get('postgres_role','') == '${SP_UUID}'), None)
+    print(match.get('name','') if match else '')
+except: print('')
+" 2>/dev/null || true)
+        [[ -n "$WRONG_ROLE_NAME" ]] && \
+          databricks postgres delete-role "$WRONG_ROLE_NAME" --profile "$PROFILE" 2>/dev/null || true
+        # Also clean up the manually-created postgres role if it exists
+        PGPASSWORD="$PG_TOKEN" psql "$PG_CONN" \
+          -c "REVOKE ALL ON ALL TABLES IN SCHEMA ${APP_NAME} FROM \"${SP_UUID}\"; \
+              REVOKE ALL ON ALL SEQUENCES IN SCHEMA ${APP_NAME} FROM \"${SP_UUID}\"; \
+              REVOKE ALL ON SCHEMA ${APP_NAME} FROM \"${SP_UUID}\"; \
+              DROP ROLE IF EXISTS \"${SP_UUID}\";" \
+          2>/dev/null || true
+      fi
+
+      CREATE_ROLE_OUT=$(databricks postgres create-role \
+        "projects/${LAKEBASE_PROJECT}/branches/${BRANCH_NAME}" \
+        --json "{\"spec\": {\"identity_type\": \"SERVICE_PRINCIPAL\", \"postgres_role\": \"${SP_UUID}\"}}" \
+        --profile "$PROFILE" -o json 2>&1 || true)
+
+      if echo "$CREATE_ROLE_OUT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('status',{}).get('auth_method',''))" 2>/dev/null | grep -q "LAKEBASE_OAUTH_V1"; then
+        ok "SP OAuth role created in Lakebase"
+      else
+        warn "Could not create SP OAuth role: ${CREATE_ROLE_OUT:0:150}"
+        warn "App may fall back to demo mode. Re-run deploy to retry."
+      fi
+    fi
+
+    # Step 3: Grant the SP schema access
+    GRANT_OUT=$(PGPASSWORD="$PG_TOKEN" psql \
       "host=${LAKEBASE_HOST} port=5432 dbname=databricks_postgres sslmode=require user=${DATABRICKS_USER:-${ADMIN_EMAIL}}" \
       -c "
+        GRANT CONNECT ON DATABASE databricks_postgres TO \"${SP_UUID}\";
         GRANT USAGE  ON SCHEMA ${APP_NAME} TO \"${SP_UUID}\";
         GRANT CREATE ON SCHEMA ${APP_NAME} TO \"${SP_UUID}\";
         GRANT ALL PRIVILEGES ON ALL TABLES    IN SCHEMA ${APP_NAME} TO \"${SP_UUID}\";
         GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA ${APP_NAME} TO \"${SP_UUID}\";
         ALTER DEFAULT PRIVILEGES IN SCHEMA ${APP_NAME} GRANT ALL ON TABLES    TO \"${SP_UUID}\";
         ALTER DEFAULT PRIVILEGES IN SCHEMA ${APP_NAME} GRANT ALL ON SEQUENCES TO \"${SP_UUID}\";
-      " 2>&1 | grep -v "^$" || warn "psql encountered warnings (may be safe to ignore)"
+      " 2>&1 || true)
 
-    ok "Schema initialized and grants applied"
+    if echo "$GRANT_OUT" | grep -qi "FATAL\|error:"; then
+      warn "SP grants failed:"
+      echo "$GRANT_OUT" | grep -i "FATAL\|error:" | head -3
+    else
+      ok "Schema grants applied to SP"
+    fi
 
-    # Step 3: Redeploy so the app starts with a ready database
+    # Step 4: Restart app with role + grants in place
     info "Restarting app..."
     databricks apps deploy "$APP_NAME" \
       --source-code-path "$WORKSPACE_PATH" \
@@ -570,9 +723,9 @@ elif [[ -z "$SP_UUID" ]]; then
   warn "SP UUID not detected — skipping warehouse grant. Grant manually in the UI."
 else
   WAREHOUSE_PERM_PAYLOAD="{\"access_control_list\":[{\"service_principal_name\":\"${SP_UUID}\",\"permission_level\":\"CAN_USE\"}]}"
-  WAREHOUSE_PERM_RESULT=$(databricks api patch "2.0/permissions/warehouses/${WAREHOUSE_ID}" \
+  WAREHOUSE_PERM_RESULT=$(databricks api patch "/api/2.0/permissions/warehouses/${WAREHOUSE_ID}" \
     --profile "$PROFILE" \
-    --body "$WAREHOUSE_PERM_PAYLOAD" 2>&1 || echo "error")
+    --json "$WAREHOUSE_PERM_PAYLOAD" 2>&1 || echo "error")
 
   if echo "$WAREHOUSE_PERM_RESULT" | grep -qi "error\|Error\|INTERNAL"; then
     warn "Warehouse permission grant returned a warning (may already be set or partial):"
@@ -595,7 +748,7 @@ elif [[ -z "$WAREHOUSE_ID" ]]; then
 else
   info "Listing UC catalogs visible to this profile..."
 
-  CATALOGS=$(databricks api get "2.1/unity-catalog/catalogs" \
+  CATALOGS=$(databricks api get "/api/2.1/unity-catalog/catalogs" \
     --profile "$PROFILE" 2>/dev/null \
     | python3 -c "
 import sys, json
@@ -613,28 +766,111 @@ except: print('')
     info "Found catalogs: ${CATALOGS}"
     GRANT_ERRORS=0
     for CATALOG in $CATALOGS; do
-      # Grant USE CATALOG + USE SCHEMA via SQL warehouse
-      GRANT_SQL="GRANT USE CATALOG ON CATALOG \`${CATALOG}\` TO \`${SP_UUID}\`; GRANT USE SCHEMA ON ALL SCHEMAS IN CATALOG \`${CATALOG}\` TO \`${SP_UUID}\`;"
-      GRANT_RESULT=$(databricks api post "2.0/sql/statements" \
+      # 1. Grant USE CATALOG
+      GRANT_RESULT=$(databricks api post "/api/2.0/sql/statements" \
         --profile "$PROFILE" \
-        --body "{\"warehouse_id\":\"${WAREHOUSE_ID}\",\"statement\":\"GRANT USE CATALOG ON CATALOG \`${CATALOG}\` TO \`${SP_UUID}\`\",\"wait_timeout\":\"10s\"}" \
+        --json "{\"warehouse_id\":\"${WAREHOUSE_ID}\",\"statement\":\"GRANT USE CATALOG ON CATALOG \`${CATALOG}\` TO \`${SP_UUID}\`\",\"wait_timeout\":\"10s\"}" \
         2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('status',{}).get('state','UNKNOWN'))" 2>/dev/null || echo "ERROR")
 
-      GRANT_SCHEMA_RESULT=$(databricks api post "2.0/sql/statements" \
+      # 2. Grant BROWSE so the SP can list all schemas/tables metadata
+      databricks api post "/api/2.0/sql/statements" \
         --profile "$PROFILE" \
-        --body "{\"warehouse_id\":\"${WAREHOUSE_ID}\",\"statement\":\"GRANT USE SCHEMA ON ALL SCHEMAS IN CATALOG \`${CATALOG}\` TO \`${SP_UUID}\`\",\"wait_timeout\":\"10s\"}" \
-        2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('status',{}).get('state','UNKNOWN'))" 2>/dev/null || echo "ERROR")
+        --json "{\"warehouse_id\":\"${WAREHOUSE_ID}\",\"statement\":\"GRANT BROWSE ON CATALOG \`${CATALOG}\` TO \`${SP_UUID}\`\",\"wait_timeout\":\"10s\"}" \
+        2>/dev/null >/dev/null || true
 
-      if [[ "$GRANT_RESULT" == "SUCCEEDED" && "$GRANT_SCHEMA_RESULT" == "SUCCEEDED" ]]; then
-        ok "  ✓ ${CATALOG} — USE CATALOG + USE SCHEMA granted"
+      # 3. Grant USE SCHEMA per schema (required for table listing via UC REST API)
+      SCHEMAS_IN_CAT=$(databricks api get "/api/2.1/unity-catalog/schemas?catalog_name=${CATALOG}" \
+        --profile "$PROFILE" 2>/dev/null \
+        | python3 -c "
+import sys,json
+try:
+    d=json.load(sys.stdin)
+    names=[s['name'] for s in d.get('schemas',[]) if s.get('name') not in ('information_schema',)]
+    print(' '.join(names))
+except: print('')
+" 2>/dev/null || true)
+
+      SCHEMA_GRANT_OK=0; SCHEMA_GRANT_FAIL=0
+      for SCHEMA in $SCHEMAS_IN_CAT; do
+        # Grant SELECT on schema — required for the SP to list/browse tables in the Import modal
+        SR=$(databricks api post "/api/2.0/sql/statements" \
+          --profile "$PROFILE" \
+          --json "{\"warehouse_id\":\"${WAREHOUSE_ID}\",\"statement\":\"GRANT SELECT ON SCHEMA \`${CATALOG}\`.\`${SCHEMA}\` TO \`${SP_UUID}\`\",\"wait_timeout\":\"10s\"}" \
+          2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('status',{}).get('state','UNKNOWN'))" 2>/dev/null || echo "ERROR")
+        [[ "$SR" == "SUCCEEDED" ]] && SCHEMA_GRANT_OK=$((SCHEMA_GRANT_OK+1)) || SCHEMA_GRANT_FAIL=$((SCHEMA_GRANT_FAIL+1))
+      done
+
+      if [[ "$GRANT_RESULT" == "SUCCEEDED" ]]; then
+        ok "  ✓ ${CATALOG} — USE CATALOG granted, SELECT on ${SCHEMA_GRANT_OK} schema(s)"
+        [[ $SCHEMA_GRANT_FAIL -gt 0 ]] && warn "  ⚠ ${CATALOG} — ${SCHEMA_GRANT_FAIL} schema(s) could not be granted (may be owned by another user — use wizard to fix)"
       else
-        warn "  ⚠ ${CATALOG} — grant may have failed (${GRANT_RESULT} / ${GRANT_SCHEMA_RESULT}). May lack privileges on this catalog."
+        warn "  ⚠ ${CATALOG} — USE CATALOG grant failed. Use the onboarding wizard to generate the correct SQL."
         GRANT_ERRORS=$((GRANT_ERRORS + 1))
       fi
     done
-    [[ $GRANT_ERRORS -eq 0 ]] && ok "UC catalog grants complete" || warn "${GRANT_ERRORS} catalog(s) could not be granted — check above. These may be restricted catalogs."
+    [[ $GRANT_ERRORS -eq 0 ]] && ok "UC catalog grants complete" || warn "${GRANT_ERRORS} catalog(s) could not be granted — the onboarding wizard will show the exact SQL to run."
   fi
 fi
+
+# ── Resource tagging for spend/consumption observability ─────────────────────
+step 10 "Tagging Databricks resources for spend observability"
+
+TAGS_JSON="{\"app\":\"datamarket\",\"purpose\":\"data_marketplace\",\"environment\":\"${DEMO_MODE_FLAG:-production}\"}"
+
+# Tag the Databricks App
+APP_TAG_RESULT=$(databricks api patch "/api/2.0/apps/${APP_NAME}" \
+  --profile "$PROFILE" \
+  --json "{\"custom_tags\":${TAGS_JSON}}" 2>&1 || echo "error")
+if echo "$APP_TAG_RESULT" | grep -qi "error\|INTERNAL"; then
+  warn "App tagging skipped (API may not support PATCH custom_tags in this workspace version)"
+else
+  ok "App tagged: app=datamarket, purpose=data_marketplace"
+fi
+
+# Tag the SQL Warehouse
+if [[ -n "$WAREHOUSE_ID" ]]; then
+  WH_TAGS_PAYLOAD="{\"tags\":{\"custom_tags\":[{\"key\":\"app\",\"value\":\"datamarket\"},{\"key\":\"purpose\",\"value\":\"data_marketplace\"},{\"key\":\"environment\",\"value\":\"${DEMO_MODE_FLAG:-production}\"}]}}"
+  WH_TAG_RESULT=$(databricks api post "/api/2.0/sql/warehouses/${WAREHOUSE_ID}/edit" \
+    --profile "$PROFILE" \
+    --json "$WH_TAGS_PAYLOAD" 2>&1 || echo "error")
+  if echo "$WH_TAG_RESULT" | grep -qi "error\|INTERNAL"; then
+    warn "Warehouse tagging skipped — apply manually in SQL Warehouse settings"
+    info "  Tag key: app, value: datamarket"
+  else
+    ok "Warehouse ${WAREHOUSE_ID} tagged: app=datamarket"
+  fi
+else
+  info "No warehouse ID — warehouse tagging skipped"
+fi
+
+info "Tags flow into system.billing.usage under the custom_tags column."
+info "Note: Lakebase custom_tags are UI-only (CLI API does not expose the field yet)."
+info "  → Workspace → Lakebase → ${APP_NAME} → Settings → Custom tags → add app=datamarket"
+info "Note: FMAPI (Ask AI) usage has no taggable resource — filter by sku_name instead."
+info "Full DataMarket spend query:"
+cat <<'QUERY'
+
+  -- Full DataMarket spend across all resource types
+  SELECT usage_date,
+         usage_type,
+         CASE
+           WHEN custom_tags['app'] = 'datamarket'           THEN 'App / Warehouse'
+           WHEN sku_name LIKE '%LAKEBASE%'                  THEN 'Lakebase (Postgres)'
+           WHEN sku_name LIKE '%FOUNDATION_MODEL%'
+             OR sku_name LIKE '%LLAMA%'
+             OR sku_name LIKE '%PREMIUM_SERVING%'           THEN 'Ask AI (FMAPI)'
+           ELSE 'Other'
+         END AS resource,
+         SUM(usage_quantity) AS dbus
+  FROM system.billing.usage
+  WHERE (custom_tags['app'] = 'datamarket'
+      OR sku_name LIKE '%LAKEBASE%'
+      OR sku_name LIKE '%FOUNDATION_MODEL%'
+      OR sku_name LIKE '%PREMIUM_SERVING%')
+  GROUP BY 1, 2, 3
+  ORDER BY 1 DESC, dbus DESC;
+
+QUERY
 
 
 APP_URL=$(databricks apps get "$APP_NAME" --profile "$PROFILE" --output json 2>/dev/null \
