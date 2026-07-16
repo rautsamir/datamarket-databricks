@@ -223,16 +223,29 @@ print("✅ Frontend built")
 
 # COMMAND ----------
 
-# MAGIC %pip install psycopg2-binary --quiet
+# MAGIC %pip install --quiet --upgrade "databricks-sdk>=0.40.0" psycopg2-binary
 
 # COMMAND ----------
 
+import importlib.util
 import sys
 import subprocess
 from databricks.sdk import WorkspaceClient
 
 if not Path(REPO_DIR).is_dir():
     raise RuntimeError("REPO_DIR missing — run Step 3 first (it clones the repo to /tmp).")
+
+# Ensure Lakebase postgres SDK is available (DBR clusters often ship an older sdk)
+subprocess.check_call(
+    [sys.executable, "-m", "pip", "install", "--quiet", "--upgrade", "databricks-sdk>=0.40.0"],
+)
+if importlib.util.find_spec("databricks.sdk.service.postgres") is None:
+    raise RuntimeError(
+        "databricks-sdk postgres module still missing after upgrade.\n"
+        "Re-run the pip cell above, then this cell."
+    )
+import databricks.sdk
+print(f"databricks-sdk: {getattr(databricks.sdk, '__version__', 'unknown')}")
 
 git_info = subprocess.run(
     ["git", "-C", REPO_DIR, "log", "-1", "--format=%h %s (%ci)"],
@@ -242,6 +255,7 @@ if git_info.stdout.strip():
     print(f"Repo at deploy time: {git_info.stdout.strip()}")
 
 sys.path.insert(0, f"{REPO_DIR}/scripts")
+sys.modules.pop("notebook_deploy_lib", None)  # reload after pip upgrade
 from notebook_deploy_lib import DEPLOY_LIB_VERSION, deploy_from_notebook
 
 lib_path = Path(REPO_DIR) / "scripts" / "notebook_deploy_lib.py"
@@ -290,6 +304,7 @@ if APP_URL:
 # MAGIC |---|---|
 # MAGIC | `npm not found` | Attach a **cluster** (not Serverless), re-run Step 3 |
 # MAGIC | `CLI only supported in web terminal` | Expected on some workspaces — Steps 3–4 use SDK, not CLI |
+# MAGIC | `No module named databricks.sdk.service.postgres` | Re-run the **pip cell** then Step 4 (upgrades databricks-sdk) |
 # MAGIC | `No API found for POST /postgres/autoscaling` | **Stale clone** — re-run Step 3; check git commit printed above |
 # MAGIC | `Could not read workspace host/token` | Attach a **cluster** (not Serverless), re-run Step 2 |
 # MAGIC | `Deploy did not reach SUCCEEDED` | Apps → your app → logs; need Apps create permission |
