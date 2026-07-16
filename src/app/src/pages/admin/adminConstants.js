@@ -24,6 +24,5 @@ export const statusConfig = {
 
 export const roleColors = {
   analyst: 'bg-blue-100 text-blue-800',
-  manager: 'bg-emerald-100 text-emerald-800',
-  steward: 'bg-purple-100 text-purple-800',
+  admin: 'bg-purple-100 text-purple-800',
 }

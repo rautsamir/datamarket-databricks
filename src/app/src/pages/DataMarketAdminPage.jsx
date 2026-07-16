@@ -69,7 +69,7 @@ function norm(r) {
 export function DataMarketAdminPage({ embedded = false }) {
   const { requests, approveRequest, denyRequest, revokeRequest, currentPersona, isAdmin } = usePersona()
   const { demoMode } = useAppConfig()
-  const [filter, setFilter] = useState('Pending')
+  const [filter, setFilter] = useState(embedded ? 'Approved' : 'Pending')
   const [activeView, setActiveView] = useState('access') // 'access' | 'products'
   const [denyModal, setDenyModal] = useState(null)
   const [denyReason, setDenyReason] = useState('')
