@@ -1,9 +1,9 @@
-"""SDK-based DataMarket deploy — mirrors src/app/deploy.sh Lakebase logic via w.postgres."""
+"""SDK-based DataMarket deploy — mirrors src/app/deploy.sh (same APIs, same steps)."""
 
 from __future__ import annotations
 
 # Bump when deploy logic changes — printed in Step 4 so you can verify the clone is current.
-DEPLOY_LIB_VERSION = "2026-07-16-wpostgres-sdk40"
+DEPLOY_LIB_VERSION = "2026-07-16-deploy-sh-parity"
 
 import os
 import time
@@ -13,29 +13,46 @@ from databricks.sdk import WorkspaceClient
 from databricks.sdk.errors import NotFound
 from databricks.sdk.service.workspace import ImportFormat
 
+SKIP_CATALOGS = frozenset({"system", "__databricks_internal", "hive_metastore"})
+
+
+def _lakebase(w: WorkspaceClient):
+    """w.postgres (older SDK) or w.database (newer SDK) — same Lakebase API."""
+    if hasattr(w, "postgres"):
+        return w.postgres
+    if hasattr(w, "database"):
+        return w.database
+    raise RuntimeError("databricks-sdk has no postgres/database API — upgrade: pip install -U databricks-sdk>=0.40.0")
+
 
 def _pg_types():
-    """Lazy import — cluster DBR may ship an older databricks-sdk until pip upgrade."""
     from databricks.sdk.service.postgres import (
         Project, ProjectSpec, Role, RoleIdentityType, RoleRoleSpec,
     )
     return Project, ProjectSpec, Role, RoleIdentityType, RoleRoleSpec
 
 
-def _require_postgres_sdk() -> None:
+def _require_lakebase_sdk() -> None:
     import importlib.util
-    if importlib.util.find_spec("databricks.sdk.service.postgres") is None:
-        raise RuntimeError(
-            "databricks-sdk on this cluster is too old (no postgres / Lakebase API).\n"
-            "Run the pip cell above, then re-run this cell:\n"
-            "  %pip install --upgrade 'databricks-sdk>=0.40.0'"
-        )
+    if importlib.util.find_spec("databricks.sdk.service.postgres") or importlib.util.find_spec("databricks.sdk.service.database"):
+        return
+    raise RuntimeError(
+        "databricks-sdk on this cluster is too old (no Lakebase API).\n"
+        "Run the pip cell, then re-run Step 4:\n"
+        "  %pip install --upgrade 'databricks-sdk>=0.40.0'"
+    )
+
+
+def resolve_seed(seed_data: str, demo_mode: str) -> bool:
+    """Same as deploy.sh: --seed auto → true when demo_mode, else explicit true/false."""
+    if not seed_data or seed_data == "auto":
+        return demo_mode.lower() == "true"
+    return seed_data.lower() == "true"
 
 
 def _get_branch(w: WorkspaceClient, project: str) -> str:
-    """Same as deploy.sh _get_branch — `databricks postgres list-branches`."""
     try:
-        items = list(w.postgres.list_branches(parent=f"projects/{project}"))
+        items = list(_lakebase(w).list_branches(parent=f"projects/{project}"))
         names = []
         for b in items:
             name = getattr(b, "name", "") or ""
@@ -46,10 +63,9 @@ def _get_branch(w: WorkspaceClient, project: str) -> str:
 
 
 def _get_host(w: WorkspaceClient, project: str, branch: str) -> str:
-    """Same as deploy.sh _get_host — `databricks postgres list-endpoints`."""
     try:
         parent = f"projects/{project}/branches/{branch}"
-        for ep in w.postgres.list_endpoints(parent=parent):
+        for ep in _lakebase(w).list_endpoints(parent=parent):
             status = getattr(ep, "status", None)
             hosts = getattr(status, "hosts", None) if status else None
             host = getattr(hosts, "host", None) if hosts else None
@@ -61,15 +77,8 @@ def _get_host(w: WorkspaceClient, project: str, branch: str) -> str:
 
 
 def _ensure_lakebase(
-    w: WorkspaceClient,
-    project: str,
-    cache_file: Path,
-    host_override: str = "",
+    w: WorkspaceClient, project: str, cache_file: Path, host_override: str = "",
 ) -> tuple[str, str, str]:
-    """
-    Mirror deploy.sh step 3: detect → create-project if missing → poll → resolve host.
-    Returns (branch, hostname, endpoint path).
-    """
     if host_override:
         branch = _get_branch(w, project) or "production"
         return branch, host_override.strip(), f"projects/{project}/branches/{branch}/endpoints/primary"
@@ -82,7 +91,7 @@ def _ensure_lakebase(
         print("  (This takes ~2–3 minutes on first deploy)")
         try:
             Project, ProjectSpec, _, _, _ = _pg_types()
-            op = w.postgres.create_project(
+            op = _lakebase(w).create_project(
                 project=Project(spec=ProjectSpec(pg_version=17, enable_pg_native_login=False)),
                 project_id=project,
             )
@@ -104,9 +113,7 @@ def _ensure_lakebase(
         if not branch:
             raise RuntimeError(
                 f"Lakebase branch unavailable for project '{project}' after 3 min.\n"
-                "Options:\n"
-                f"  1. Try a different project name in the lakebase_project widget\n"
-                f"  2. Delete the broken project in Compute → Lakebase and re-run Step 4"
+                "Try a different lakebase_project name or delete the broken project in Compute → Lakebase."
             )
 
     endpoint = f"projects/{project}/branches/{branch}/endpoints/primary"
@@ -119,8 +126,8 @@ def _ensure_lakebase(
 
     if not host:
         raise RuntimeError(
-            f"Could not resolve Lakebase hostname for '{project}' (endpoint may still be provisioning).\n"
-            "Wait a minute and re-run Step 4, or paste the hostname into the lakebase_host widget."
+            f"Could not resolve Lakebase hostname for '{project}'.\n"
+            "Wait and re-run Step 4, or paste hostname into the lakebase_host widget."
         )
 
     cache_file.write_text(host)
@@ -214,12 +221,76 @@ def _grant_warehouse(w: WorkspaceClient, warehouse_id: str, sp_uuid: str) -> Non
     )
 
 
+def _sql_grant(w: WorkspaceClient, warehouse_id: str, statement: str) -> str:
+    try:
+        data = w.api_client.do(
+            "POST", "/api/2.0/sql/statements",
+            body={"warehouse_id": warehouse_id, "statement": statement, "wait_timeout": "10s"},
+        )
+        return (data.get("status") or {}).get("state", "UNKNOWN")
+    except Exception:
+        return "ERROR"
+
+
+def _grant_uc_catalogs(w: WorkspaceClient, sp_uuid: str, warehouse_id: str) -> None:
+    """deploy.sh step 9 — USE CATALOG + BROWSE + SELECT ON SCHEMA for Import from UC."""
+    try:
+        data = w.api_client.do("GET", "/api/2.1/unity-catalog/catalogs")
+        catalogs = [
+            c.get("name", "") for c in data.get("catalogs", [])
+            if c.get("name", "") not in SKIP_CATALOGS
+        ]
+    except Exception as e:
+        print(f"  UC catalog list warning: {e}")
+        return
+
+    if not catalogs:
+        print("  no UC catalogs found — skip UC grants")
+        return
+
+    print(f"  granting UC access on {len(catalogs)} catalog(s)...")
+    errors = 0
+    for catalog in catalogs:
+        use_cat = _sql_grant(w, warehouse_id, f"GRANT USE CATALOG ON CATALOG `{catalog}` TO `{sp_uuid}`")
+        _sql_grant(w, warehouse_id, f"GRANT BROWSE ON CATALOG `{catalog}` TO `{sp_uuid}`")
+
+        schemas = []
+        try:
+            sd = w.api_client.do("GET", f"/api/2.1/unity-catalog/schemas?catalog_name={catalog}")
+            schemas = [s["name"] for s in sd.get("schemas", []) if s.get("name") != "information_schema"]
+        except Exception:
+            pass
+
+        schema_ok = schema_fail = 0
+        for schema in schemas:
+            state = _sql_grant(
+                w, warehouse_id,
+                f"GRANT SELECT ON SCHEMA `{catalog}`.`{schema}` TO `{sp_uuid}`",
+            )
+            if state == "SUCCEEDED":
+                schema_ok += 1
+            else:
+                schema_fail += 1
+
+        if use_cat == "SUCCEEDED":
+            print(f"    ✓ {catalog} — USE CATALOG, SELECT on {schema_ok} schema(s)")
+            if schema_fail:
+                print(f"    ⚠ {catalog} — {schema_fail} schema(s) need manual grant")
+        else:
+            print(f"    ⚠ {catalog} — USE CATALOG failed")
+            errors += 1
+
+    if errors:
+        print(f"  UC grants: {errors} catalog(s) failed — use Manage → Settings wizard")
+    else:
+        print("  UC catalog grants complete")
+
+
 def _ensure_sp_oauth_role(w: WorkspaceClient, branch_parent: str, sp_uuid: str) -> None:
-    """Mirror deploy.sh — register SP as LAKEBASE_OAUTH_V1 role via w.postgres."""
     existing_auth = ""
     wrong_role_name = ""
     try:
-        for role in w.postgres.list_roles(parent=branch_parent):
+        for role in _lakebase(w).list_roles(parent=branch_parent):
             status = getattr(role, "status", None)
             if status and getattr(status, "postgres_role", None) == sp_uuid:
                 existing_auth = str(getattr(status, "auth_method", "") or "")
@@ -234,13 +305,13 @@ def _ensure_sp_oauth_role(w: WorkspaceClient, branch_parent: str, sp_uuid: str) 
 
     if wrong_role_name and existing_auth and existing_auth != "LAKEBASE_OAUTH_V1":
         try:
-            w.postgres.delete_role(name=wrong_role_name)
+            _lakebase(w).delete_role(name=wrong_role_name)
         except Exception:
             pass
 
     try:
         _, _, Role, RoleIdentityType, RoleRoleSpec = _pg_types()
-        op = w.postgres.create_role(
+        op = _lakebase(w).create_role(
             parent=branch_parent,
             role=Role(spec=RoleRoleSpec(
                 identity_type=RoleIdentityType.SERVICE_PRINCIPAL,
@@ -263,8 +334,9 @@ def _lakebase_schema_grants(
     lakebase_host: str,
     sp_uuid: str,
     admin_email: str,
+    seed: bool,
 ) -> None:
-    """Mirror deploy.sh step 7 — schema.sql + OAuth role + psql grants."""
+    """deploy.sh step 7 — schema.sql, optional seed.sql, OAuth role, psql grants."""
     try:
         import psycopg2
     except ImportError:
@@ -278,6 +350,7 @@ def _lakebase_schema_grants(
         return
 
     schema_sql = Path(repo_dir) / "schema" / "schema.sql"
+    seed_sql = Path(repo_dir) / "schema" / "seed.sql"
     conn_str = dict(
         host=lakebase_host, port=5432, dbname="databricks_postgres",
         user=user, password=token, sslmode="require",
@@ -291,6 +364,15 @@ def _lakebase_schema_grants(
                 cur.execute(f"SET search_path TO {app_name}")
                 cur.execute(schema_sql.read_text())
                 print("  schema.sql applied")
+            if seed:
+                if seed_sql.is_file():
+                    cur.execute(f"SET search_path TO {app_name}")
+                    cur.execute(seed_sql.read_text())
+                    print("  seed.sql applied — demo products, users, requests loaded")
+                else:
+                    print(f"  seed.sql not found at {seed_sql}")
+            else:
+                print("  seed skipped (production mode — pass seed_data=true to force)")
 
     branch_parent = f"projects/{lakebase_project}/branches/{branch}"
     _ensure_sp_oauth_role(w, branch_parent, sp_uuid)
@@ -321,10 +403,15 @@ def deploy_from_notebook(
     lakebase_host: str = "",
     warehouse_id: str = "",
     demo_mode: str = "false",
+    seed_data: str = "auto",
+    grant_catalogs: str = "true",
 ) -> dict:
-    """Deploy DataMarket using w.postgres + w.apps (same APIs as deploy.sh CLI)."""
+    """Deploy DataMarket — same steps as deploy.sh (SDK instead of CLI subprocess)."""
     print(f"  deploy_lib version: {DEPLOY_LIB_VERSION}")
-    _require_postgres_sdk()
+    _require_lakebase_sdk()
+    seed = resolve_seed(seed_data, demo_mode)
+    print(f"  seed_data: {seed_data} → {'apply seed.sql' if seed else 'skip'}")
+
     host = (w.config.host or "").rstrip("/")
     app_dir = Path(repo_dir) / "src" / "app"
     if not (app_dir / "app.js").is_file():
@@ -333,17 +420,17 @@ def deploy_from_notebook(
     workspace_path = f"/Workspace/Users/{_workspace_user_path(admin_email)}/{app_name}"
     cache_file = app_dir / f".lakebase-{app_name}.cache"
 
-    print("[1/6] Resolving Lakebase (same as deploy.sh)...")
+    print("[1/7] Lakebase detect / create (deploy.sh step 3)...")
     branch, lb_host, lb_endpoint = _ensure_lakebase(w, lakebase_project, cache_file, lakebase_host)
     print(f"  host: {lb_host}")
 
-    print("[2/6] Writing app.yaml...")
+    print("[2/7] app.yaml (deploy.sh step 4)...")
     _write_app_yaml(
         app_dir, host=host, admin_email=admin_email, lakebase_host=lb_host,
         lakebase_endpoint=lb_endpoint, app_name=app_name, demo_mode=demo_mode,
     )
 
-    print("[3/6] Uploading to workspace...")
+    print("[3/7] Upload (deploy.sh step 6)...")
     dist_dir = app_dir / "dist"
     if dist_dir.is_dir():
         _upload_tree(w, str(dist_dir), f"{workspace_path}/dist")
@@ -357,26 +444,26 @@ def deploy_from_notebook(
             _upload_tree(w, str(d), f"{workspace_path}/{subdir}")
     print(f"  → {workspace_path}")
 
-    print("[4/6] Deploying Databricks App...")
+    print("[4/7] Deploy app (deploy.sh step 6)...")
     try:
         w.apps.get(app_name)
     except NotFound:
         w.apps.create(name=app_name, description="DataMarket — Self-Service Data Product Marketplace")
     w.apps.deploy(app_name=app_name, source_code_path=workspace_path)
-    print("  deploy submitted")
 
-    print("[5/6] Lakebase schema + SP grants...")
+    print("[5/7] Lakebase schema + seed + SP grants (deploy.sh step 7)...")
     sp_uuid = _app_sp_uuid(w, app_name)
     if sp_uuid:
         _lakebase_schema_grants(
             w, repo_dir=repo_dir, app_name=app_name, lakebase_project=lakebase_project,
             branch=branch, lakebase_host=lb_host, sp_uuid=sp_uuid, admin_email=admin_email,
+            seed=seed,
         )
         w.apps.deploy(app_name=app_name, source_code_path=workspace_path)
     else:
         print("  SP UUID not found — grant Lakebase schema manually after first deploy")
 
-    print("[6/6] SQL Warehouse permission...")
+    print("[6/7] Warehouse CAN_USE (deploy.sh step 8)...")
     wh_id = warehouse_id or _auto_warehouse_id(w)
     if wh_id and sp_uuid:
         try:
@@ -387,6 +474,17 @@ def deploy_from_notebook(
     elif not wh_id:
         print("  no warehouse detected — set in Manage → Settings after login")
 
+    print("[7/7] UC catalog grants (deploy.sh step 9)...")
+    if grant_catalogs.lower() == "true" and wh_id and sp_uuid:
+        _grant_uc_catalogs(w, sp_uuid, wh_id)
+    elif grant_catalogs.lower() != "true":
+        print("  skipped (grant_catalogs=false)")
+    else:
+        print("  skipped (no warehouse or SP)")
+
     app = w.apps.get(app_name)
     url = getattr(app, "url", "") or ""
-    return {"url": url, "workspace_path": workspace_path, "lakebase_host": lb_host, "warehouse_id": wh_id}
+    return {
+        "url": url, "workspace_path": workspace_path, "lakebase_host": lb_host,
+        "warehouse_id": wh_id, "seed_applied": seed,
+    }
