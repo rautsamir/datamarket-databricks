@@ -26,6 +26,63 @@ export function DataMarketRegisterPage({ onNavigate, editProduct = null }) {
   const [submitted, setSubmitted] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState(null)
+  const [customTagInput, setCustomTagInput] = useState('')
+
+  const handleSave = async ({ andExit = false } = {}) => {
+    setSubmitting(true)
+    setSubmitError(null)
+    try {
+      let res
+      if (isEditMode) {
+        res = await fetch(`/api/portal/products/${editProduct.product_ref}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            display_name: form.name,
+            description: form.description,
+            type: form.type,
+            source: form.source,
+            domain: form.source,
+            tags: form.tags,
+            refresh_frequency: form.refreshFrequency,
+            report_url: form.productUrl,
+            owner_email: form.dataOwner || persona.email,
+            data_classification: form.classification,
+          })
+        })
+      } else {
+        res = await fetch('/api/portal/products', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: form.name,
+            description: form.description,
+            type: form.type,
+            source: form.source,
+            tags: form.tags,
+            refreshFrequency: form.refreshFrequency,
+            productUrl: form.productUrl,
+            ownerEmail: form.dataOwner || persona.email,
+            classification: form.classification,
+            domain: form.source,
+            hasPII: form.hasPII,
+            submittedBy: persona.email
+          })
+        })
+      }
+      if (!res.ok) throw new Error(await res.text())
+      if (andExit) {
+        onNavigate('discover')
+      } else {
+        setSubmitted(true)
+      }
+    } catch (e) {
+      setSubmitError('Submission failed — please try again.')
+      console.error(e)
+    } finally {
+      setSubmitting(false)
+    }
+  }
 
   const blankForm = {
     name: '', description: '', type: 'Dashboard', source: '', tags: [],
@@ -87,6 +144,16 @@ export function DataMarketRegisterPage({ onNavigate, editProduct = null }) {
     ...prev,
     tags: prev.tags.includes(tag) ? prev.tags.filter(t => t !== tag) : [...prev.tags, tag]
   }))
+
+  const addCustomTag = () => {
+    const tag = customTagInput.trim()
+    if (tag && !form.tags.includes(tag)) {
+      setForm(prev => ({ ...prev, tags: [...prev.tags, tag] }))
+    }
+    setCustomTagInput('')
+  }
+
+  const removeTag = tag => setForm(prev => ({ ...prev, tags: prev.tags.filter(t => t !== tag) }))
 
   if (submitted) {
     return (
@@ -155,14 +222,16 @@ export function DataMarketRegisterPage({ onNavigate, editProduct = null }) {
               <label className="block text-sm font-medium text-gray-700 mb-2">Data Product Type *</label>
               <div className="flex flex-wrap gap-2">
                 {[
-                  { id: 'Dashboard',       label: 'Dashboard',       hint: 'Lakeview / embedded viz' },
-                  { id: 'AI/BI Dashboard', label: 'AI/BI Dashboard', hint: 'Databricks AI/BI' },
-                  { id: 'Genie Space',     label: 'Genie Space',     hint: 'Natural-language SQL' },
-                  { id: 'Dataset',         label: 'Dataset',         hint: 'Delta table / UC asset' },
-                  { id: 'Report',          label: 'Report',          hint: 'Scheduled / static report' },
-                  { id: 'App',             label: 'App',             hint: 'Databricks App' },
-                  { id: 'ML Model',        label: 'ML Model',        hint: 'Served model / endpoint' },
-                  { id: 'Source',          label: 'Source System',   hint: 'External data source' },
+                  { id: 'Dashboard',        label: 'Dashboard',        hint: 'Lakeview / embedded viz' },
+                  { id: 'AI/BI Dashboard',  label: 'AI/BI Dashboard',  hint: 'Databricks AI/BI' },
+                  { id: 'Genie Space',      label: 'Genie Space',      hint: 'Natural-language SQL' },
+                  { id: 'Dataset',          label: 'Dataset',          hint: 'Delta table / UC asset' },
+                  { id: 'Report',           label: 'Report',           hint: 'Scheduled / static report' },
+                  { id: 'App',              label: 'App',              hint: 'Databricks App' },
+                  { id: 'ML Model',         label: 'ML Model',         hint: 'Served model / endpoint' },
+                  { id: 'Power BI',         label: 'Power BI',         hint: 'Microsoft Power BI report or dashboard' },
+                  { id: 'Tableau',          label: 'Tableau',          hint: 'Tableau workbook or view' },
+                  { id: 'Source',           label: 'Source System',    hint: 'External data source' },
                 ].map(t => (
                   <button
                     key={t.id}
@@ -175,6 +244,29 @@ export function DataMarketRegisterPage({ onNavigate, editProduct = null }) {
                   </button>
                 ))}
               </div>
+              {/* Custom type input — for any type not in the preset list */}
+              {![
+                'Dashboard','AI/BI Dashboard','Genie Space','Dataset','Report',
+                'App','ML Model','Power BI','Tableau','Source'
+              ].includes(form.type) && form.type ? (
+                <div className="mt-2 flex items-center gap-2">
+                  <span className="px-3 py-1.5 rounded-lg text-sm font-medium text-white" style={{ backgroundColor: DataMarket_BLUE }}>
+                    {form.type}
+                  </span>
+                  <button onClick={() => updateForm('type', 'Dashboard')} className="text-xs text-gray-400 hover:text-gray-600">
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ) : null}
+              <div className="mt-2 flex gap-2">
+                <input
+                  type="text"
+                  placeholder="Custom type… (e.g. Looker, Sigma, Notebook)"
+                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); const v = e.target.value.trim(); if (v) { updateForm('type', v); e.target.value = '' } } }}
+                  onBlur={e => { const v = e.target.value.trim(); if (v) { updateForm('type', v); e.target.value = '' } }}
+                  className="flex-1 px-3 py-1.5 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-500"
+                />
+              </div>
               {form.type && (
                 <p className="text-xs text-gray-400 mt-1.5">
                   {[
@@ -185,6 +277,8 @@ export function DataMarketRegisterPage({ onNavigate, editProduct = null }) {
                     { id: 'Report',          hint: 'Static or scheduled report — link to the report URL or file location.' },
                     { id: 'App',             hint: 'Databricks App — paste the app URL (e.g. https://your-app.azuredatabricksapps.com).' },
                     { id: 'ML Model',        hint: 'Served model or endpoint — link to the Model Serving endpoint URL.' },
+                    { id: 'Power BI',        hint: 'Power BI report or dashboard — paste the published report URL.' },
+                    { id: 'Tableau',         hint: 'Tableau workbook or view — paste the Tableau Server / Cloud URL.' },
                     { id: 'Source',          hint: 'Reference to an upstream source system — no direct URL required.' },
                   ].find(h => h.id === form.type)?.hint}
                 </p>
@@ -193,27 +287,74 @@ export function DataMarketRegisterPage({ onNavigate, editProduct = null }) {
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Source System</label>
               <select
-                value={form.source}
-                onChange={e => updateForm('source', e.target.value)}
+                value={sourceOptions.includes(form.source) ? form.source : '__custom__'}
+                onChange={e => updateForm('source', e.target.value === '__custom__' ? '' : e.target.value)}
                 className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
-                <option value="">Select source system...</option>
-                {sourceOptions.map(s => <option key={s}>{s}</option>)}
+                <option value="">Select source system…</option>
+                {sourceOptions.map(s => <option key={s} value={s}>{s}</option>)}
+                <option value="__custom__">Other (type custom…)</option>
               </select>
+              {!sourceOptions.includes(form.source) && (
+                <input
+                  type="text"
+                  placeholder="Type your source system (e.g. Salesforce, SAP, ServiceNow…)"
+                  value={form.source}
+                  onChange={e => updateForm('source', e.target.value)}
+                  className="mt-2 w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  autoFocus
+                />
+              )}
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Tags</label>
-              <div className="flex flex-wrap gap-2">
-                {tagOptions.map(tag => (
+              {/* Selected tags as removable chips */}
+              {form.tags.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 mb-2">
+                  {form.tags.map(tag => (
+                    <span
+                      key={tag}
+                      className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium text-white"
+                      style={{ backgroundColor: DataMarket_BLUE }}
+                    >
+                      {tag}
+                      <button onClick={() => removeTag(tag)} className="ml-0.5 hover:opacity-70">
+                        <X className="h-3 w-3" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+              {/* Quick-add preset tags (only show ones not already selected) */}
+              <div className="flex flex-wrap gap-1.5 mb-3">
+                {tagOptions.filter(t => !form.tags.includes(t)).map(tag => (
                   <button
                     key={tag}
                     onClick={() => toggleTag(tag)}
-                    className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${form.tags.includes(tag) ? 'text-white border-transparent' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}
-                    style={form.tags.includes(tag) ? { backgroundColor: DataMarket_BLUE } : {}}
+                    className="px-2.5 py-0.5 rounded-full text-xs font-medium border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors"
                   >
-                    {form.tags.includes(tag) && <X className="h-3 w-3 inline mr-1" />}{tag}
+                    + {tag}
                   </button>
                 ))}
+              </div>
+              {/* Custom tag input */}
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="Add a custom tag…"
+                  value={customTagInput}
+                  onChange={e => setCustomTagInput(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addCustomTag() } }}
+                  className="flex-1 px-3 py-1.5 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <button
+                  onClick={addCustomTag}
+                  disabled={!customTagInput.trim()}
+                  className="px-3 py-1.5 rounded-lg text-xs font-medium text-white disabled:opacity-40"
+                  style={{ backgroundColor: DataMarket_BLUE }}
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                </button>
               </div>
             </div>
             <div>
@@ -453,7 +594,12 @@ export function DataMarketRegisterPage({ onNavigate, editProduct = null }) {
           <button onClick={() => onNavigate('discover')} className="px-4 py-2 text-sm text-gray-500 hover:text-gray-700">
             Discard Draft
           </button>
-          <button className="px-4 py-2 border border-gray-200 rounded-lg text-sm text-gray-600 hover:bg-gray-50">
+          <button
+            disabled={submitting}
+            onClick={() => handleSave({ andExit: true })}
+            className="flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-lg text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-60"
+          >
+            {submitting && <Loader2 className="h-3 w-3 animate-spin" />}
             Save and Exit
           </button>
         </div>
@@ -477,56 +623,7 @@ export function DataMarketRegisterPage({ onNavigate, editProduct = null }) {
           ) : (
             <button
               disabled={submitting}
-              onClick={async () => {
-                setSubmitting(true)
-                setSubmitError(null)
-                try {
-                  let res
-                  if (isEditMode) {
-                    res = await fetch(`/api/portal/products/${editProduct.product_ref}`, {
-                      method: 'PUT',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({
-                        display_name: form.name,
-                        description: form.description,
-                        source_type: form.type,
-                        domain: form.source,
-                        tags: form.tags,
-                        refresh_frequency: form.refreshFrequency,
-                        report_url: form.productUrl,
-                        owner_email: form.dataOwner || persona.email,
-                        data_classification: form.classification,
-                      })
-                    })
-                  } else {
-                    res = await fetch('/api/portal/products', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({
-                        name: form.name,
-                        description: form.description,
-                        type: form.type,
-                        source: form.source,
-                        tags: form.tags,
-                        refreshFrequency: form.refreshFrequency,
-                        productUrl: form.productUrl,
-                        ownerEmail: form.dataOwner || persona.email,
-                        classification: form.classification,
-                        domain: form.source,
-                        hasPII: form.hasPII,
-                        submittedBy: persona.email
-                      })
-                    })
-                  }
-                  if (!res.ok) throw new Error(await res.text())
-                  setSubmitted(true)
-                } catch (e) {
-                  setSubmitError('Submission failed — please try again.')
-                  console.error(e)
-                } finally {
-                  setSubmitting(false)
-                }
-              }}
+              onClick={() => handleSave()}
               className="flex items-center gap-2 px-6 py-2 rounded-lg text-sm font-medium text-white disabled:opacity-60"
               style={{ backgroundColor: DataMarket_BLUE }}
             >

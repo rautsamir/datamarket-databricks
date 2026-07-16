@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { Search, Plus, Edit3, Check, X, Users, Trash2 } from 'lucide-react'
 import { roleColors } from './adminConstants'
+import { normalizeRole, roleBadgeLabel } from '../../lib/roles'
 
 function UsersList() {
   const [users, setUsers] = useState([])
@@ -53,7 +54,7 @@ function UsersList() {
 
   const startEdit = (user) => {
     setEditingId(user.user_id)
-    setEditForm({ role: user.role || 'analyst', department: user.department || '' })
+    setEditForm({ role: normalizeRole(user.role), department: user.department || '' })
   }
 
   const saveEdit = async (userId) => {
@@ -172,8 +173,7 @@ function UsersList() {
               className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               <option value="analyst">Analyst</option>
-              <option value="manager">Manager</option>
-              <option value="data_steward">Data Steward</option>
+              <option value="admin">Admin / Data Steward</option>
             </select>
             <input
               placeholder="Department"
@@ -225,7 +225,7 @@ function UsersList() {
                     <td className="py-3 px-4">
                       <div className="flex items-center gap-2">
                         <div className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold text-white shrink-0"
-                          style={{ backgroundColor: user.role === 'steward' ? '#8B5CF6' : user.role === 'manager' ? '#10B981' : '#3B82F6' }}>
+                          style={{ backgroundColor: normalizeRole(user.role) === 'admin' ? '#8B5CF6' : '#3B82F6' }}>
                           {(user.display_name || user.email).split(' ').map(w => w[0]).join('').substring(0, 2).toUpperCase()}
                         </div>
                         <span className="font-medium text-gray-900 text-xs">{user.display_name || user.email}</span>
@@ -237,12 +237,11 @@ function UsersList() {
                         <select value={editForm.role} onChange={e => setEditForm({ ...editForm, role: e.target.value })}
                           className="px-2 py-1 border border-blue-200 rounded text-xs focus:outline-none">
                           <option value="analyst">Analyst</option>
-                          <option value="manager">Manager</option>
-                          <option value="steward">Steward</option>
+                          <option value="admin">Admin / Data Steward</option>
                         </select>
                       ) : (
-                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium capitalize ${roleColors[user.role] || 'bg-gray-100 text-gray-700'}`}>
-                          {user.role || 'analyst'}
+                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${roleColors[normalizeRole(user.role)] || 'bg-gray-100 text-gray-700'}`}>
+                          {roleBadgeLabel(user.role)}
                         </span>
                       )}
                     </td>
@@ -399,7 +398,6 @@ function GroupsList() {
             <select value={addForm.role} onChange={e => setAddForm(f => ({ ...f, role: e.target.value }))}
               className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-400">
               <option value="analyst">Analyst</option>
-              <option value="manager">Manager</option>
               <option value="admin">Admin / Data Steward</option>
             </select>
             <input placeholder="Department (optional)" value={addForm.department}
@@ -445,8 +443,8 @@ function GroupsList() {
                   </div>
                 </td>
                 <td className="py-3 px-4">
-                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium capitalize ${roleColors[g.role] || 'bg-gray-100 text-gray-700'}`}>
-                    {g.role}
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${roleColors[normalizeRole(g.role)] || 'bg-gray-100 text-gray-700'}`}>
+                    {roleBadgeLabel(g.role)}
                   </span>
                 </td>
                 <td className="py-3 px-4 text-xs text-gray-500">{g.department || '-'}</td>

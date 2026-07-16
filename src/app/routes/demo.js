@@ -10,8 +10,7 @@ export function registerRoutes(app) {
       await query(`
         INSERT INTO users (email, display_name, role, department) VALUES
           ('analyst@example.org',     'Alex Analyst',   'analyst',      'Finance'),
-          ('manager@example.org',     'Morgan Manager', 'manager',       'Operations'),
-          ('datasteward@example.org', 'Dana Steward',   'data_steward', 'Data Governance')
+          ('datasteward@example.org', 'Dana Steward',   'admin', 'Data Governance')
         ON CONFLICT (email) DO NOTHING
       `);
 
@@ -102,8 +101,7 @@ export function registerRoutes(app) {
       await query(`
         INSERT INTO users (email, display_name, role, department) VALUES
           ('analyst@example.org',     'Alex Analyst',   'analyst',   'Finance'),
-          ('manager@example.org',     'Morgan Manager', 'manager',   'Operations'),
-          ('datasteward@example.org', 'Dana Steward',   'steward',   'Data Governance')
+          ('datasteward@example.org', 'Dana Steward',   'admin',   'Data Governance')
         ON CONFLICT (email) DO NOTHING
       `);
 
