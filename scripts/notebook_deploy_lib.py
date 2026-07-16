@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 # Bump when deploy logic changes — printed in Step 4 so you can verify the clone is current.
-DEPLOY_LIB_VERSION = "2026-07-16-wpostgres"
+DEPLOY_LIB_VERSION = "2026-07-16-wpostgres-sdk40"
 
 import os
 import time
@@ -11,8 +11,25 @@ from pathlib import Path
 
 from databricks.sdk import WorkspaceClient
 from databricks.sdk.errors import NotFound
-from databricks.sdk.service.postgres import Project, ProjectSpec, Role, RoleIdentityType, RoleRoleSpec
 from databricks.sdk.service.workspace import ImportFormat
+
+
+def _pg_types():
+    """Lazy import — cluster DBR may ship an older databricks-sdk until pip upgrade."""
+    from databricks.sdk.service.postgres import (
+        Project, ProjectSpec, Role, RoleIdentityType, RoleRoleSpec,
+    )
+    return Project, ProjectSpec, Role, RoleIdentityType, RoleRoleSpec
+
+
+def _require_postgres_sdk() -> None:
+    import importlib.util
+    if importlib.util.find_spec("databricks.sdk.service.postgres") is None:
+        raise RuntimeError(
+            "databricks-sdk on this cluster is too old (no postgres / Lakebase API).\n"
+            "Run the pip cell above, then re-run this cell:\n"
+            "  %pip install --upgrade 'databricks-sdk>=0.40.0'"
+        )
 
 
 def _get_branch(w: WorkspaceClient, project: str) -> str:
@@ -64,6 +81,7 @@ def _ensure_lakebase(
         print(f"  Project '{project}' not found — creating Lakebase Autoscaling project...")
         print("  (This takes ~2–3 minutes on first deploy)")
         try:
+            Project, ProjectSpec, _, _, _ = _pg_types()
             op = w.postgres.create_project(
                 project=Project(spec=ProjectSpec(pg_version=17, enable_pg_native_login=False)),
                 project_id=project,
@@ -221,6 +239,7 @@ def _ensure_sp_oauth_role(w: WorkspaceClient, branch_parent: str, sp_uuid: str) 
             pass
 
     try:
+        _, _, Role, RoleIdentityType, RoleRoleSpec = _pg_types()
         op = w.postgres.create_role(
             parent=branch_parent,
             role=Role(spec=RoleRoleSpec(
@@ -305,6 +324,7 @@ def deploy_from_notebook(
 ) -> dict:
     """Deploy DataMarket using w.postgres + w.apps (same APIs as deploy.sh CLI)."""
     print(f"  deploy_lib version: {DEPLOY_LIB_VERSION}")
+    _require_postgres_sdk()
     host = (w.config.host or "").rstrip("/")
     app_dir = Path(repo_dir) / "src" / "app"
     if not (app_dir / "app.js").is_file():
