@@ -25,12 +25,14 @@
 
 # MAGIC %md
 # MAGIC ## Step 1 — Configuration
+# MAGIC
+# MAGIC Fill **admin_email** at the top of this notebook, or leave it blank to use your logged-in workspace identity.
 
 # COMMAND ----------
 
 dbutils.widgets.text("repo_url", "https://github.com/rautsamir/datamarket-databricks.git", "Git repo URL")
 dbutils.widgets.text("git_branch", "main", "Git branch")
-dbutils.widgets.text("admin_email", "", "Admin email (SSO login — becomes admin)")
+dbutils.widgets.text("admin_email", "", "Admin email (blank = your SSO email)")
 dbutils.widgets.text("app_name", "datamarket", "Databricks App name")
 dbutils.widgets.text("lakebase_project", "datamarket", "Lakebase project name")
 dbutils.widgets.text("lakebase_host", "", "Lakebase hostname (optional)")
@@ -46,8 +48,36 @@ LAKEBASE_HOST    = dbutils.widgets.get("lakebase_host").strip()
 WAREHOUSE_ID     = dbutils.widgets.get("warehouse_id").strip()
 DEMO_MODE        = dbutils.widgets.get("demo_mode").strip()
 
+def _detect_notebook_email():
+    try:
+        from databricks.sdk import WorkspaceClient
+        w = WorkspaceClient()
+        me = w.current_user.me()
+        for e in (me.emails or []):
+            if getattr(e, "primary", False) and e.value:
+                return e.value.strip()
+        if me.user_name and "@" in me.user_name:
+            return me.user_name.strip()
+        if w.config.username and "@" in w.config.username:
+            return w.config.username.strip()
+    except Exception:
+        pass
+    try:
+        user = dbutils.notebook.entry_point.getDbutils().notebook().getContext().userName().get()
+        if user and "@" in user:
+            return user.strip()
+    except Exception:
+        pass
+    return ""
+
 if not ADMIN_EMAIL:
-    raise ValueError("admin_email is required — use your workspace SSO email.")
+    ADMIN_EMAIL = _detect_notebook_email()
+
+if not ADMIN_EMAIL:
+    raise ValueError(
+        "admin_email is required. Either fill the widget at the top of this notebook "
+        "with your SSO email, or re-run on a cluster where your identity is available."
+    )
 
 print("Configuration:")
 for k, v in [
