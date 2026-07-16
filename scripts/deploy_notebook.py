@@ -267,4 +267,4 @@ if APP_URL:
 # MAGIC | `Deploy did not reach SUCCEEDED` | Apps → your app → logs; need Apps create permission |
 # MAGIC | `psql` / schema warnings | Non-fatal — app creates tables on first start |
 # MAGIC
-# MAGIC **Scott / locked-down laptop:** Browser + this notebook on a cluster — no local Node or CLI.
+# MAGIC **No local install required:** Browser + this notebook on a cluster — no local Node or CLI.
