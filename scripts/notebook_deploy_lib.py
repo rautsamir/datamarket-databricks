@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+# Bump when deploy logic changes — printed in Step 4 so you can verify the clone is current.
+DEPLOY_LIB_VERSION = "2026-07-16-wpostgres"
+
 import os
 import time
 from pathlib import Path
@@ -301,6 +304,7 @@ def deploy_from_notebook(
     demo_mode: str = "false",
 ) -> dict:
     """Deploy DataMarket using w.postgres + w.apps (same APIs as deploy.sh CLI)."""
+    print(f"  deploy_lib version: {DEPLOY_LIB_VERSION}")
     host = (w.config.host or "").rstrip("/")
     app_dir = Path(repo_dir) / "src" / "app"
     if not (app_dir / "app.js").is_file():

@@ -191,6 +191,13 @@ rm -rf "{WORKDIR}"
 mkdir -p "{WORKDIR}"
 cd "{WORKDIR}"
 git clone --depth 1 --branch {shlex.quote(GIT_BRANCH)} {shlex.quote(REPO_URL)} datamarket-databricks
+echo "════════════════════════════════════════"
+echo " Git commit cloned for deploy"
+echo "════════════════════════════════════════"
+git -C datamarket-databricks log -1 --format="  %h %s (%ci)"
+grep -q "w.postgres.create_project" datamarket-databricks/scripts/notebook_deploy_lib.py \\
+  && echo "  deploy lib: OK (w.postgres SDK)" \\
+  || echo "  deploy lib: STALE — push latest main to GitHub and re-run Step 3"
 cd datamarket-databricks/src/app
 npm install --silent
 npm run build:local
@@ -221,10 +228,31 @@ print("✅ Frontend built")
 # COMMAND ----------
 
 import sys
+import subprocess
 from databricks.sdk import WorkspaceClient
 
+if not Path(REPO_DIR).is_dir():
+    raise RuntimeError("REPO_DIR missing — run Step 3 first (it clones the repo to /tmp).")
+
+git_info = subprocess.run(
+    ["git", "-C", REPO_DIR, "log", "-1", "--format=%h %s (%ci)"],
+    capture_output=True, text=True, check=False,
+)
+if git_info.stdout.strip():
+    print(f"Repo at deploy time: {git_info.stdout.strip()}")
+
 sys.path.insert(0, f"{REPO_DIR}/scripts")
-from notebook_deploy_lib import deploy_from_notebook
+from notebook_deploy_lib import DEPLOY_LIB_VERSION, deploy_from_notebook
+
+lib_path = Path(REPO_DIR) / "scripts" / "notebook_deploy_lib.py"
+lib_src = lib_path.read_text()
+if "w.postgres.create_project" not in lib_src:
+    raise RuntimeError(
+        "Stale notebook_deploy_lib.py — you are on an old clone.\n"
+        "Re-run Step 3 (it deletes /tmp and re-clones from GitHub).\n"
+        f"Expected deploy_lib with w.postgres; file: {lib_path}"
+    )
+print(f"deploy_lib version: {DEPLOY_LIB_VERSION}")
 
 w = WorkspaceClient(host=HOST, token=TOKEN)
 result = deploy_from_notebook(
@@ -262,7 +290,7 @@ if APP_URL:
 # MAGIC |---|---|
 # MAGIC | `npm not found` | Attach a **cluster** (not Serverless), re-run Step 3 |
 # MAGIC | `CLI only supported in web terminal` | Expected on some workspaces — Steps 3–4 use SDK, not CLI |
-# MAGIC | `Lakebase branch unavailable` | Try a different **lakebase_project** name, or paste hostname in **lakebase_host** widget |
+# MAGIC | `No API found for POST /postgres/autoscaling` | **Stale clone** — re-run Step 3; check git commit printed above |
 # MAGIC | `Could not read workspace host/token` | Attach a **cluster** (not Serverless), re-run Step 2 |
 # MAGIC | `Deploy did not reach SUCCEEDED` | Apps → your app → logs; need Apps create permission |
 # MAGIC | `psql` / schema warnings | Non-fatal — app creates tables on first start |
