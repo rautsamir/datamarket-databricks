@@ -191,7 +191,24 @@ export function AdminSettingsPanel() {
 
   return (
     <div className="max-w-2xl space-y-6 mt-4">
-      {!setupComplete && (
+      {setupComplete ? (
+        <div className="rounded-xl border border-gray-200 bg-gray-50 px-5 py-3 flex items-center justify-between">
+          <p className="text-sm text-gray-500">Need to revisit the setup steps?</p>
+          <button
+            onClick={async () => {
+              await fetch('/api/portal/settings', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ setup_complete: 'false' }),
+              }).catch(() => {})
+              refreshConfig()
+            }}
+            className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border border-gray-300 text-gray-600 hover:bg-white transition-colors"
+          >
+            <RotateCcw className="h-3.5 w-3.5" /> Re-open setup wizard
+          </button>
+        </div>
+      ) : (
         <div className="rounded-xl border border-blue-200 bg-blue-50 p-5 flex gap-4">
           <Sparkles className="h-6 w-6 text-blue-500 shrink-0 mt-0.5" />
           <div>
