@@ -40,6 +40,8 @@ dbutils.widgets.text("lakebase_project", "datamarket", "Lakebase project name")
 dbutils.widgets.text("lakebase_host", "", "Lakebase hostname (optional override)")
 dbutils.widgets.text("warehouse_id", "", "SQL Warehouse ID (optional)")
 dbutils.widgets.dropdown("demo_mode", "false", ["false", "true"], "Demo mode")
+dbutils.widgets.dropdown("seed_data", "auto", ["auto", "true", "false"], "Seed data (auto=on when demo_mode)")
+dbutils.widgets.dropdown("grant_catalogs", "true", ["true", "false"], "Grant UC catalog access to app SP")
 
 REPO_URL         = dbutils.widgets.get("repo_url").strip()
 GIT_BRANCH       = dbutils.widgets.get("git_branch").strip() or "main"
@@ -49,6 +51,8 @@ LAKEBASE_PROJECT = dbutils.widgets.get("lakebase_project").strip() or "datamarke
 LAKEBASE_HOST    = dbutils.widgets.get("lakebase_host").strip()
 WAREHOUSE_ID     = dbutils.widgets.get("warehouse_id").strip()
 DEMO_MODE        = dbutils.widgets.get("demo_mode").strip()
+SEED_DATA        = dbutils.widgets.get("seed_data").strip() or "auto"
+GRANT_CATALOGS   = dbutils.widgets.get("grant_catalogs").strip() or "true"
 
 def _detect_notebook_email():
     try:
@@ -90,6 +94,8 @@ for k, v in [
     ("Lakebase host", LAKEBASE_HOST or "(auto-detect)"),
     ("Warehouse ID", WAREHOUSE_ID or "(auto-detect)"),
     ("Demo mode", DEMO_MODE),
+    ("Seed data", f"{SEED_DATA} (auto → {'true' if DEMO_MODE == 'true' else 'false'})"),
+    ("Grant UC catalogs", GRANT_CATALOGS),
 ]:
     print(f"  {k:16}: {v}")
 
@@ -195,8 +201,8 @@ echo "════════════════════════�
 echo " Git commit cloned for deploy"
 echo "════════════════════════════════════════"
 git -C datamarket-databricks log -1 --format="  %h %s (%ci)"
-grep -q "w.postgres.create_project" datamarket-databricks/scripts/notebook_deploy_lib.py \\
-  && echo "  deploy lib: OK (w.postgres SDK)" \\
+grep -qE "w\.(postgres|database)\.create_project" datamarket-databricks/scripts/notebook_deploy_lib.py \\
+  && echo "  deploy lib: OK (Lakebase SDK)" \\
   || echo "  deploy lib: STALE — push latest main to GitHub and re-run Step 3"
 cd datamarket-databricks/src/app
 npm install --silent
@@ -230,18 +236,18 @@ print("✅ Frontend built")
 import importlib.util
 import sys
 import subprocess
+import importlib
 from databricks.sdk import WorkspaceClient
 
 if not Path(REPO_DIR).is_dir():
     raise RuntimeError("REPO_DIR missing — run Step 3 first (it clones the repo to /tmp).")
 
-# Ensure Lakebase postgres SDK is available (DBR clusters often ship an older sdk)
 subprocess.check_call(
     [sys.executable, "-m", "pip", "install", "--quiet", "--upgrade", "databricks-sdk>=0.40.0"],
 )
-if importlib.util.find_spec("databricks.sdk.service.postgres") is None:
+if not (importlib.util.find_spec("databricks.sdk.service.postgres") or importlib.util.find_spec("databricks.sdk.service.database")):
     raise RuntimeError(
-        "databricks-sdk postgres module still missing after upgrade.\n"
+        "databricks-sdk Lakebase API still missing after upgrade.\n"
         "Re-run the pip cell above, then this cell."
     )
 import databricks.sdk
@@ -255,18 +261,19 @@ if git_info.stdout.strip():
     print(f"Repo at deploy time: {git_info.stdout.strip()}")
 
 sys.path.insert(0, f"{REPO_DIR}/scripts")
-sys.modules.pop("notebook_deploy_lib", None)  # reload after pip upgrade
-from notebook_deploy_lib import DEPLOY_LIB_VERSION, deploy_from_notebook
+if "notebook_deploy_lib" in sys.modules:
+    importlib.reload(sys.modules["notebook_deploy_lib"])
+from notebook_deploy_lib import DEPLOY_LIB_VERSION, deploy_from_notebook, resolve_seed
 
 lib_path = Path(REPO_DIR) / "scripts" / "notebook_deploy_lib.py"
 lib_src = lib_path.read_text()
-if "w.postgres.create_project" not in lib_src:
+if not ("create_project" in lib_src and "seed.sql" in lib_src):
     raise RuntimeError(
-        "Stale notebook_deploy_lib.py — you are on an old clone.\n"
-        "Re-run Step 3 (it deletes /tmp and re-clones from GitHub).\n"
-        f"Expected deploy_lib with w.postgres; file: {lib_path}"
+        "Stale notebook_deploy_lib.py — re-run Step 3 to clone latest from GitHub.\n"
+        f"File: {lib_path}"
     )
 print(f"deploy_lib version: {DEPLOY_LIB_VERSION}")
+print(f"seed: {SEED_DATA} → apply={resolve_seed(SEED_DATA, DEMO_MODE)}")
 
 w = WorkspaceClient(host=HOST, token=TOKEN)
 result = deploy_from_notebook(
@@ -278,6 +285,8 @@ result = deploy_from_notebook(
     lakebase_host=LAKEBASE_HOST,
     warehouse_id=WAREHOUSE_ID,
     demo_mode=DEMO_MODE,
+    seed_data=SEED_DATA,
+    grant_catalogs=GRANT_CATALOGS,
 )
 APP_URL = result.get("url") or ""
 
