@@ -19,7 +19,9 @@
 # MAGIC
 # MAGIC **Recommended:** Single-node cluster, DBR 14.3+ or 15.x, `Standard_DS3_v2` or larger.
 # MAGIC
-# MAGIC > Use this notebook on a **cluster** — not the browser **Web Terminal**.
+# MAGIC > **Attach a cluster** for Steps 2–4 — Serverless compute does not expose driver host/token for CLI setup, and cannot install Node/npm for the build.
+# MAGIC >
+# MAGIC > Do not use the browser **Web Terminal**.
 
 # COMMAND ----------
 
@@ -95,22 +97,48 @@ for k, v in [
 
 # MAGIC %md
 # MAGIC ## Step 2 — Configure CLI from notebook identity
+# MAGIC
+# MAGIC **Compute:** must be attached to a **cluster** (top-right cluster picker). Serverless will fail here.
 
 # COMMAND ----------
 
 import os, textwrap, subprocess, json
 from pathlib import Path
 
-from databricks.sdk import WorkspaceClient
+def _notebook_auth():
+    """Workspace host + token from notebook context (clusters) with SDK fallback."""
+    host, token, user = "", "", ""
+    try:
+        ctx = dbutils.notebook.entry_point.getDbutils().notebook().getContext()
+        host = (ctx.apiUrl().get() or "").rstrip("/")
+        token = ctx.apiToken().get() or ""
+        user = ctx.userName().get() or ""
+    except Exception:
+        pass
+    if not host or not token:
+        try:
+            from databricks.sdk import WorkspaceClient
+            w = WorkspaceClient()
+            host = host or (w.config.host or "").rstrip("/")
+            token = token or (w.config.token or "")
+            user = user or (w.config.username or "")
+        except Exception:
+            pass
+    # apiUrl is occasionally returned with /api/2.0 suffix
+    for suffix in ("/api/2.0", "/api/2.1"):
+        if host.endswith(suffix):
+            host = host[: -len(suffix)]
+    return host.rstrip("/"), token, user
 
-w = WorkspaceClient()
-HOST = (w.config.host or "").rstrip("/")
-TOKEN = w.config.token
-USER = w.config.username or ADMIN_EMAIL
+HOST, TOKEN, NOTEBOOK_USER = _notebook_auth()
+USER = NOTEBOOK_USER if "@" in (NOTEBOOK_USER or "") else ADMIN_EMAIL
 PROFILE = "notebook-deploy"
 
 if not HOST or not TOKEN:
-    raise RuntimeError("Could not read workspace host/token from notebook context.")
+    raise RuntimeError(
+        "Could not read workspace host/token. Attach this notebook to a "
+        "**single-node cluster** (not Serverless), then re-run Step 2."
+    )
 
 cfg_path = Path.home() / ".databrickscfg"
 cfg_path.write_text(textwrap.dedent(f"""\
@@ -247,7 +275,7 @@ if url:
 # MAGIC |---|---|
 # MAGIC | `npm not found` | Run on a **cluster notebook**, not Web Terminal |
 # MAGIC | `Lakebase hostname is required` | Create project in Compute → Lakebase, or set **lakebase_host** widget |
-# MAGIC | `Cannot authenticate` | Re-run Step 2 (token expired) |
+# MAGIC | `Could not read workspace host/token` | Attach a **cluster** (not Serverless), re-run Step 2 |
 # MAGIC | `Deploy did not reach SUCCEEDED` | Apps → your app → logs; need Apps create permission |
 # MAGIC | `psql not found` (warning) | Non-fatal — app creates tables on first start |
 # MAGIC
