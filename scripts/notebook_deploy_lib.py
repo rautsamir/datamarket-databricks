@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 # Bump when deploy logic changes — printed in Step 4 so you can verify the clone is current.
-DEPLOY_LIB_VERSION = "2026-07-16-deploy-sh-parity"
+DEPLOY_LIB_VERSION = "2026-07-17-lakebase-rest-fallback"
 
 import os
 import time
 from pathlib import Path
+from types import SimpleNamespace
 
 from databricks.sdk import WorkspaceClient
 from databricks.sdk.errors import NotFound
@@ -16,13 +17,149 @@ from databricks.sdk.service.workspace import ImportFormat
 SKIP_CATALOGS = frozenset({"system", "__databricks_internal", "hive_metastore"})
 
 
+class _DoneOp:
+    def wait(self, **_kwargs):
+        return self
+
+
+class _LakebaseRest:
+    """REST fallback — same routes as `databricks postgres` CLI (deploy.sh)."""
+
+    def __init__(self, w: WorkspaceClient):
+        self._api = w.api_client
+
+    @staticmethod
+    def _items(data):
+        if isinstance(data, list):
+            return data
+        if isinstance(data, dict):
+            for key in ("branches", "endpoints", "roles", "items"):
+                if key in data and data[key]:
+                    return data[key]
+        return []
+
+    @staticmethod
+    def _project_id(parent: str) -> str:
+        return parent.replace("projects/", "").split("/")[0]
+
+    def list_branches(self, parent: str):
+        pid = self._project_id(parent)
+        for path in (
+            f"/api/2.0/postgres/projects/{pid}/branches",
+            f"/api/2.0/postgres/autoscaling/projects/{pid}/branches",
+        ):
+            try:
+                items = self._items(self._api.do("GET", path))
+                if items:
+                    for b in items:
+                        yield SimpleNamespace(name=b.get("name", ""), status=b.get("status"))
+                    return
+            except Exception:
+                continue
+
+    def list_endpoints(self, parent: str):
+        for path in (
+            f"/api/2.0/postgres/{parent}/endpoints",
+            f"/api/2.0/postgres/autoscaling/{parent}/endpoints",
+        ):
+            try:
+                items = self._items(self._api.do("GET", path))
+                if items:
+                    for ep in items:
+                        st = ep.get("status") or {}
+                        hosts = st.get("hosts") or {}
+                        yield SimpleNamespace(
+                            name=ep.get("name", ""),
+                            status=SimpleNamespace(
+                                hosts=SimpleNamespace(host=hosts.get("host", "")),
+                            ),
+                        )
+                    return
+            except Exception:
+                continue
+        try:
+            data = self._api.do("GET", f"/api/2.0/postgres/endpoints/{parent}/endpoints/primary")
+            host = data.get("read_write_dns") or data.get("dns") or ""
+            if host:
+                yield SimpleNamespace(
+                    status=SimpleNamespace(hosts=SimpleNamespace(host=host)),
+                )
+        except Exception:
+            pass
+
+    def create_project(self, project, project_id: str):
+        spec = getattr(project, "spec", None)
+        pg_version = getattr(spec, "pg_version", 17) if spec else 17
+        enable_native = getattr(spec, "enable_pg_native_login", False) if spec else False
+        body = {
+            "project_id": project_id,
+            "spec": {"pg_version": pg_version, "enable_pg_native_login": enable_native},
+        }
+        errors = []
+        for path in ("/api/2.0/postgres/projects", "/api/2.0/postgres/autoscaling/projects"):
+            try:
+                self._api.do("POST", path, body=body)
+                print(f"  create-project OK ({path})")
+                return _DoneOp()
+            except Exception as e:
+                errors.append(f"{path}: {e}")
+        raise RuntimeError("create-project failed — " + "; ".join(errors))
+
+    def list_roles(self, parent: str):
+        for path in (
+            f"/api/2.0/postgres/{parent}/roles",
+            f"/api/2.0/postgres/autoscaling/{parent}/roles",
+        ):
+            try:
+                items = self._items(self._api.do("GET", path))
+                for r in items:
+                    st = r.get("status") or {}
+                    yield SimpleNamespace(
+                        name=r.get("name", ""),
+                        status=SimpleNamespace(
+                            postgres_role=st.get("postgres_role", ""),
+                            auth_method=st.get("auth_method", ""),
+                        ),
+                    )
+                return
+            except Exception:
+                continue
+
+    def create_role(self, parent: str, role):
+        spec = getattr(role, "spec", None)
+        identity = getattr(spec, "identity_type", None) if spec else "SERVICE_PRINCIPAL"
+        postgres_role = getattr(spec, "postgres_role", None) if spec else None
+        id_val = getattr(identity, "value", identity) if identity else "SERVICE_PRINCIPAL"
+        body = {"spec": {"identity_type": str(id_val), "postgres_role": postgres_role}}
+        for path in (
+            f"/api/2.0/postgres/{parent}/roles",
+            f"/api/2.0/postgres/autoscaling/{parent}/roles",
+        ):
+            try:
+                self._api.do("POST", path, body=body)
+                return _DoneOp()
+            except Exception:
+                continue
+        raise RuntimeError(f"create-role failed for {parent}")
+
+    def delete_role(self, name: str):
+        for prefix in ("/api/2.0/postgres/", "/api/2.0/postgres/autoscaling/"):
+            try:
+                self._api.do("DELETE", prefix + name.lstrip("/"))
+                return _DoneOp()
+            except Exception:
+                continue
+
+
 def _lakebase(w: WorkspaceClient):
-    """w.postgres (older SDK) or w.database (newer SDK) — same Lakebase API."""
-    if hasattr(w, "postgres"):
-        return w.postgres
-    if hasattr(w, "database"):
-        return w.database
-    raise RuntimeError("databricks-sdk has no postgres/database API — upgrade: pip install -U databricks-sdk>=0.40.0")
+    """
+    Lakebase **Autoscaling** API only (w.postgres).
+    Do NOT use w.database — that is provisioned DB instances, not autoscaling projects.
+    """
+    pg = getattr(w, "postgres", None)
+    if pg is not None and callable(getattr(pg, "create_project", None)):
+        return pg
+    return _LakebaseRest(w)
 
 
 def _pg_types():
@@ -33,14 +170,10 @@ def _pg_types():
 
 
 def _require_lakebase_sdk() -> None:
+    """Any recent databricks-sdk works — REST fallback covers missing w.postgres."""
     import importlib.util
-    if importlib.util.find_spec("databricks.sdk.service.postgres") or importlib.util.find_spec("databricks.sdk.service.database"):
-        return
-    raise RuntimeError(
-        "databricks-sdk on this cluster is too old (no Lakebase API).\n"
-        "Run the pip cell, then re-run Step 4:\n"
-        "  %pip install --upgrade 'databricks-sdk>=0.40.0'"
-    )
+    if importlib.util.find_spec("databricks.sdk") is None:
+        raise RuntimeError("pip install --upgrade 'databricks-sdk>=0.40.0'")
 
 
 def resolve_seed(seed_data: str, demo_mode: str) -> bool:
@@ -89,16 +222,28 @@ def _ensure_lakebase(
     if not branch:
         print(f"  Project '{project}' not found — creating Lakebase Autoscaling project...")
         print("  (This takes ~2–3 minutes on first deploy)")
+        api = _lakebase(w)
+        print(f"  Lakebase API: {type(api).__name__}")
+        created = False
         try:
-            Project, ProjectSpec, _, _, _ = _pg_types()
-            op = _lakebase(w).create_project(
-                project=Project(spec=ProjectSpec(pg_version=17, enable_pg_native_login=False)),
-                project_id=project,
-            )
-            op.wait()
+            if isinstance(api, _LakebaseRest):
+                api.create_project(None, project).wait()
+            else:
+                Project, ProjectSpec, _, _, _ = _pg_types()
+                api.create_project(
+                    project=Project(spec=ProjectSpec(pg_version=17, enable_pg_native_login=False)),
+                    project_id=project,
+                ).wait()
+            created = True
             print(f"  Project '{project}' created")
         except Exception as e:
             print(f"  create-project note: {e}")
+            if not created and not _get_branch(w, project):
+                raise RuntimeError(
+                    f"Could not create Lakebase project '{project}'.\n"
+                    f"API error: {e}\n"
+                    "Check Lakebase is enabled in this workspace, or use a different lakebase_project name."
+                ) from e
 
         print("  Waiting for Lakebase branch to be ready...")
         for _ in range(36):
@@ -310,15 +455,21 @@ def _ensure_sp_oauth_role(w: WorkspaceClient, branch_parent: str, sp_uuid: str) 
             pass
 
     try:
-        _, _, Role, RoleIdentityType, RoleRoleSpec = _pg_types()
-        op = _lakebase(w).create_role(
-            parent=branch_parent,
-            role=Role(spec=RoleRoleSpec(
-                identity_type=RoleIdentityType.SERVICE_PRINCIPAL,
+        if isinstance(_lakebase(w), _LakebaseRest):
+            role = SimpleNamespace(spec=SimpleNamespace(
+                identity_type="SERVICE_PRINCIPAL",
                 postgres_role=sp_uuid,
-            )),
-        )
-        op.wait()
+            ))
+            _lakebase(w).create_role(branch_parent, role).wait()
+        else:
+            _, _, Role, RoleIdentityType, RoleRoleSpec = _pg_types()
+            _lakebase(w).create_role(
+                parent=branch_parent,
+                role=Role(spec=RoleRoleSpec(
+                    identity_type=RoleIdentityType.SERVICE_PRINCIPAL,
+                    postgres_role=sp_uuid,
+                )),
+            ).wait()
         print("  SP OAuth role created in Lakebase")
     except Exception as e:
         print(f"  SP OAuth role warning: {e}")
