@@ -201,7 +201,7 @@ echo "════════════════════════�
 echo " Git commit cloned for deploy"
 echo "════════════════════════════════════════"
 git -C datamarket-databricks log -1 --format="  %h %s (%ci)"
-grep -qE "w\.(postgres|database)\.create_project" datamarket-databricks/scripts/notebook_deploy_lib.py \\
+grep -q "_LakebaseRest\\|w.postgres.create_project" datamarket-databricks/scripts/notebook_deploy_lib.py \\
   && echo "  deploy lib: OK (Lakebase SDK)" \\
   || echo "  deploy lib: STALE — push latest main to GitHub and re-run Step 3"
 cd datamarket-databricks/src/app
@@ -245,7 +245,7 @@ if not Path(REPO_DIR).is_dir():
 subprocess.check_call(
     [sys.executable, "-m", "pip", "install", "--quiet", "--upgrade", "databricks-sdk>=0.40.0"],
 )
-if not (importlib.util.find_spec("databricks.sdk.service.postgres") or importlib.util.find_spec("databricks.sdk.service.database")):
+if not (importlib.util.find_spec("databricks.sdk")):
     raise RuntimeError(
         "databricks-sdk Lakebase API still missing after upgrade.\n"
         "Re-run the pip cell above, then this cell."
@@ -313,7 +313,7 @@ if APP_URL:
 # MAGIC |---|---|
 # MAGIC | `npm not found` | Attach a **cluster** (not Serverless), re-run Step 3 |
 # MAGIC | `CLI only supported in web terminal` | Expected on some workspaces — Steps 3–4 use SDK, not CLI |
-# MAGIC | `No module named databricks.sdk.service.postgres` | Re-run the **pip cell** then Step 4 (upgrades databricks-sdk) |
+# MAGIC | `DatabaseAPI has no attribute create_project` | Fixed in latest lib — re-run Step 3+4 (uses w.postgres / REST, not w.database) |
 # MAGIC | `No API found for POST /postgres/autoscaling` | **Stale clone** — re-run Step 3; check git commit printed above |
 # MAGIC | `Could not read workspace host/token` | Attach a **cluster** (not Serverless), re-run Step 2 |
 # MAGIC | `Deploy did not reach SUCCEEDED` | Apps → your app → logs; need Apps create permission |
