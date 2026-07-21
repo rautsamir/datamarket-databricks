@@ -149,9 +149,13 @@ export function registerRoutes(app) {
       const grantLines = [];
       for (const cat of results) {
         if (!cat.accessible && spId) {
-          // 2 grants per catalog — SELECT ON CATALOG cascades to all current and future schemas/tables
+          // 3 grants per catalog — all cascade to current and future schemas/tables:
+          // USE CATALOG: enter the catalog
+          // USE SCHEMA: enumerate schemas and tables via REST API (required for Import modal)
+          // SELECT: read table data (required for import and preview)
           grantLines.push(
             `GRANT USE CATALOG ON CATALOG \`${cat.name}\` TO \`${spId}\`;`,
+            `GRANT USE SCHEMA ON CATALOG \`${cat.name}\` TO \`${spId}\`;`,
             `GRANT SELECT ON CATALOG \`${cat.name}\` TO \`${spId}\`;`
           );
         }

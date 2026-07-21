@@ -814,15 +814,21 @@ except: print('')
         --json "{\"warehouse_id\":\"${WAREHOUSE_ID}\",\"statement\":\"GRANT USE CATALOG ON CATALOG \`${CATALOG}\` TO \`${SP_UUID}\`\",\"wait_timeout\":\"10s\"}" \
         2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('status',{}).get('state','UNKNOWN'))" 2>/dev/null || echo "ERROR")
 
-      # SELECT ON CATALOG — cascades to ALL current and future schemas/tables in this catalog.
-      # No per-schema grants needed; adding new schemas/tables is covered automatically.
+      # USE SCHEMA ON CATALOG — cascades USE SCHEMA to all current and future schemas.
+      # Required for the SP to enumerate schemas and tables via the UC REST API.
+      databricks api post "/api/2.0/sql/statements" \
+        --profile "$PROFILE" \
+        --json "{\"warehouse_id\":\"${WAREHOUSE_ID}\",\"statement\":\"GRANT USE SCHEMA ON CATALOG \`${CATALOG}\` TO \`${SP_UUID}\`\",\"wait_timeout\":\"10s\"}" \
+        2>/dev/null >/dev/null || true
+
+      # SELECT ON CATALOG — cascades read access to all current and future schemas/tables.
       SELECT_RESULT=$(databricks api post "/api/2.0/sql/statements" \
         --profile "$PROFILE" \
         --json "{\"warehouse_id\":\"${WAREHOUSE_ID}\",\"statement\":\"GRANT SELECT ON CATALOG \`${CATALOG}\` TO \`${SP_UUID}\`\",\"wait_timeout\":\"10s\"}" \
         2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('status',{}).get('state','UNKNOWN'))" 2>/dev/null || echo "ERROR")
 
       if [[ "$GRANT_RESULT" == "SUCCEEDED" && "$SELECT_RESULT" == "SUCCEEDED" ]]; then
-        ok "  ✓ ${CATALOG} — USE CATALOG + SELECT granted (covers all schemas, now and future)"
+        ok "  ✓ ${CATALOG} — USE CATALOG + USE SCHEMA + SELECT granted (covers all schemas, now and future)"
       elif [[ "$GRANT_RESULT" == "SUCCEEDED" ]]; then
         ok "  ✓ ${CATALOG} — USE CATALOG granted"
         warn "  ⚠ ${CATALOG} — SELECT grant failed (catalog may be owned by another user — run manually)"
