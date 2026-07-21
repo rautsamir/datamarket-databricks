@@ -56,10 +56,12 @@ export function PersonaProvider({ children }) {
   const [notifications, setNotifications] = useState([])
   const [loading, setLoading] = useState(false)
   const [apiAvailable, setApiAvailable] = useState(false)
-  const [demoMode, setDemoMode] = useState(true)
+  const [demoMode, setDemoMode] = useState(null) // null = identity not yet resolved
   const [ssoUser, setSsoUser] = useState(null)
   const [rfaEnabled, setRfaEnabled] = useState(false)
   const [ucGrantsEnabled, setUcGrantsEnabled] = useState(false)
+
+  const identityLoading = demoMode === null
 
   const ssoIsAdmin = ssoUser && !demoMode && isAdminRole(ssoUser.role)
 
@@ -326,6 +328,7 @@ export function PersonaProvider({ children }) {
       notifications,
       unreadNotificationCount,
       loading,
+      identityLoading,
       apiAvailable,
       demoMode,
       rfaEnabled,

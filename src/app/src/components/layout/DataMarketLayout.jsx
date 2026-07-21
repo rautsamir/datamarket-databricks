@@ -32,7 +32,7 @@ export function DataMarketLayout({ currentPage, onNavigate, children }) {
   const [userMenuOpen, setUserMenuOpen] = useState(false)
   const [personaMenuOpen, setPersonaMenuOpen] = useState(false)
   const [notifOpen, setNotifOpen] = useState(false)
-  const { persona, currentPersona, setCurrentPersona, pendingRequests, notifications, unreadNotificationCount, isAdmin, demoMode } = usePersona()
+  const { persona, currentPersona, setCurrentPersona, pendingRequests, notifications, unreadNotificationCount, isAdmin, demoMode, identityLoading } = usePersona()
   const { appName, appSubtitle, appLogoUrl, navLinks, askAiEnabled, insightsEnabled, featureRequestsEnabled } = useAppConfig()
 
   const personaColor = isAdmin ? '#7C3AED' : currentPersona === 'james' ? '#059669' : '#3B82F6'
@@ -201,10 +201,10 @@ export function DataMarketLayout({ currentPage, onNavigate, children }) {
                   onClick={() => { setUserMenuOpen(!userMenuOpen); setPersonaMenuOpen(false) }}
                   className="flex items-center gap-2 text-white/90 hover:text-white px-2 py-1 rounded hover:bg-white/10 transition-colors"
                 >
-                  <div className={`w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold ${avatarBadgeClass}`}>
-                    {persona.avatar}
+                  <div className={`w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold ${identityLoading ? 'bg-white/20' : avatarBadgeClass}`}>
+                    {identityLoading ? '…' : persona.avatar}
                   </div>
-                  <span className="text-sm hidden sm:block">{
+                  <span className="text-sm hidden sm:block">{identityLoading ? '' :
                     (() => { const n = persona.name || ''; return n.includes('@') ? n.split('@')[0] : (n.split(' ')[0] || n); })()
                   }</span>
                   <ChevronDown className="h-3 w-3 hidden sm:block" />
