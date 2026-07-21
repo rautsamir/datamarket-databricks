@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "echo 'dist pre-built'",
+    "build": "vite build",
     "preview": "vite preview",
     "start": "node app.js",
     "start:dev": "concurrently \"npm run dev\" \"nodemon app.js\"",
