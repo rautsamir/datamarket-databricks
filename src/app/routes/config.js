@@ -10,7 +10,7 @@ import {
   APP_SUBTITLE,
   APP_LOGO_URL,
 } from '../db.js';
-import { getUcAuth, ucApiRequest } from '../databricks.js';
+import { getUcAuth, ucApiRequest, databricksApi } from '../databricks.js';
 
 export function registerRoutes(app) {
   // ─── Health ───────────────────────────────────────────────────────────────────
@@ -174,6 +174,64 @@ export function registerRoutes(app) {
         sqlEditorUrl,
         allAccessible: needsGrant.length === 0,
       });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ─── Auto-run UC grants for the SP across all inaccessible catalogs ──────────
+  app.post('/api/portal/admin/uc-run-grants', async (req, res) => {
+    try {
+      const spId = process.env.DATABRICKS_CLIENT_ID || '';
+      if (!spId) return res.status(400).json({ error: 'DATABRICKS_CLIENT_ID not set — cannot determine SP identity.' });
+
+      const warehouseId = getSetting('sql_warehouse_id', SQL_WAREHOUSE_ID);
+      if (!warehouseId) return res.status(400).json({ error: 'No SQL Warehouse configured. Complete step 1 of the wizard first.' });
+
+      // Optionally scope to specific catalogs; default to all non-system catalogs
+      const { catalogs: requestedCatalogs } = req.body || {};
+
+      const { host, token } = await getUcAuth();
+      const catalogData = await ucApiRequest(host, token, '/api/2.1/unity-catalog/catalogs');
+      const allCatalogs = (catalogData.catalogs || [])
+        .map(c => c.name)
+        .filter(n => !['system', '__databricks_internal', 'hive_metastore'].includes(n));
+
+      const targets = requestedCatalogs?.length
+        ? allCatalogs.filter(n => requestedCatalogs.includes(n))
+        : allCatalogs;
+
+      const results = [];
+      for (const catalog of targets) {
+        const grants = [
+          `GRANT USE CATALOG ON CATALOG \`${catalog}\` TO \`${spId}\``,
+          `GRANT USE SCHEMA ON CATALOG \`${catalog}\` TO \`${spId}\``,
+          `GRANT SELECT ON CATALOG \`${catalog}\` TO \`${spId}\``,
+        ];
+        let success = true;
+        const errors = [];
+        for (const sql of grants) {
+          try {
+            const resp = await databricksApi('POST', '/api/2.0/sql/statements', {
+              warehouse_id: warehouseId,
+              statement: sql,
+              wait_timeout: '15s',
+            });
+            const state = resp.data?.status?.state;
+            if (state !== 'SUCCEEDED') {
+              const msg = resp.data?.status?.error?.message || state || 'UNKNOWN';
+              errors.push(msg);
+              success = false;
+            }
+          } catch (e) {
+            errors.push(e.message);
+            success = false;
+          }
+        }
+        results.push({ catalog, success, errors });
+      }
+
+      res.json({ results, allSucceeded: results.every(r => r.success) });
     } catch (e) {
       res.status(500).json({ error: e.message });
     }
