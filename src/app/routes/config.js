@@ -144,8 +144,8 @@ export function registerRoutes(app) {
         return { name: cat.name, accessible, canListSchemas, schemas: schemaDetails, schemasNeedingGrant };
       }));
 
-      // Generate targeted per-schema grants for schemas where tables aren't visible,
-      // plus catalog-level grants for catalogs where schemas themselves aren't visible.
+      // Generate catalog-level grants — USE CATALOG + SELECT ON CATALOG covers all schemas and tables,
+      // including any added in the future. No per-schema grants needed.
       const grantLines = [];
       for (const cat of results) {
         if (!cat.accessible && spId) {

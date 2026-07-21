@@ -317,7 +317,7 @@ export function ImportUCModal({ onClose, onImported }) {
                                           <div className="py-2 px-2 space-y-2">
                                             <div className="flex items-start gap-1.5 text-xs text-amber-700">
                                               <ShieldAlert className="h-3.5 w-3.5 shrink-0 mt-0.5 text-amber-500" />
-                                              <span>App service principal needs <code className="bg-amber-100 px-1 rounded font-mono">USE SCHEMA</code> to see tables here.</span>
+                                              <span>App service principal needs <code className="bg-amber-100 px-1 rounded font-mono">SELECT ON CATALOG</code> to see tables here. Run once — covers all schemas.</span>
                                             </div>
                                             <div className="bg-gray-950 rounded-lg px-3 py-2 flex items-center gap-2">
                                               <code className="text-xs text-emerald-300 font-mono flex-1 break-all">{meta.grantSql}</code>
