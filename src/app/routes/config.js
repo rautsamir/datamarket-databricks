@@ -149,10 +149,9 @@ export function registerRoutes(app) {
       const grantLines = [];
       for (const cat of results) {
         if (!cat.accessible && spId) {
-          // Grant catalog-level access — SELECT ON CATALOG cascades to all current and future schemas
+          // 2 grants per catalog — SELECT ON CATALOG cascades to all current and future schemas/tables
           grantLines.push(
             `GRANT USE CATALOG ON CATALOG \`${cat.name}\` TO \`${spId}\`;`,
-            `GRANT BROWSE ON CATALOG \`${cat.name}\` TO \`${spId}\`;`,
             `GRANT SELECT ON CATALOG \`${cat.name}\` TO \`${spId}\`;`
           );
         }
