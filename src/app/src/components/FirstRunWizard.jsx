@@ -24,8 +24,10 @@ export function FirstRunWizard({ onDismiss }) {
   const [saveError, setSaveError]           = useState('')
 
   // Step 1 — Catalog access
-  const [accessCheck, setAccessCheck]   = useState(null)   // null | loading | data
+  const [accessCheck, setAccessCheck]   = useState(null)
   const [accessLoading, setAccessLoading] = useState(false)
+  const [granting, setGranting]         = useState(false)
+  const [grantResults, setGrantResults] = useState(null)   // null | { allSucceeded, results[] }
   const [copied, setCopied]             = useState(false)
 
   // Step 2 — Import
@@ -57,8 +59,29 @@ export function FirstRunWizard({ onDismiss }) {
   }, [])
 
   useEffect(() => {
-    if (step === 1) runAccessCheck()
+    if (step === 1) { setGrantResults(null); runAccessCheck() }
   }, [step, runAccessCheck])
+
+  const runGrants = useCallback(async () => {
+    setGranting(true)
+    setGrantResults(null)
+    try {
+      // Only grant for catalogs that aren't already accessible
+      const needsCatalogs = accessCheck?.needsGrant || []
+      const d = await fetch('/api/portal/admin/uc-run-grants', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ catalogs: needsCatalogs }),
+      }).then(r => r.json())
+      setGrantResults(d)
+      // Re-check access after granting so the list updates
+      if (d.allSucceeded) await runAccessCheck()
+    } catch (e) {
+      setGrantResults({ error: e.message })
+    } finally {
+      setGranting(false)
+    }
+  }, [accessCheck, runAccessCheck])
 
   const saveWarehouse = async () => {
     if (!warehouseId.trim()) { setSaveError('Paste your warehouse ID first.'); return }
@@ -250,35 +273,74 @@ export function FirstRunWizard({ onDismiss }) {
                       </div>
                     )}
 
-                    {/* Grant SQL */}
+                    {/* Grant section */}
                     {!accessCheck.allAccessible && accessCheck.grantSql && (
-                      <div className="space-y-2">
-                        <p className="text-xs text-gray-500">
-                          Run this SQL in your Databricks SQL Editor as a user with <strong>MANAGE</strong> or ownership on those catalogs:
-                        </p>
-                        <div className="relative bg-gray-950 rounded-xl p-4 pr-10">
-                          <pre className="text-xs text-emerald-300 font-mono whitespace-pre-wrap leading-relaxed overflow-x-auto">
-                            {accessCheck.grantSql}
-                          </pre>
-                          <button onClick={copyGrantSql} title="Copy SQL"
-                            className="absolute top-3 right-3 text-gray-500 hover:text-gray-300 transition-colors">
-                            {copied
-                              ? <CheckCircle2 className="h-4 w-4 text-emerald-400" />
-                              : <Copy className="h-4 w-4" />}
-                          </button>
-                        </div>
-                        <div className="flex items-center gap-3">
-                          {accessCheck.sqlEditorUrl && (
-                            <a href={accessCheck.sqlEditorUrl} target="_blank" rel="noopener noreferrer"
-                              className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50 transition-colors">
-                              <ExternalLink className="h-3.5 w-3.5" /> Open SQL Editor
-                            </a>
+                      <div className="space-y-3">
+                        {/* Auto-grant button */}
+                        <div className="bg-violet-50 border border-violet-100 rounded-xl p-4 space-y-3">
+                          <div>
+                            <p className="text-sm font-medium text-violet-900">Grant access automatically</p>
+                            <p className="text-xs text-violet-600 mt-0.5">
+                              Runs <code className="bg-violet-100 px-1 rounded">USE CATALOG + USE SCHEMA + SELECT</code> on each catalog — cascades to all schemas and future tables.
+                            </p>
+                          </div>
+                          {/* Grant results */}
+                          {grantResults && !grantResults.error && (
+                            <div className="space-y-1">
+                              {grantResults.results?.map(r => (
+                                <div key={r.catalog} className={`flex items-center gap-2 text-xs ${r.success ? 'text-emerald-700' : 'text-red-600'}`}>
+                                  {r.success
+                                    ? <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+                                    : <AlertTriangle className="h-3.5 w-3.5 shrink-0" />}
+                                  <span className="font-mono">{r.catalog}</span>
+                                  {!r.success && <span className="text-red-400">— {r.errors?.[0]}</span>}
+                                </div>
+                              ))}
+                            </div>
                           )}
-                          <button onClick={runAccessCheck} disabled={accessLoading}
-                            className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-40">
-                            <RefreshCw className={`h-3.5 w-3.5 ${accessLoading ? 'animate-spin' : ''}`} /> Re-check
+                          {grantResults?.error && (
+                            <p className="text-xs text-red-600">{grantResults.error}</p>
+                          )}
+                          <button onClick={runGrants} disabled={granting || accessLoading}
+                            className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white transition-opacity disabled:opacity-40"
+                            style={{ backgroundColor: BLUE }}>
+                            {granting
+                              ? <><RefreshCw className="h-4 w-4 animate-spin" /> Granting…</>
+                              : <><ShieldCheck className="h-4 w-4" /> Grant access to {accessCheck.needsGrant?.length} catalog{accessCheck.needsGrant?.length !== 1 ? 's' : ''}</>}
                           </button>
                         </div>
+
+                        {/* Manual fallback */}
+                        <details className="group">
+                          <summary className="text-xs text-gray-400 cursor-pointer hover:text-gray-600 select-none">
+                            Or run manually in SQL Editor
+                          </summary>
+                          <div className="mt-2 space-y-2">
+                            <div className="relative bg-gray-950 rounded-xl p-4 pr-10">
+                              <pre className="text-xs text-emerald-300 font-mono whitespace-pre-wrap leading-relaxed overflow-x-auto">
+                                {accessCheck.grantSql}
+                              </pre>
+                              <button onClick={copyGrantSql} title="Copy SQL"
+                                className="absolute top-3 right-3 text-gray-500 hover:text-gray-300 transition-colors">
+                                {copied
+                                  ? <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+                                  : <Copy className="h-4 w-4" />}
+                              </button>
+                            </div>
+                            <div className="flex items-center gap-3">
+                              {accessCheck.sqlEditorUrl && (
+                                <a href={accessCheck.sqlEditorUrl} target="_blank" rel="noopener noreferrer"
+                                  className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50 transition-colors">
+                                  <ExternalLink className="h-3.5 w-3.5" /> Open SQL Editor
+                                </a>
+                              )}
+                              <button onClick={runAccessCheck} disabled={accessLoading}
+                                className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-40">
+                                <RefreshCw className={`h-3.5 w-3.5 ${accessLoading ? 'animate-spin' : ''}`} /> Re-check
+                              </button>
+                            </div>
+                          </div>
+                        </details>
                       </div>
                     )}
                   </>
