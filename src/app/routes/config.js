@@ -117,13 +117,15 @@ export function registerRoutes(app) {
       // For each catalog, check schemas and whether the SP can list tables in them.
       const results = await Promise.all(catalogs.map(async (cat) => {
         let schemas = [];
-        let schemasVisible = false;
+        // canListSchemas = true means the API call succeeded (even if 0 user schemas returned)
+        // This distinguishes "no access" from "accessible but empty catalog"
+        let canListSchemas = false;
         try {
           const d = await ucApiRequest(host, token,
             `/api/2.1/unity-catalog/schemas?catalog_name=${encodeURIComponent(cat.name)}`);
           schemas = (d.schemas || []).filter(s => s.name !== 'information_schema');
-          schemasVisible = schemas.length > 0;
-        } catch { /* no access */ }
+          canListSchemas = true;
+        } catch { /* no access at catalog level */ }
 
         // Check if tables are visible in each schema
         const schemaDetails = await Promise.all(schemas.map(async (sch) => {
@@ -137,8 +139,9 @@ export function registerRoutes(app) {
         }));
 
         const schemasNeedingGrant = schemaDetails.filter(s => !s.tablesVisible);
-        const accessible = schemasVisible && schemasNeedingGrant.length === 0;
-        return { name: cat.name, accessible, schemasVisible, schemas: schemaDetails, schemasNeedingGrant };
+        // Accessible if we can list schemas (even if catalog is empty) AND all visible schemas allow table listing
+        const accessible = canListSchemas && schemasNeedingGrant.length === 0;
+        return { name: cat.name, accessible, canListSchemas, schemas: schemaDetails, schemasNeedingGrant };
       }));
 
       // Generate targeted per-schema grants for schemas where tables aren't visible,
@@ -146,7 +149,7 @@ export function registerRoutes(app) {
       const grantLines = [];
       for (const cat of results) {
         if (!cat.accessible && spId) {
-          if (!cat.schemasVisible) {
+          if (!cat.canListSchemas) {
             // Can't even list schemas — need catalog-level grants
             grantLines.push(
               `GRANT USE CATALOG ON CATALOG \`${cat.name}\` TO \`${spId}\`;`,
