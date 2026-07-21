@@ -149,20 +149,12 @@ export function registerRoutes(app) {
       const grantLines = [];
       for (const cat of results) {
         if (!cat.accessible && spId) {
-          if (!cat.canListSchemas) {
-            // Can't even list schemas — need catalog-level grants
-            grantLines.push(
-              `GRANT USE CATALOG ON CATALOG \`${cat.name}\` TO \`${spId}\`;`,
-              `GRANT BROWSE ON CATALOG \`${cat.name}\` TO \`${spId}\`;`
-            );
-          }
-          // Grant USE SCHEMA per schema where tables aren't visible
-          for (const sch of cat.schemasNeedingGrant) {
-            // SELECT on schema lets the SP list and browse tables (USE SCHEMA alone is not enough)
-            grantLines.push(
-              `GRANT SELECT ON SCHEMA \`${cat.name}\`.\`${sch.name}\` TO \`${spId}\`;`
-            );
-          }
+          // Grant catalog-level access — SELECT ON CATALOG cascades to all current and future schemas
+          grantLines.push(
+            `GRANT USE CATALOG ON CATALOG \`${cat.name}\` TO \`${spId}\`;`,
+            `GRANT BROWSE ON CATALOG \`${cat.name}\` TO \`${spId}\`;`,
+            `GRANT SELECT ON CATALOG \`${cat.name}\` TO \`${spId}\`;`
+          );
         }
       }
 

@@ -820,31 +820,19 @@ except: print('')
         --json "{\"warehouse_id\":\"${WAREHOUSE_ID}\",\"statement\":\"GRANT BROWSE ON CATALOG \`${CATALOG}\` TO \`${SP_UUID}\`\",\"wait_timeout\":\"10s\"}" \
         2>/dev/null >/dev/null || true
 
-      # 3. Grant USE SCHEMA per schema (required for table listing via UC REST API)
-      SCHEMAS_IN_CAT=$(databricks api get "/api/2.1/unity-catalog/schemas?catalog_name=${CATALOG}" \
-        --profile "$PROFILE" 2>/dev/null \
-        | python3 -c "
-import sys,json
-try:
-    d=json.load(sys.stdin)
-    names=[s['name'] for s in d.get('schemas',[]) if s.get('name') not in ('information_schema',)]
-    print(' '.join(names))
-except: print('')
-" 2>/dev/null || true)
+      # 3. Grant SELECT ON CATALOG — cascades to all current and future schemas/tables
+      #    This is the key privilege that allows the SP to list schemas and browse tables
+      #    via the UC REST API without needing per-schema grants.
+      SELECT_RESULT=$(databricks api post "/api/2.0/sql/statements" \
+        --profile "$PROFILE" \
+        --json "{\"warehouse_id\":\"${WAREHOUSE_ID}\",\"statement\":\"GRANT SELECT ON CATALOG \`${CATALOG}\` TO \`${SP_UUID}\`\",\"wait_timeout\":\"10s\"}" \
+        2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('status',{}).get('state','UNKNOWN'))" 2>/dev/null || echo "ERROR")
 
-      SCHEMA_GRANT_OK=0; SCHEMA_GRANT_FAIL=0
-      for SCHEMA in $SCHEMAS_IN_CAT; do
-        # Grant SELECT on schema — required for the SP to list/browse tables in the Import modal
-        SR=$(databricks api post "/api/2.0/sql/statements" \
-          --profile "$PROFILE" \
-          --json "{\"warehouse_id\":\"${WAREHOUSE_ID}\",\"statement\":\"GRANT SELECT ON SCHEMA \`${CATALOG}\`.\`${SCHEMA}\` TO \`${SP_UUID}\`\",\"wait_timeout\":\"10s\"}" \
-          2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('status',{}).get('state','UNKNOWN'))" 2>/dev/null || echo "ERROR")
-        [[ "$SR" == "SUCCEEDED" ]] && SCHEMA_GRANT_OK=$((SCHEMA_GRANT_OK+1)) || SCHEMA_GRANT_FAIL=$((SCHEMA_GRANT_FAIL+1))
-      done
-
-      if [[ "$GRANT_RESULT" == "SUCCEEDED" ]]; then
-        ok "  ✓ ${CATALOG} — USE CATALOG granted, SELECT on ${SCHEMA_GRANT_OK} schema(s)"
-        [[ $SCHEMA_GRANT_FAIL -gt 0 ]] && warn "  ⚠ ${CATALOG} — ${SCHEMA_GRANT_FAIL} schema(s) could not be granted (may be owned by another user — use wizard to fix)"
+      if [[ "$GRANT_RESULT" == "SUCCEEDED" && "$SELECT_RESULT" == "SUCCEEDED" ]]; then
+        ok "  ✓ ${CATALOG} — USE CATALOG + BROWSE + SELECT granted (covers all schemas)"
+      elif [[ "$GRANT_RESULT" == "SUCCEEDED" ]]; then
+        ok "  ✓ ${CATALOG} — USE CATALOG + BROWSE granted"
+        warn "  ⚠ ${CATALOG} — SELECT grant failed (may need manual grant if catalog is owned by another user)"
       else
         warn "  ⚠ ${CATALOG} — USE CATALOG grant failed. Use the onboarding wizard to generate the correct SQL."
         GRANT_ERRORS=$((GRANT_ERRORS + 1))
