@@ -7,8 +7,9 @@
 # ─────────────────────────────────────────────────────────────────────────────
 
 command:
-  - "node"
-  - "app.js"
+  - "bash"
+  - "-c"
+  - "npm install --include=dev && npm run build && node app.js"
 
 env:
   # ── Lakebase (required) ───────────────────────────────────────────────────
