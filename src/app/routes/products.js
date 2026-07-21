@@ -531,7 +531,7 @@ export function registerRoutes(app) {
         if (spId) {
           needsGrant = true;
           const databricksHost = (process.env.DATABRICKS_HOST || '').replace(/\/$/, '');
-          grantSql = `GRANT USE CATALOG ON CATALOG \`${catalog}\` TO \`${spId}\`;\nGRANT SELECT ON CATALOG \`${catalog}\` TO \`${spId}\`;`;
+          grantSql = `GRANT USE CATALOG ON CATALOG \`${catalog}\` TO \`${spId}\`;\nGRANT USE SCHEMA ON CATALOG \`${catalog}\` TO \`${spId}\`;\nGRANT SELECT ON CATALOG \`${catalog}\` TO \`${spId}\`;`;
           sqlEditorUrl = databricksHost ? `${databricksHost}/sql/editor` : '';
         }
       }
