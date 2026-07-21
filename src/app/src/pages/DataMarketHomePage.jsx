@@ -60,7 +60,7 @@ export function DataMarketHomePage({ onNavigate, onOpenProduct }) {
   const [featuredProducts, setFeaturedProducts] = useState([])
   const [recentlyAccessed, setRecentlyAccessed] = useState([])
   const [chips, setChips] = useState([])
-  const { persona, hasAccess, myRequests } = usePersona()
+  const { persona, hasAccess, myRequests, identityLoading } = usePersona()
   const { searchChips: configChips, appLogoUrl } = useAppConfig()
 
   // Load featured (3 most recently published products)
@@ -146,12 +146,15 @@ export function DataMarketHomePage({ onNavigate, onOpenProduct }) {
           <img src={appLogoUrl || '/datamarket-logo.svg'} alt="DataMarket" className="w-16 h-16 rounded-full shadow-md ring-2 ring-gray-200" />
         </div>
         <h1 className="text-3xl sm:text-4xl font-bold text-gray-900">
-          Hi {(() => {
-            const name = persona.name || '';
-            // If name looks like an email, use the local part before @
-            const display = name.includes('@') ? name.split('@')[0] : name.split(' ')[0];
-            return display || name;
-          })()},
+          {identityLoading ? (
+            <span className="inline-block w-48 h-9 bg-gray-200 rounded animate-pulse" />
+          ) : (
+            <>Hi {(() => {
+              const name = persona.name || '';
+              const display = name.includes('@') ? name.split('@')[0] : name.split(' ')[0];
+              return display || name;
+            })()},</>
+          )}
         </h1>
         <p className="text-xl text-gray-500">Search for data or ask a question in plain English.</p>
 
