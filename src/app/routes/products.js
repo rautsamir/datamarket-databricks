@@ -522,7 +522,7 @@ export function registerRoutes(app) {
         } catch (_) {}
       }
 
-      // If still empty, offer the grant SQL — the SP needs SELECT on the schema to list tables
+      // If still empty, guide the user to grant at catalog level — covers all schemas/tables now and future
       let needsGrant = false;
       let grantSql = '';
       let sqlEditorUrl = '';
@@ -531,7 +531,7 @@ export function registerRoutes(app) {
         if (spId) {
           needsGrant = true;
           const databricksHost = (process.env.DATABRICKS_HOST || '').replace(/\/$/, '');
-          grantSql = `GRANT SELECT ON SCHEMA \`${catalog}\`.\`${schema}\` TO \`${spId}\`;`;
+          grantSql = `GRANT USE CATALOG ON CATALOG \`${catalog}\` TO \`${spId}\`;\nGRANT SELECT ON CATALOG \`${catalog}\` TO \`${spId}\`;`;
           sqlEditorUrl = databricksHost ? `${databricksHost}/sql/editor` : '';
         }
       }
