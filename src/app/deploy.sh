@@ -808,33 +808,26 @@ except: print('')
     info "Found catalogs: ${CATALOGS}"
     GRANT_ERRORS=0
     for CATALOG in $CATALOGS; do
-      # 1. Grant USE CATALOG
+      # USE CATALOG — required to enter the catalog
       GRANT_RESULT=$(databricks api post "/api/2.0/sql/statements" \
         --profile "$PROFILE" \
         --json "{\"warehouse_id\":\"${WAREHOUSE_ID}\",\"statement\":\"GRANT USE CATALOG ON CATALOG \`${CATALOG}\` TO \`${SP_UUID}\`\",\"wait_timeout\":\"10s\"}" \
         2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('status',{}).get('state','UNKNOWN'))" 2>/dev/null || echo "ERROR")
 
-      # 2. Grant BROWSE so the SP can list all schemas/tables metadata
-      databricks api post "/api/2.0/sql/statements" \
-        --profile "$PROFILE" \
-        --json "{\"warehouse_id\":\"${WAREHOUSE_ID}\",\"statement\":\"GRANT BROWSE ON CATALOG \`${CATALOG}\` TO \`${SP_UUID}\`\",\"wait_timeout\":\"10s\"}" \
-        2>/dev/null >/dev/null || true
-
-      # 3. Grant SELECT ON CATALOG — cascades to all current and future schemas/tables
-      #    This is the key privilege that allows the SP to list schemas and browse tables
-      #    via the UC REST API without needing per-schema grants.
+      # SELECT ON CATALOG — cascades to ALL current and future schemas/tables in this catalog.
+      # No per-schema grants needed; adding new schemas/tables is covered automatically.
       SELECT_RESULT=$(databricks api post "/api/2.0/sql/statements" \
         --profile "$PROFILE" \
         --json "{\"warehouse_id\":\"${WAREHOUSE_ID}\",\"statement\":\"GRANT SELECT ON CATALOG \`${CATALOG}\` TO \`${SP_UUID}\`\",\"wait_timeout\":\"10s\"}" \
         2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('status',{}).get('state','UNKNOWN'))" 2>/dev/null || echo "ERROR")
 
       if [[ "$GRANT_RESULT" == "SUCCEEDED" && "$SELECT_RESULT" == "SUCCEEDED" ]]; then
-        ok "  ✓ ${CATALOG} — USE CATALOG + BROWSE + SELECT granted (covers all schemas)"
+        ok "  ✓ ${CATALOG} — USE CATALOG + SELECT granted (covers all schemas, now and future)"
       elif [[ "$GRANT_RESULT" == "SUCCEEDED" ]]; then
-        ok "  ✓ ${CATALOG} — USE CATALOG + BROWSE granted"
-        warn "  ⚠ ${CATALOG} — SELECT grant failed (may need manual grant if catalog is owned by another user)"
+        ok "  ✓ ${CATALOG} — USE CATALOG granted"
+        warn "  ⚠ ${CATALOG} — SELECT grant failed (catalog may be owned by another user — run manually)"
       else
-        warn "  ⚠ ${CATALOG} — USE CATALOG grant failed. Use the onboarding wizard to generate the correct SQL."
+        warn "  ⚠ ${CATALOG} — grant failed. Use the onboarding wizard to generate the correct SQL."
         GRANT_ERRORS=$((GRANT_ERRORS + 1))
       fi
     done
