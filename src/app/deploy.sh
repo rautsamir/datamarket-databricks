@@ -280,6 +280,23 @@ if [[ "${BUNDLE_DEPLOY_DONE:-false}" != "true" ]]; then
 
 step 3 "Detecting Lakebase configuration"
 
+# ── Pre-flight: verify token is fresh before the long Lakebase operation ──────
+# Lakebase creation takes 2–3 min. An expired token mid-way leaves the project
+# in a broken state. Fail fast here rather than halfway through provisioning.
+TOKEN_CHECK=$(databricks auth token --profile "$PROFILE" \
+  | python3 -c "import sys,json; print(json.load(sys.stdin).get('access_token',''))" 2>/dev/null || true)
+if [[ -z "$TOKEN_CHECK" ]]; then
+  fail "$(cat <<MSG
+CLI auth token is expired or invalid for profile '${PROFILE}'.
+Re-authenticate first, then re-run deploy:
+
+  databricks auth login --host ${DATABRICKS_HOST} --profile ${PROFILE}
+  ./deploy.sh --profile ${PROFILE}
+MSG
+)"
+fi
+ok "Auth token is valid"
+
 LAKEBASE_HOST=""
 LAKEBASE_ENDPOINT=""
 LAKEBASE_CACHE_FILE="${SCRIPT_DIR}/.lakebase-${APP_NAME}.cache"
@@ -347,12 +364,32 @@ if [[ -z "$BRANCH_NAME" ]]; then
   done
   echo ""
   if [[ -z "$BRANCH_NAME" ]]; then
-    warn "Lakebase branch not ready after 3 min."
-    warn "This can happen if a previous deploy left the project in a broken state."
-    warn "Options:"
-    warn "  1. Try a different project name: ./deploy.sh --lakebase-project datamarket-app"
-    warn "  2. Delete the project from the UI (Compute → Lakebase) and re-run"
-    fail "Lakebase branch unavailable for project '${LAKEBASE_PROJECT}'. See options above."
+    warn "Lakebase branch not ready after 3 min — project '${LAKEBASE_PROJECT}' is stuck."
+    warn "This usually means a previous deploy was interrupted (e.g. auth token expired)."
+    info "Auto-recovering: deleting stuck project and recreating..."
+
+    DEL_OUT=$(databricks postgres delete-project "projects/${LAKEBASE_PROJECT}" \
+      --profile "$PROFILE" 2>&1 || true)
+    if echo "$DEL_OUT" | grep -qi "error\|INTERNAL\|not found"; then
+      warn "Could not auto-delete stuck project: ${DEL_OUT:0:150}"
+      warn "Delete manually: Compute → Lakebase → ${LAKEBASE_PROJECT} → Settings → Delete project"
+      warn "Then re-run: ./deploy.sh --profile ${PROFILE}"
+      fail "Lakebase branch unavailable and auto-recovery failed. See above."
+    fi
+    ok "Stuck project deleted — recreating..."
+    sleep 5
+
+    databricks postgres create-project "$LAKEBASE_PROJECT" \
+      --profile "$PROFILE" -o json 2>&1 | head -3 || true
+
+    info "Waiting for Lakebase branch to be ready (attempt 2)..."
+    for i in $(seq 1 36); do
+      BRANCH_NAME=$(_get_branch)
+      [[ -n "$BRANCH_NAME" ]] && { ok "Branch ready: ${BRANCH_NAME}"; break; }
+      echo -n "."; sleep 5
+    done
+    echo ""
+    [[ -z "$BRANCH_NAME" ]] && fail "Lakebase branch still unavailable after recreation. Check Compute → Lakebase in the UI."
   fi
 fi
 
