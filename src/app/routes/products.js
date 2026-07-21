@@ -461,6 +461,10 @@ export function registerRoutes(app) {
         `SELECT uc_full_name FROM data_products WHERE uc_full_name IS NOT NULL AND uc_full_name != ''`);
       const registered = new Set(existing.map(r => r.uc_full_name));
 
+      // Internal Databricks system table prefixes to exclude from the Import modal
+      const INTERNAL_TABLE_PREFIXES = ['__materialization_mat_', '__apply_changes_', 'event_log_', '__dlt_'];
+      const isInternalTable = name => INTERNAL_TABLE_PREFIXES.some(p => name.startsWith(p));
+
       let tables = [];
 
       const warehouseId = getSetting('sql_warehouse_id', '');
@@ -475,11 +479,13 @@ export function registerRoutes(app) {
           if (stmt.data?.status?.state === 'SUCCEEDED') {
             const rows = stmt.data.result?.data_array || [];
             // rows: [table_name, table_type]
-            tables = rows.map(r => {
-              const tName = r[0];
-              const full = `${catalog}.${schema}.${tName}`;
-              return { full_name: full, table_name: tName, schema_name: schema, catalog_name: catalog, table_type: r[1], registered: registered.has(full) };
-            });
+            tables = rows
+              .filter(r => !isInternalTable(r[0]))
+              .map(r => {
+                const tName = r[0];
+                const full = `${catalog}.${schema}.${tName}`;
+                return { full_name: full, table_name: tName, schema_name: schema, catalog_name: catalog, table_type: r[1], registered: registered.has(full) };
+              });
           }
         } catch (e) {
           console.warn('[uc-tables-browse] information_schema query failed:', e.message);
@@ -495,11 +501,13 @@ export function registerRoutes(app) {
             });
             if (stmt.data?.status?.state === 'SUCCEEDED') {
               const rows = stmt.data.result?.data_array || [];
-              tables = rows.map(r => {
-                const tName = r[1] || r[0];
-                const full = `${catalog}.${schema}.${tName}`;
-                return { full_name: full, table_name: tName, schema_name: schema, catalog_name: catalog, registered: registered.has(full) };
-              });
+              tables = rows
+                .filter(r => !isInternalTable(r[1] || r[0]))
+                .map(r => {
+                  const tName = r[1] || r[0];
+                  const full = `${catalog}.${schema}.${tName}`;
+                  return { full_name: full, table_name: tName, schema_name: schema, catalog_name: catalog, registered: registered.has(full) };
+                });
             }
           } catch (e) {
             console.warn('[uc-tables-browse] SHOW TABLES failed:', e.message);
@@ -513,12 +521,14 @@ export function registerRoutes(app) {
           const { host, token } = await getUcAuth();
           const data = await ucApiRequest(host, token,
             `/api/2.1/unity-catalog/tables?catalog_name=${encodeURIComponent(catalog)}&schema_name=${encodeURIComponent(schema)}`);
-          tables = (data.tables || []).map(t => ({
-            full_name: t.full_name, table_name: t.name,
-            schema_name: schema, catalog_name: catalog,
-            table_type: t.table_type, comment: t.comment,
-            registered: registered.has(t.full_name),
-          }));
+          tables = (data.tables || [])
+            .filter(t => !isInternalTable(t.name))
+            .map(t => ({
+              full_name: t.full_name, table_name: t.name,
+              schema_name: schema, catalog_name: catalog,
+              table_type: t.table_type, comment: t.comment,
+              registered: registered.has(t.full_name),
+            }));
         } catch (_) {}
       }
 
