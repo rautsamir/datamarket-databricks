@@ -489,6 +489,11 @@ if [[ -d "${SCRIPT_DIR}/routes" ]]; then
     --overwrite --profile "$PROFILE" 2>&1 | tail -2
 fi
 
+if [[ -d "${SCRIPT_DIR}/lib" ]]; then
+  databricks workspace import-dir "${SCRIPT_DIR}/lib" "${WORKSPACE_PATH}/lib" \
+    --overwrite --profile "$PROFILE" 2>&1 | tail -2
+fi
+
 # Upload remaining config files
 for f in package.json manifest.yaml app.yaml; do
   [[ -f "${SCRIPT_DIR}/${f}" ]] && \
