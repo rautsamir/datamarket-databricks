@@ -92,18 +92,6 @@ The script handles everything automatically: workspace URL detection, Lakebase c
 
 Run `./deploy.sh --help` for all flags.
 
-### Databricks Marketplace install _(listing in progress)_
-
-> The Marketplace listing is not yet published. This section describes the intended install experience once the listing is live. The technical groundwork (self-building `manifest.yaml`, setup notebook) is complete and verified.
-
-When installing from the Marketplace listing, no CLI or pre-build step is required. The platform handles everything:
-
-1. **Select resources** — choose your Lakebase Autoscaling project and a SQL Warehouse when prompted at install time
-2. **Run the setup notebook** — `scripts/setup_notebook.py` initialises the Lakebase schema (one-time, run before or after install)
-3. **Open the app** — the app builds its frontend (`npm install` + `vite build`) on first start automatically, then serves normally
-
-The `manifest.yaml` startup command (`npm install --include=dev && npm run build && node app.js`) means the Marketplace installer gets a working app from raw source with no manual build step. First cold start takes ~2 minutes while dependencies are installed and the React frontend is compiled.
-
 ---
 
 ## After Deploying
