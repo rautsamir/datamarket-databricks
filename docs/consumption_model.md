@@ -9,8 +9,8 @@ This solution is built entirely on Databricks platform services. Every interacti
 | **Application Hosting** | Databricks Apps (serverless) | Zero infra management, scales to zero |
 | **Data Governance** | Unity Catalog | RBAC, lineage, tagging, Delta tables |
 | **OLTP Workflows** | Lakebase (managed Postgres) | Access requests, approvals, audit log |
-| **Natural Language Analytics** | Genie Spaces | NL → SQL on Gold layer tables |
-| **Document Q&A** | Knowledge Assistant (RAG) | Answers from docs stored in UC Volumes |
+| **Ask AI / NL Discovery** | Foundation Model APIs (Llama 3.3-70B) | Natural language → catalog answers |
+| **Genie Spaces** | Genie (optional) | NL → SQL on approved datasets; linked per product |
 | **Dashboards** | AI/BI Dashboards (Lakeview) | Serverless SQL Warehouse backed |
 | **AI Metadata** | Foundation Model APIs (`ai_gen`) | AI-generated descriptions on data products |
 
@@ -19,7 +19,7 @@ This solution is built entirely on Databricks platform services. Every interacti
 1. **All compute stays on Databricks** — no external API calls for analytics
 2. **Unity Catalog is the governance layer** — RBAC enforced at the data layer, not just the app
 3. **Lakebase bridges OLTP + Lakehouse** — transactional workflows (approvals) sync back into Delta
-4. **Self-service scales naturally** — more users = more SQL Warehouse, Genie, and model serving DBUs
+4. **Self-service scales naturally** — more users = more SQL Warehouse, FMAPI, and model serving DBUs
 
 ## Deployment Notes
 
