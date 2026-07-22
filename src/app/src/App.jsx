@@ -51,7 +51,7 @@ function AppInner() {
       case 'discover':
       case 'data':
       case 'catalog':      return <DataMarketCatalogPage onOpenProduct={openProduct} initialSearch={pageProps.search || ''} onNavigate={navigate} />
-      // Ask AI (Genie explorer)
+      // Ask AI (FMAPI)
       case 'ask-ai':
       case 'ai-explorer':  return <AIExplorerPage initialQuestion={pageProps.question || ''} onNavigate={navigate} onOpenProduct={openProduct} />
       // Insights (dashboard gallery)
