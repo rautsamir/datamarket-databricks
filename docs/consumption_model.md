@@ -10,7 +10,6 @@ This solution is built entirely on Databricks platform services. Every interacti
 | **Data Governance** | Unity Catalog | RBAC, lineage, tagging, Delta tables |
 | **OLTP Workflows** | Lakebase (managed Postgres) | Access requests, approvals, audit log |
 | **Ask AI / NL Discovery** | Foundation Model APIs (Llama 3.3-70B) | Natural language → catalog answers |
-| **Genie Spaces** | Genie (optional) | NL → SQL on approved datasets; linked per product |
 | **Dashboards** | AI/BI Dashboards (Lakeview) | Serverless SQL Warehouse backed |
 | **AI Metadata** | Foundation Model APIs (`ai_gen`) | AI-generated descriptions on data products |
 
