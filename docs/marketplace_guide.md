@@ -77,7 +77,7 @@ Once installed, open the app URL Databricks provides.
 2. Go to **Manage → Settings** to configure:
    - Portal name and tagline (displayed in the top navigation bar)
    - Logo URL (full URL to an image, or leave blank to hide)
-   - Genie Space ID (enables the Ask AI feature — paste the ID from your Genie Space URL)
+   - Genie Space ID (optional — links a Genie Space as the query interface for approved datasets; Ask AI uses Databricks Foundation Models independently)
    - SQL Warehouse ID (if not set at install — needed for live UC grant execution)
 3. Click **Save Settings** — changes take effect immediately, no redeployment needed
 

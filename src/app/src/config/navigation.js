@@ -62,7 +62,7 @@ export const primaryNavigation = [
     href: 'ai-explorer',
     icon: Bot,
     badge: 'AI',
-    description: 'Natural language data exploration powered by Genie',
+    description: 'Natural language data exploration powered by Databricks Foundation Models',
     disabled: false
   },
   {
