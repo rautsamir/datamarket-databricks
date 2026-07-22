@@ -92,7 +92,9 @@ The script handles everything automatically: workspace URL detection, Lakebase c
 
 Run `./deploy.sh --help` for all flags.
 
-### Databricks Marketplace install
+### Databricks Marketplace install _(listing in progress)_
+
+> The Marketplace listing is not yet published. This section describes the intended install experience once the listing is live. The technical groundwork (self-building `manifest.yaml`, setup notebook) is complete and verified.
 
 When installing from the Marketplace listing, no CLI or pre-build step is required. The platform handles everything:
 
