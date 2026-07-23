@@ -495,7 +495,7 @@ if [[ -d "${SCRIPT_DIR}/lib" ]]; then
 fi
 
 # Upload remaining config files
-for f in package.json manifest.yaml app.yaml; do
+for f in package.json app.yaml; do
   [[ -f "${SCRIPT_DIR}/${f}" ]] && \
     databricks workspace import "${WORKSPACE_PATH}/${f}" \
       --file "${SCRIPT_DIR}/${f}" --format AUTO --overwrite \
