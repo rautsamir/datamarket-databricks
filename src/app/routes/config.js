@@ -144,15 +144,12 @@ export function registerRoutes(app) {
         return { name: cat.name, accessible, canListSchemas, schemas: schemaDetails, schemasNeedingGrant };
       }));
 
-      // Generate catalog-level grants — USE CATALOG + SELECT ON CATALOG covers all schemas and tables,
-      // including any added in the future. No per-schema grants needed.
+      // Only generate grants for catalogs the SP can already enumerate schemas in but tables are blocked.
+      // "No access" catalogs (canListSchemas=false) must be granted by the catalog owner — the SP
+      // can't self-grant on catalogs it can't see, and attempting to do so will fail.
       const grantLines = [];
       for (const cat of results) {
-        if (!cat.accessible && spId) {
-          // 3 grants per catalog — all cascade to current and future schemas/tables:
-          // USE CATALOG: enter the catalog
-          // USE SCHEMA: enumerate schemas and tables via REST API (required for Import modal)
-          // SELECT: read table data (required for import and preview)
+        if (cat.canListSchemas && cat.schemasNeedingGrant?.length > 0 && spId) {
           grantLines.push(
             `GRANT USE CATALOG ON CATALOG \`${cat.name}\` TO \`${spId}\`;`,
             `GRANT USE SCHEMA ON CATALOG \`${cat.name}\` TO \`${spId}\`;`,
@@ -161,7 +158,10 @@ export function registerRoutes(app) {
         }
       }
 
-      const needsGrant = results.filter(c => !c.accessible);
+      // needsGrant = catalogs where SP can see schemas but not tables (auto-grantable)
+      // noAccess   = catalogs SP cannot enumerate at all (requires catalog owner to grant)
+      const needsGrant = results.filter(c => c.canListSchemas && c.schemasNeedingGrant?.length > 0);
+      const noAccess   = results.filter(c => !c.canListSchemas);
       const grantSql = grantLines.join('\n');
 
       const sqlEditorUrl = databricksHost ? `${databricksHost}/sql/editor` : '';
@@ -170,6 +170,7 @@ export function registerRoutes(app) {
         spId,
         catalogs: results,
         needsGrant: needsGrant.map(c => c.name),
+        noAccess: noAccess.map(c => c.name),
         grantSql,
         sqlEditorUrl,
         allAccessible: needsGrant.length === 0,
@@ -192,14 +193,31 @@ export function registerRoutes(app) {
       const { catalogs: requestedCatalogs } = req.body || {};
 
       const { host, token } = await getUcAuth();
-      const catalogData = await ucApiRequest(host, token, '/api/2.1/unity-catalog/catalogs');
-      const allCatalogs = (catalogData.catalogs || [])
-        .map(c => c.name)
-        .filter(n => !['system', '__databricks_internal', 'hive_metastore'].includes(n));
 
-      const targets = requestedCatalogs?.length
-        ? allCatalogs.filter(n => requestedCatalogs.includes(n))
-        : allCatalogs;
+      // If caller specified catalogs, use those. Otherwise derive grantable catalogs:
+      // only ones the SP can enumerate schemas in (canListSchemas=true) but not tables.
+      // We cannot self-grant on catalogs the SP cannot see at all.
+      let targets;
+      if (requestedCatalogs?.length) {
+        targets = requestedCatalogs;
+      } else {
+        const catalogData = await ucApiRequest(host, token, '/api/2.1/unity-catalog/catalogs');
+        const allCatalogs = (catalogData.catalogs || [])
+          .map(c => c.name)
+          .filter(n => !['system', '__databricks_internal', 'hive_metastore'].includes(n));
+
+        // Check which ones the SP can enumerate (schemas API succeeds)
+        const checkResults = await Promise.all(allCatalogs.map(async name => {
+          try {
+            const d = await ucApiRequest(host, token,
+              `/api/2.1/unity-catalog/schemas?catalog_name=${encodeURIComponent(name)}`);
+            const schemas = (d.schemas || []).filter(s => s.name !== 'information_schema');
+            return { name, canList: true, hasSchemas: schemas.length > 0 };
+          } catch { return { name, canList: false }; }
+        }));
+        // Only grant to catalogs we can enumerate — skip no-access ones
+        targets = checkResults.filter(c => c.canList).map(c => c.name);
+      }
 
       const results = [];
       for (const catalog of targets) {

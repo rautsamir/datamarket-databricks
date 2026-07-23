@@ -347,15 +347,15 @@ export function FirstRunWizard({ onDismiss }) {
                       </div>
                     )}
 
-                    {/* Grant section */}
-                    {!accessCheck.allAccessible && accessCheck.grantSql && (
+                    {/* Grant section — only when there are catalogs we can actually fix */}
+                    {!accessCheck.allAccessible && (accessCheck.needsGrant?.length > 0 || accessCheck.noAccess?.length > 0) && (
                       <div className="space-y-3">
-                        {/* Auto-grant button */}
+                        {/* Auto-grant button — only shown when there's something we can grant */}
                         <div className="bg-violet-50 border border-violet-100 rounded-xl p-4 space-y-3">
                           <div>
                             <p className="text-sm font-medium text-violet-900">Grant access automatically</p>
                             <p className="text-xs text-violet-600 mt-0.5">
-                              Runs <code className="bg-violet-100 px-1 rounded">USE CATALOG + USE SCHEMA + SELECT</code> on each catalog — cascades to all schemas and future tables.
+                              Runs <code className="bg-violet-100 px-1 rounded">USE CATALOG + USE SCHEMA + SELECT</code> on {accessCheck.needsGrant?.length > 0 ? `${accessCheck.needsGrant.length} catalog${accessCheck.needsGrant.length !== 1 ? 's' : ''} the SP can already enumerate` : 'applicable catalogs'} — cascades to all current and future schemas.
                             </p>
                           </div>
                           {/* Grant results */}
@@ -375,13 +375,20 @@ export function FirstRunWizard({ onDismiss }) {
                           {grantResults?.error && (
                             <p className="text-xs text-red-600">{grantResults.error}</p>
                           )}
-                          <button onClick={runGrants} disabled={granting || accessLoading}
-                            className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white transition-opacity disabled:opacity-40"
-                            style={{ backgroundColor: BLUE }}>
-                            {granting
-                              ? <><RefreshCw className="h-4 w-4 animate-spin" /> Granting…</>
-                              : <><ShieldCheck className="h-4 w-4" /> Grant access to {accessCheck.needsGrant?.length} catalog{accessCheck.needsGrant?.length !== 1 ? 's' : ''}</>}
-                          </button>
+                          <div className="flex items-center gap-3 flex-wrap">
+                            <button onClick={runGrants} disabled={granting || accessLoading || !accessCheck.needsGrant?.length}
+                              className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white transition-opacity disabled:opacity-40"
+                              style={{ backgroundColor: BLUE }}>
+                              {granting
+                                ? <><RefreshCw className="h-4 w-4 animate-spin" /> Granting…</>
+                                : <><ShieldCheck className="h-4 w-4" /> Grant access to {accessCheck.needsGrant?.length} catalog{accessCheck.needsGrant?.length !== 1 ? 's' : ''}</>}
+                            </button>
+                            {accessCheck.noAccess?.length > 0 && (
+                              <p className="text-xs text-gray-400">
+                                {accessCheck.noAccess.length} catalog{accessCheck.noAccess.length !== 1 ? 's' : ''} require owner to grant access first
+                              </p>
+                            )}
+                          </div>
                         </div>
 
                         {/* Manual fallback */}
@@ -390,8 +397,8 @@ export function FirstRunWizard({ onDismiss }) {
                             Or run manually in SQL Editor
                           </summary>
                           <div className="mt-2 space-y-2">
-                            <div className="relative bg-gray-950 rounded-xl p-4 pr-10">
-                              <pre className="text-xs text-emerald-300 font-mono whitespace-pre-wrap leading-relaxed overflow-x-auto">
+                            <div className="relative bg-gray-950 rounded-xl p-4 pr-10 overflow-hidden">
+                              <pre className="text-xs text-emerald-300 font-mono whitespace-pre leading-relaxed overflow-auto max-h-48">
                                 {accessCheck.grantSql}
                               </pre>
                               <button onClick={copyGrantSql} title="Copy SQL"
