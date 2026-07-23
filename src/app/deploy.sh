@@ -558,8 +558,8 @@ fi
 if [[ -z "$SP_UUID" ]]; then
   warn "Skipping Lakebase grants — you will need to run these manually:"
   echo ""
-  echo "  GRANT USAGE  ON SCHEMA ${APP_NAME} TO \"<your-sp-uuid>\";"
-  echo "  GRANT CREATE ON SCHEMA ${APP_NAME} TO \"<your-sp-uuid>\";"
+  echo "  GRANT USAGE  ON SCHEMA datamarket TO \"<your-sp-uuid>\";"
+  echo "  GRANT CREATE ON SCHEMA datamarket TO \"<your-sp-uuid>\";"
   echo ""
   warn "Until this is done, the app will start but data will not persist."
 else
@@ -580,7 +580,7 @@ else
     PG_CONN="host=${LAKEBASE_HOST} port=5432 dbname=databricks_postgres sslmode=require user=${DATABRICKS_USER:-${ADMIN_EMAIL}}"
 
     SCHEMA_OUT=$(PGPASSWORD="$PG_TOKEN" psql "$PG_CONN" \
-      -c "CREATE SCHEMA IF NOT EXISTS ${APP_NAME}; SET search_path TO ${APP_NAME};" \
+      -c "CREATE SCHEMA IF NOT EXISTS datamarket; SET search_path TO datamarket;" \
       2>&1 || true)
     if echo "$SCHEMA_OUT" | grep -qi "FATAL\|error:"; then
       warn "Lakebase connection failed during schema create:"
@@ -669,9 +669,9 @@ except: print('')
           databricks postgres delete-role "$WRONG_ROLE_NAME" --profile "$PROFILE" 2>/dev/null || true
         # Also clean up the manually-created postgres role if it exists
         PGPASSWORD="$PG_TOKEN" psql "$PG_CONN" \
-          -c "REVOKE ALL ON ALL TABLES IN SCHEMA ${APP_NAME} FROM \"${SP_UUID}\"; \
-              REVOKE ALL ON ALL SEQUENCES IN SCHEMA ${APP_NAME} FROM \"${SP_UUID}\"; \
-              REVOKE ALL ON SCHEMA ${APP_NAME} FROM \"${SP_UUID}\"; \
+          -c "REVOKE ALL ON ALL TABLES IN SCHEMA datamarket FROM \"${SP_UUID}\"; \
+              REVOKE ALL ON ALL SEQUENCES IN SCHEMA datamarket FROM \"${SP_UUID}\"; \
+              REVOKE ALL ON SCHEMA datamarket FROM \"${SP_UUID}\"; \
               DROP ROLE IF EXISTS \"${SP_UUID}\";" \
           2>/dev/null || true
       fi
@@ -694,12 +694,12 @@ except: print('')
       "host=${LAKEBASE_HOST} port=5432 dbname=databricks_postgres sslmode=require user=${DATABRICKS_USER:-${ADMIN_EMAIL}}" \
       -c "
         GRANT CONNECT ON DATABASE databricks_postgres TO \"${SP_UUID}\";
-        GRANT USAGE  ON SCHEMA ${APP_NAME} TO \"${SP_UUID}\";
-        GRANT CREATE ON SCHEMA ${APP_NAME} TO \"${SP_UUID}\";
-        GRANT ALL PRIVILEGES ON ALL TABLES    IN SCHEMA ${APP_NAME} TO \"${SP_UUID}\";
-        GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA ${APP_NAME} TO \"${SP_UUID}\";
-        ALTER DEFAULT PRIVILEGES IN SCHEMA ${APP_NAME} GRANT ALL ON TABLES    TO \"${SP_UUID}\";
-        ALTER DEFAULT PRIVILEGES IN SCHEMA ${APP_NAME} GRANT ALL ON SEQUENCES TO \"${SP_UUID}\";
+        GRANT USAGE  ON SCHEMA datamarket TO \"${SP_UUID}\";
+        GRANT CREATE ON SCHEMA datamarket TO \"${SP_UUID}\";
+        GRANT ALL PRIVILEGES ON ALL TABLES    IN SCHEMA datamarket TO \"${SP_UUID}\";
+        GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA datamarket TO \"${SP_UUID}\";
+        ALTER DEFAULT PRIVILEGES IN SCHEMA datamarket GRANT ALL ON TABLES    TO \"${SP_UUID}\";
+        ALTER DEFAULT PRIVILEGES IN SCHEMA datamarket GRANT ALL ON SEQUENCES TO \"${SP_UUID}\";
       " 2>&1 || true)
 
     if echo "$GRANT_OUT" | grep -qi "FATAL\|error:"; then
