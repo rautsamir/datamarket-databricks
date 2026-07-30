@@ -510,6 +510,62 @@ if ! databricks apps get "$APP_NAME" --profile "$PROFILE" --output json >/dev/nu
   databricks apps create "$APP_NAME" --profile "$PROFILE" 2>&1 | tail -3
 fi
 
+# ── Ensure the app SP has a Lakebase role BEFORE the app starts ───────────────
+# The app creates its own schema and tables on first start, but it cannot create
+# its own Postgres role — that is a chicken-and-egg problem. Do it here: the app
+# exists (so it has a service principal) but has not yet been deployed.
+#
+# This deliberately runs before `apps deploy` so that a failed deploy still
+# leaves a correctly provisioned database behind.
+info "Ensuring app service principal has a Lakebase role..."
+PRE_SP_UUID=""
+for _attempt in 1 2 3; do
+  PRE_SP_UUID=$(databricks apps get "$APP_NAME" --profile "$PROFILE" --output json 2>/dev/null \
+    | python3 -c "
+import sys, json
+d = json.load(sys.stdin)
+candidates = [
+  d.get('service_principal_client_id'),
+  d.get('service_principal', {}).get('client_id'),
+]
+print(next((c for c in candidates if c), ''))
+" 2>/dev/null || true)
+  [[ -n "$PRE_SP_UUID" ]] && break
+  sleep 3
+done
+
+if [[ -z "$PRE_SP_UUID" ]]; then
+  warn "Could not resolve the app service principal yet — retrying in step 7."
+else
+  PRE_ROLE_AUTH=$(databricks postgres list-roles \
+    "projects/${LAKEBASE_PROJECT}/branches/${BRANCH_NAME}" \
+    --profile "$PROFILE" -o json 2>/dev/null \
+    | python3 -c "
+import sys, json
+try:
+    roles = json.load(sys.stdin)
+    m = next((r for r in roles if r.get('status',{}).get('postgres_role','') == '${PRE_SP_UUID}'), None)
+    print(m.get('status',{}).get('auth_method','') if m else '')
+except: print('')
+" 2>/dev/null || true)
+
+  if [[ "$PRE_ROLE_AUTH" == "LAKEBASE_OAUTH_V1" ]]; then
+    ok "SP Lakebase role already present"
+  else
+    PRE_ROLE_OUT=$(databricks postgres create-role \
+      "projects/${LAKEBASE_PROJECT}/branches/${BRANCH_NAME}" \
+      --json "{\"spec\": {\"identity_type\": \"SERVICE_PRINCIPAL\", \"postgres_role\": \"${PRE_SP_UUID}\"}}" \
+      --profile "$PROFILE" -o json 2>&1 || true)
+    if echo "$PRE_ROLE_OUT" | grep -q "LAKEBASE_OAUTH_V1"; then
+      ok "SP Lakebase role created — app will initialize its own schema on first start"
+    else
+      warn "Could not create the SP Lakebase role: ${PRE_ROLE_OUT:0:180}"
+      warn "The app will start but cannot reach the database. It will display a"
+      warn "setup error page with the exact command to run."
+    fi
+  fi
+fi
+
 DEPLOY_OUT=$(databricks apps deploy "$APP_NAME" \
   --source-code-path "$WORKSPACE_PATH" \
   --profile "$PROFILE" 2>&1)
@@ -517,9 +573,14 @@ DEPLOY_OUT=$(databricks apps deploy "$APP_NAME" \
 if echo "$DEPLOY_OUT" | grep -q '"state":"SUCCEEDED"'; then
   ok "App deployed successfully"
 else
-  warn "Deploy output:"
+  warn "Deploy did not reach SUCCEEDED state:"
   echo "$DEPLOY_OUT" | tail -10
-  fail "Deploy did not reach SUCCEEDED state. Check the output above."
+  echo ""
+  warn "Continuing with the remaining setup steps so the workspace is left in a"
+  warn "usable state. Fix the error above and re-run deploy — the database and"
+  warn "grants configured below do not need to be redone."
+  echo ""
+  DEPLOY_FAILED=1
 fi
 
 fi  # end standard path (not bundle mode)
@@ -906,6 +967,17 @@ APP_URL=$(databricks apps get "$APP_NAME" --profile "$PROFILE" --output json 2>/
   | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('url',''))" 2>/dev/null || true)
 
 echo ""
+if [[ "${DEPLOY_FAILED:-0}" == "1" ]]; then
+  echo -e "${YELLOW}${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+  echo -e "${YELLOW}${BOLD}  Setup complete — but the app deploy FAILED${NC}"
+  echo -e "${YELLOW}${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+  echo ""
+  echo -e "  Lakebase, grants, and permissions are configured. Only the app"
+  echo -e "  deployment itself failed — scroll up for the build error, fix it,"
+  echo -e "  then re-run this script."
+  echo ""
+  exit 1
+fi
 echo -e "${GREEN}${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo -e "${GREEN}${BOLD}  DataMarket is live!${NC}"
 echo -e "${GREEN}${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"

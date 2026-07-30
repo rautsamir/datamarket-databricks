@@ -93,6 +93,164 @@ export async function closePool() {
   if (dbPool) await dbPool.end().catch(() => {});
 }
 
+// ─── Database health ──────────────────────────────────────────────────────────
+// Tracks whether the app was able to reach and initialize Lakebase. Surfaced via
+// /api/portal/config so the UI can show a real diagnostic instead of rendering
+// empty/fallback content when the database is unreachable.
+//
+//   ok            — connected, schema and tables present
+//   auth_failed   — connected to host but the SP has no Postgres role
+//   no_permission — authenticated but cannot create the schema
+//   unreachable   — could not reach the Lakebase host at all
+//   error         — anything else
+const dbHealth = { status: 'starting', message: 'Connecting to Lakebase…', hint: '' };
+
+export function getDbHealth() { return { ...dbHealth }; }
+
+function setDbHealth(status, message, hint = '') {
+  dbHealth.status  = status;
+  dbHealth.message = message;
+  dbHealth.hint    = hint;
+}
+
+// Classify a Postgres/driver error into an actionable health state.
+function classifyDbError(err) {
+  const msg = err?.message || String(err);
+  if (/password authentication failed/i.test(msg)) {
+    return {
+      status: 'auth_failed',
+      message: 'The app service principal has no Lakebase database role.',
+      hint: 'Create the role, then restart the app: databricks postgres create-role '
+          + `"projects/<project>/branches/production" --json '{"spec":{"identity_type":"SERVICE_PRINCIPAL","postgres_role":"${process.env.DATABRICKS_CLIENT_ID || '<sp-uuid>'}"}}'`,
+    };
+  }
+  if (/permission denied (to )?(create|for schema)/i.test(msg)) {
+    return {
+      status: 'no_permission',
+      message: `The service principal cannot create the "${LAKEBASE_SCHEMA}" schema.`,
+      hint: `Grant it CREATE on the database, or pre-create the schema and grant USAGE + CREATE on it to ${process.env.DATABRICKS_CLIENT_ID || 'the app SP'}.`,
+    };
+  }
+  if (/ENOTFOUND|EAI_AGAIN|ECONNREFUSED|ETIMEDOUT|timeout expired/i.test(msg)) {
+    return {
+      status: 'unreachable',
+      message: `Could not reach the Lakebase host ${LAKEBASE_HOST}.`,
+      hint: 'Check LAKEBASE_HOST / LAKEBASE_ENDPOINT in app.yaml, and that the Lakebase endpoint is running.',
+    };
+  }
+  return { status: 'error', message: msg, hint: '' };
+}
+
+// Quote an identifier so schema names containing hyphens (e.g. "datamarket-dev")
+// are handled correctly.
+const quoteIdent = (name) => `"${String(name).replace(/"/g, '""')}"`;
+
+// Core DDL — kept in sync with schema/schema.sql. Applied by the app itself on
+// first start so that whichever deployment path is used (deploy.sh, bundle,
+// Marketplace, notebook) converges on the same initialized database.
+//
+// Because this runs as the app service principal, the SP *owns* the schema and
+// its tables — which means no follow-up GRANT step is required.
+const CORE_SCHEMA_DDL = `
+CREATE TABLE IF NOT EXISTS users (
+    user_id       UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    email         VARCHAR(255) NOT NULL UNIQUE,
+    display_name  VARCHAR(255),
+    role          VARCHAR(50) DEFAULT 'analyst',
+    department    VARCHAR(100) DEFAULT 'General',
+    created_at    TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS data_products (
+    product_id        SERIAL PRIMARY KEY,
+    product_ref       VARCHAR(20) NOT NULL UNIQUE,
+    uc_full_name      VARCHAR(500),
+    display_name      VARCHAR(255) NOT NULL,
+    description       TEXT,
+    type              VARCHAR(50) DEFAULT 'Dataset',
+    domain            VARCHAR(100),
+    tags              TEXT[],
+    source_system     VARCHAR(100),
+    refresh_frequency VARCHAR(50),
+    owner_email       VARCHAR(255),
+    classification    VARCHAR(50) DEFAULT 'Internal',
+    is_active         BOOLEAN DEFAULT TRUE,
+    status            VARCHAR(20) DEFAULT 'Published',
+    source_type       VARCHAR(20) DEFAULT 'Databricks',
+    product_url       TEXT,
+    report_url        TEXT,
+    data_classification VARCHAR(50) DEFAULT 'Internal',
+    last_refreshed    TIMESTAMPTZ,
+    created_at        TIMESTAMPTZ DEFAULT NOW(),
+    updated_at        TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS access_requests (
+    request_id      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    request_ref     VARCHAR(20) NOT NULL UNIQUE,
+    product_id      INTEGER REFERENCES data_products(product_id),
+    requester_id    UUID REFERENCES users(user_id),
+    requester_team  VARCHAR(100),
+    business_reason TEXT NOT NULL,
+    access_level    VARCHAR(50) DEFAULT 'Read Only',
+    status          VARCHAR(20) DEFAULT 'Pending',
+    resolved_at     TIMESTAMPTZ,
+    resolved_by     UUID REFERENCES users(user_id),
+    denial_reason   TEXT,
+    uc_grant_issued BOOLEAN DEFAULT FALSE,
+    uc_grant_sql    TEXT,
+    expires_at      TIMESTAMPTZ,
+    requested_at    TIMESTAMPTZ DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS audit_log (
+    log_id       SERIAL PRIMARY KEY,
+    event_type   VARCHAR(50) NOT NULL,
+    actor_email  VARCHAR(255),
+    target_type  VARCHAR(50),
+    target_id    UUID,
+    target_name  VARCHAR(255),
+    metadata     JSONB,
+    occurred_at  TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS user_library (
+    library_id  SERIAL PRIMARY KEY,
+    user_id     UUID REFERENCES users(user_id),
+    product_id  INTEGER REFERENCES data_products(product_id),
+    added_at    TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(user_id, product_id)
+);
+
+CREATE TABLE IF NOT EXISTS settings (
+    key        VARCHAR(100) PRIMARY KEY,
+    value      TEXT,
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+`;
+
+// ─── Schema bootstrap — run at startup, before migrations ─────────────────────
+// Creates the schema and core tables if they are missing. Idempotent, so it is
+// safe when deploy.sh or the setup notebook has already initialized the database.
+// Throws on failure so the caller can surface a diagnostic.
+export async function bootstrapSchema() {
+  const pool = await getPool();
+  const client = await pool.connect();
+  try {
+    await client.query(`CREATE SCHEMA IF NOT EXISTS ${quoteIdent(LAKEBASE_SCHEMA)}`);
+    await client.query(`SET search_path TO ${quoteIdent(LAKEBASE_SCHEMA)}, public`);
+    await client.query(CORE_SCHEMA_DDL);
+    setDbHealth('ok', 'Lakebase connected and initialized.');
+  } catch (e) {
+    const { status, message, hint } = classifyDbError(e);
+    setDbHealth(status, message, hint);
+    throw e;
+  } finally {
+    client.release();
+  }
+}
+
 // ─── Product column cache ─────────────────────────────────────────────────────
 // Cache which optional columns exist — populated once on first products query
 let _productCols = null;
@@ -136,9 +294,11 @@ export function getSetting(key, envFallback) {
 
 export function invalidateSettingsCache() { settingsCache = null; }
 
-// ─── Schema migration — run at startup ───────────────────────────────────────
-// DDL lives in schema/schema.sql (applied by deploy.sh). The app SP has DML grants
-// but not table ownership, so avoid ALTER TABLE here — use UPDATE/INSERT only.
+// ─── Schema migration — run at startup, after bootstrapSchema() ──────────────
+// Incremental changes on top of the core DDL. Table ownership depends on which
+// path created the tables: the app owns them when bootstrapSchema() ran first,
+// but deploy.sh and the setup notebook create them as the deployer. ALTER TABLE
+// is therefore attempted but never assumed — each one is individually guarded.
 export async function runMigrations() {
   try {
     // ── Add any columns that may be missing from older schemas ────────────────
