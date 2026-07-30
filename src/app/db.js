@@ -326,13 +326,17 @@ export async function runMigrations() {
       END
       WHERE last_refreshed IS NULL AND refresh_frequency IS NOT NULL`);
     await query(`UPDATE data_products SET source_system = 'Databricks' WHERE source_system IS NULL`);
-    // Always ensure the three core demo users exist — safe upsert, never overwrites existing rows
-    await query(`
-      INSERT INTO users (email, display_name, role, department) VALUES
-        ('analyst@example.org',     'Alex Analyst',   'analyst', 'Finance'),
-        ('datasteward@example.org', 'Dana Steward',   'admin',   'Data Governance')
-      ON CONFLICT (email) DO NOTHING
-    `);
+    // Seed the demo personas' backing rows — demo mode only. In production these
+    // would show up in the customer's Users list as @example.org accounts they
+    // never created, one of them holding the admin role.
+    if (DEMO_MODE) {
+      await query(`
+        INSERT INTO users (email, display_name, role, department) VALUES
+          ('analyst@example.org',     'Alex Analyst',   'analyst', 'Finance'),
+          ('datasteward@example.org', 'Dana Steward',   'admin',   'Data Governance')
+        ON CONFLICT (email) DO NOTHING
+      `);
+    }
 
     // Create settings table if it doesn't exist
     await query(`
@@ -398,6 +402,17 @@ export async function runMigrations() {
         `DELETE FROM data_products WHERE uc_full_name LIKE 'your_catalog.your_schema.%'`
       );
       if (rowCount > 0) console.log(`[Lakebase] Removed ${rowCount} demo placeholder product(s) (DEMO_MODE=false)`);
+
+      // Remove demo persona rows leaked into production by earlier versions, but
+      // only when they have no activity — never delete a row something references.
+      const { rowCount: userCount } = await query(`
+        DELETE FROM users
+        WHERE email IN ('analyst@example.org', 'datasteward@example.org')
+          AND user_id NOT IN (SELECT requester_id FROM access_requests WHERE requester_id IS NOT NULL)
+          AND user_id NOT IN (SELECT resolved_by  FROM access_requests WHERE resolved_by  IS NOT NULL)
+          AND user_id NOT IN (SELECT user_id      FROM user_library    WHERE user_id      IS NOT NULL)
+      `);
+      if (userCount > 0) console.log(`[Lakebase] Removed ${userCount} demo user(s) (DEMO_MODE=false)`);
     }
 
     // Auto-seed demo data products if catalog is empty and DEMO_MODE is on
