@@ -9,6 +9,7 @@ import {
   APP_NAME,
   APP_SUBTITLE,
   APP_LOGO_URL,
+  getDbHealth,
 } from '../db.js';
 import { getUcAuth, ucApiRequest, databricksApi } from '../databricks.js';
 
@@ -22,9 +23,12 @@ export function registerRoutes(app) {
     } catch (e) {
       dbStatus = `error: ${e.message}`;
     }
+    const health = getDbHealth();
     res.json({
-      status: 'healthy', timestamp: new Date().toISOString(), service: 'datamarket',
-      lakebase: dbStatus, demo_mode: DEMO_MODE, rfa_enabled: RFA_ENABLED,
+      status: health.status === 'ok' ? 'healthy' : 'degraded',
+      timestamp: new Date().toISOString(), service: 'datamarket',
+      lakebase: dbStatus, db_health: health,
+      demo_mode: DEMO_MODE, rfa_enabled: RFA_ENABLED,
       uc_grants_enabled: !DEMO_MODE && !!SQL_WAREHOUSE_ID
     });
   });
@@ -33,6 +37,7 @@ export function registerRoutes(app) {
   app.get('/api/portal/config', async (req, res) => {
     await loadSettings();
     res.json({
+      dbHealth:   getDbHealth(),
       appName:    getSetting('app_name',    APP_NAME),
       appSubtitle:getSetting('app_subtitle', APP_SUBTITLE),
       appLogoUrl: getSetting('app_logo_url', APP_LOGO_URL),

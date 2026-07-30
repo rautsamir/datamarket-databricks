@@ -14,6 +14,7 @@ import { AboutPage } from './pages/AboutPage'
 import { FAQPage } from './pages/FAQPage'
 import { ContactPage } from './pages/ContactPage'
 import { FeatureRequestPage } from './pages/FeatureRequestPage'
+import { SetupErrorScreen } from './components/SetupErrorScreen'
 import { useAppConfig } from './context/AppConfigContext'
 import { usePersona } from './context/PersonaContext'
 
@@ -23,8 +24,12 @@ function AppInner() {
   const [selectedProduct, setSelectedProduct] = useState(null)
   const [wizardDismissed, setWizardDismissed] = useState(false)
 
-  const { setupComplete } = useAppConfig()
+  const { setupComplete, dbHealth } = useAppConfig()
   const { isAdmin } = usePersona()
+
+  // If the database never initialized, every API call returns an error and the
+  // UI would otherwise render as an empty-but-working app. Show the real reason.
+  const dbBroken = dbHealth && !['ok', 'starting'].includes(dbHealth.status)
 
   const showWizard = !setupComplete && isAdmin && !wizardDismissed
 
@@ -69,6 +74,8 @@ function AppInner() {
       default:             return <DataMarketHomePage onNavigate={navigate} onOpenProduct={openProduct} />
     }
   }
+
+  if (dbBroken) return <SetupErrorScreen health={dbHealth} />
 
   return (
     <DataMarketLayout currentPage={currentPage} onNavigate={navigate}>
