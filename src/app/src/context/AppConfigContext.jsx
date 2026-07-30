@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, useCallback } from 'react'
 
 const defaults = {
+  dbHealth:      { status: 'starting', message: '', hint: '' },
   appName:       'DataMarket',
   appSubtitle:   'Data Discovery & Access',
   appLogoUrl:    '',

@@ -5,7 +5,7 @@ import compression from 'compression';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
-import { getPool, runMigrations, closePool, LAKEBASE_HOST, LAKEBASE_DB, LAKEBASE_SCHEMA, DEMO_MODE, RFA_ENABLED, SQL_WAREHOUSE_ID } from './db.js';
+import { getPool, runMigrations, bootstrapSchema, getDbHealth, closePool, LAKEBASE_HOST, LAKEBASE_DB, LAKEBASE_SCHEMA, DEMO_MODE, RFA_ENABLED, SQL_WAREHOUSE_ID } from './db.js';
 import { registerRoutes as registerConfig }          from './routes/config.js';
 import { registerRoutes as registerProducts, maybeAutoDiscover } from './routes/products.js';
 import { registerRoutes as registerRequests }        from './routes/requests.js';
@@ -71,18 +71,34 @@ const server = app.listen(PORT, '0.0.0.0', () => {
   getPool()
     .then(() => {
       console.log('✅ Lakebase pool initialized');
-      // Retry migrations — Autoscaling Lakebase may need a moment to wake from idle
-      const tryMigrate = (attempt) => runMigrations().catch(e => {
-        if (attempt < 5) {
-          console.warn(`⚠️  Migration attempt ${attempt} failed (${e.message}) — retrying in 8s...`);
-          setTimeout(() => tryMigrate(attempt + 1), 8000);
-        } else {
-          console.warn('⚠️  Migrations skipped after 5 attempts:', e.message);
-        }
-      });
-      tryMigrate(1);
-      // Run auto-discover after migrations settle (non-blocking)
-      setTimeout(() => maybeAutoDiscover(), 15000);
+      // Create the schema and core tables if missing, then apply migrations.
+      // Autoscaling Lakebase may need a moment to wake from idle, so retry.
+      const tryBootstrap = (attempt) => bootstrapSchema()
+        .then(async () => {
+          console.log(`✅ Schema "${LAKEBASE_SCHEMA}" ready`);
+          await runMigrations();
+          // Run auto-discover once the database has settled (non-blocking)
+          setTimeout(() => maybeAutoDiscover(), 15000);
+        })
+        .catch(e => {
+          if (attempt < 5) {
+            console.warn(`⚠️  Database init attempt ${attempt} failed (${e.message}) — retrying in 8s...`);
+            setTimeout(() => tryBootstrap(attempt + 1), 8000);
+            return;
+          }
+          const health = getDbHealth();
+          console.error('');
+          console.error('══════════════════════════════════════════════════════════════');
+          console.error('  DataMarket could not initialize its database.');
+          console.error(`  ${health.message}`);
+          if (health.hint) console.error(`\n  Fix: ${health.hint}`);
+          console.error('');
+          console.error('  The app will keep serving, but every page will show a setup');
+          console.error('  error until this is resolved.');
+          console.error('══════════════════════════════════════════════════════════════');
+          console.error('');
+        });
+      tryBootstrap(1);
     })
     .catch(e => console.warn('⚠️  Lakebase init deferred:', e.message));
 });
