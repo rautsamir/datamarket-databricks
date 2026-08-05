@@ -6,10 +6,12 @@
 # For CLI-based deployment (deploy.sh), use app.yaml.example instead.
 # ─────────────────────────────────────────────────────────────────────────────
 
+# The frontend is always compiled from source here. An earlier version skipped the
+# build when a dist/ directory was present, which let a stale bundle ship silently.
 command:
   - "bash"
   - "-c"
-  - "npm install --include=dev && ([ -d dist ] || npm run build:local) && node app.js"
+  - "npm ci --omit=dev || npm install --omit=dev; npm run build && node app.js"
 
 env:
   # ── Lakebase (required) ───────────────────────────────────────────────────

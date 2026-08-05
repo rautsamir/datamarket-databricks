@@ -1,5 +1,6 @@
 import { query } from '../db.js';
 import { rfaNotify, executeUcStatement } from '../databricks.js';
+import { actor } from '../lib/authz.js';
 
 export function registerRoutes(app) {
   // ─── Access Requests ──────────────────────────────────────────────────────────
@@ -92,7 +93,9 @@ export function registerRoutes(app) {
   app.put('/api/portal/requests/:id/approve', async (req, res) => {
     try {
       const { id } = req.params;
-      const { adminEmail = 'datasteward@example.org' } = req.body;
+      // The approver is whoever is signed in. Accepting this from the request body
+      // let a caller approve their own request under someone else's name.
+      const adminEmail = actor(req);
 
       // id can be a UUID or a request_ref like "REQ-001" — avoid type mismatch
       const isUUID = /^[0-9a-f-]{36}$/i.test(id);
@@ -103,6 +106,14 @@ export function registerRoutes(app) {
         JOIN users u ON u.user_id = ar.requester_id
         WHERE ${isUUID ? 'ar.request_id = $1::uuid' : 'ar.request_ref = $1'}`, [id]);
       if (!req_) return res.status(404).json({ error: 'Request not found' });
+
+      if (req_.requester_email && req_.requester_email.toLowerCase() === adminEmail.toLowerCase()) {
+        return res.status(403).json({ error: 'You cannot approve your own access request.' });
+      }
+
+      if (req_.status && req_.status !== 'Pending') {
+        return res.status(409).json({ error: `Request is already ${req_.status}.` });
+      }
 
       const ucGrantSql = req_.uc_full_name
         ? `GRANT SELECT ON ${req_.uc_full_name} TO \`${req_.requester_email}\`;`
@@ -135,7 +146,8 @@ export function registerRoutes(app) {
   app.put('/api/portal/requests/:id/deny', async (req, res) => {
     try {
       const { id } = req.params;
-      const { adminEmail = 'datasteward@example.org', reason = '' } = req.body;
+      const { reason = '' } = req.body;
+      const adminEmail = actor(req);
 
       const isUUID = /^[0-9a-f-]{36}$/i.test(id);
       const { rows: [req_] } = await query(
@@ -166,7 +178,8 @@ export function registerRoutes(app) {
   app.put('/api/portal/requests/:id/revoke', async (req, res) => {
     try {
       const { id } = req.params;
-      const { adminEmail = 'datasteward@example.org', reason = 'Access revoked by administrator' } = req.body;
+      const { reason = 'Access revoked by administrator' } = req.body;
+      const adminEmail = actor(req);
       const isUUID = /^[0-9a-f-]{36}$/i.test(id);
       const { rows: [req_] } = await query(
         `SELECT request_id, request_ref, uc_grant_sql FROM access_requests

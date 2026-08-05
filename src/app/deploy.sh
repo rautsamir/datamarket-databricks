@@ -143,10 +143,13 @@ if [[ "$USE_BUNDLE" == "true" ]]; then
   CLI_VERSION=$(databricks -v 2>&1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)
   info "Databricks CLI version: ${CLI_VERSION:-unknown}"
 
-  # Build frontend first (DAB doesn't know how to build Node apps)
-  step 3 "Building frontend"
-  (cd "$SCRIPT_DIR" && npm install --silent 2>/dev/null && npm run build:local 2>&1 | tail -4)
-  ok "Build complete"
+  # Pre-flight check — Databricks rebuilds from source after the bundle syncs.
+  step 3 "Verifying frontend builds"
+  if (cd "$SCRIPT_DIR" && npm install --silent 2>/dev/null && npm run build 2>&1 | tail -4); then
+    ok "Frontend compiles cleanly"
+  else
+    fail "Frontend build failed — fix the errors above before deploying."
+  fi
 
   # Ensure app.yaml exists (required in source dir before bundle deploy)
   step 4 "Checking app.yaml"
@@ -455,27 +458,49 @@ YAML
 
 ok "app.yaml written to ${APP_YAML_PATH}"
 
-# ── Build frontend ────────────────────────────────────────────────────────────
-step 5 "Building frontend"
+# ── Verify the frontend compiles ──────────────────────────────────────────────
+# This is a pre-flight check only. The bundle that actually ships is the one
+# Databricks builds from the uploaded source, not the dist/ produced here.
+step 5 "Verifying frontend builds"
 
-(cd "$SCRIPT_DIR" && npm install --silent 2>/dev/null && npm run build:local 2>&1 | tail -4)
-ok "Build complete"
-
-# ── Build frontend ────────────────────────────────────────────────────────────
-step 6 "Building frontend and uploading to Databricks"
-
-if command -v node >/dev/null 2>&1 && [[ -f "${SCRIPT_DIR}/vite.config.js" ]]; then
-  info "Running Vite build..."
-  (cd "${SCRIPT_DIR}" && npm run build:local 2>&1 | tail -5) \
-    && ok "Frontend built" \
-    || warn "Vite build failed — uploading existing dist/"
+if command -v npm >/dev/null 2>&1; then
+  if (cd "$SCRIPT_DIR" && npm install --silent 2>/dev/null && npm run build 2>&1 | tail -4); then
+    ok "Frontend compiles cleanly"
+  else
+    fail "Frontend build failed — fix the errors above before deploying."
+  fi
 else
-  info "Node/Vite not found — uploading existing dist/"
+  warn "npm not found — skipping pre-flight check; Databricks will build from source."
 fi
 
-info "Uploading dist/..."
-databricks workspace import-dir "${SCRIPT_DIR}/dist" "${WORKSPACE_PATH}/dist" \
-  --overwrite --profile "$PROFILE" 2>&1 | tail -2
+# ── Upload source ─────────────────────────────────────────────────────────────
+step 6 "Uploading source to Databricks"
+
+# The frontend is compiled on Databricks from the source uploaded here, not from
+# a dist/ built on this machine. Shipping a prebuilt dist/ meant the UI a customer
+# saw depended on whichever working copy happened to run the deploy — deployments
+# were not reproducible from the repo. dist/ is deliberately NOT uploaded.
+
+info "Uploading frontend source..."
+for d in src public; do
+  if [[ -d "${SCRIPT_DIR}/${d}" ]]; then
+    databricks workspace import-dir "${SCRIPT_DIR}/${d}" "${WORKSPACE_PATH}/${d}" \
+      --overwrite --profile "$PROFILE" 2>&1 | tail -2
+  fi
+done
+
+# Build inputs — without these the Databricks-side `npm run build` cannot run.
+for f in index.html vite.config.js tailwind.config.js postcss.config.js jsconfig.json components.json; do
+  [[ -f "${SCRIPT_DIR}/${f}" ]] && \
+    databricks workspace import "${WORKSPACE_PATH}/${f}" \
+      --file "${SCRIPT_DIR}/${f}" --format AUTO --overwrite \
+      --profile "$PROFILE" 2>/dev/null || true
+done
+
+# Remove any dist/ left behind by an earlier deploy, so a stale bundle can never
+# shadow the freshly built one.
+databricks workspace delete "${WORKSPACE_PATH}/dist" --recursive \
+  --profile "$PROFILE" 2>/dev/null || true
 
 info "Uploading backend modules..."
 for f in app.js db.js auth.js databricks.js; do
@@ -494,8 +519,9 @@ if [[ -d "${SCRIPT_DIR}/lib" ]]; then
     --overwrite --profile "$PROFILE" 2>&1 | tail -2
 fi
 
-# Upload remaining config files
-for f in package.json app.yaml; do
+# package-lock.json pins the exact dependency tree so the Databricks-side install
+# resolves to the same versions this was tested against.
+for f in package.json package-lock.json app.yaml; do
   [[ -f "${SCRIPT_DIR}/${f}" ]] && \
     databricks workspace import "${WORKSPACE_PATH}/${f}" \
       --file "${SCRIPT_DIR}/${f}" --format AUTO --overwrite \
@@ -570,7 +596,29 @@ DEPLOY_OUT=$(databricks apps deploy "$APP_NAME" \
   --source-code-path "$WORKSPACE_PATH" \
   --profile "$PROFILE" 2>&1)
 
-if echo "$DEPLOY_OUT" | grep -q '"state":"SUCCEEDED"'; then
+# The CLI's output shape differs between versions and between text and JSON modes,
+# so matching on stdout alone reported a failure for deploys that had actually
+# succeeded. Confirm against the API before believing the deploy failed.
+deploy_succeeded() {
+  echo "$DEPLOY_OUT" | grep -qi 'SUCCEEDED' && return 0
+  local state
+  state=$(databricks apps get "$APP_NAME" --profile "$PROFILE" --output json 2>/dev/null \
+    | python3 -c "
+import json, sys
+try:
+    app = json.load(sys.stdin)
+except Exception:
+    print('')
+    sys.exit(0)
+dep = app.get('active_deployment') or {}
+print(((dep.get('status') or {}).get('state'))
+      or ((app.get('app_status') or {}).get('state'))
+      or '')
+" 2>/dev/null)
+  [[ "$state" == "SUCCEEDED" || "$state" == "RUNNING" || "$state" == "ACTIVE" ]]
+}
+
+if deploy_succeeded; then
   ok "App deployed successfully"
 else
   warn "Deploy did not reach SUCCEEDED state:"

@@ -1,10 +1,11 @@
 import { query, DEMO_MODE } from '../db.js';
 import { ucApiRequest, getUcAuth } from '../databricks.js';
 import { normalizeRole } from '../lib/roles.js';
+import { actor, invalidateUserCache } from '../lib/authz.js';
 
-function callerEmail(req) {
-  return req.headers['x-forwarded-email'] || req.headers['x-forwarded-user'] || req.body?.requester_email || 'anonymous';
-}
+// Identity resolution lives in lib/authz.js so the request body can never be an
+// auth boundary. attachUser has already run by the time any handler is reached.
+const callerEmail = actor;
 
 export function registerRoutes(app) {
   // ─── Identity — resolve SSO user or return demo mode personas ────────────────
@@ -118,6 +119,7 @@ export function registerRoutes(app) {
          RETURNING *`,
         [email.trim().toLowerCase(), display_name || '', normalizedRole, department || '']
       );
+      invalidateUserCache(user.email);
       res.status(201).json({ ...user, role: normalizeRole(user.role) });
     } catch (e) {
       res.status(500).json({ error: e.message });
@@ -138,6 +140,7 @@ export function registerRoutes(app) {
       const { rows: [user] } = await query(
         `UPDATE users SET ${sets.join(', ')} WHERE user_id = $${params.length}::uuid RETURNING *`, params);
       if (!user) return res.status(404).json({ error: 'User not found' });
+      invalidateUserCache(user.email);
       res.json({ ...user, role: normalizeRole(user.role) });
     } catch (e) {
       res.status(500).json({ error: e.message });
