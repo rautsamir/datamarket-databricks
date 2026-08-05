@@ -1,12 +1,14 @@
 import { query, getPool } from '../db.js';
+import { actor } from '../lib/authz.js';
 
-// ─── Caller identity helpers (SSO header or request body fallback) ────────────
-export function callerEmail(req) {
-  return req.headers['x-forwarded-email'] || req.headers['x-forwarded-user'] || req.body?.requester_email || 'anonymous';
-}
+// ─── Caller identity ─────────────────────────────────────────────────────────
+// Resolved by lib/authz.js from the SSO headers, never from the request body.
+export const callerEmail = actor;
+
 export function callerName(req) {
   const email = callerEmail(req);
-  return req.body?.requester_name || email.split('@')[0].replace(/[._]/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+  return req.user?.displayName
+    || email.split('@')[0].replace(/[._]/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 }
 
 export function registerRoutes(app) {
