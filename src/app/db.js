@@ -30,7 +30,10 @@ export const LAKEBASE_DB            = process.env.LAKEBASE_DB   || process.env.P
 export const LAKEBASE_SCHEMA        = process.env.LAKEBASE_SCHEMA || 'datamarket';
 export const LAKEBASE_INSTANCE_NAME = process.env.LAKEBASE_INSTANCE_NAME || '';
 
-export const DEMO_MODE        = (process.env.DEMO_MODE || 'true').toLowerCase() === 'true';
+// Defaults to production. Demo mode lets the client assert its own identity for
+// the persona switcher, so it must be opted into explicitly rather than being
+// what a deploy path gets by forgetting to set it.
+export const DEMO_MODE        = (process.env.DEMO_MODE || 'false').toLowerCase() === 'true';
 export const SQL_WAREHOUSE_ID = process.env.SQL_WAREHOUSE_ID || '';
 export const RFA_ENABLED      = (process.env.RFA_ENABLED || 'false').toLowerCase() === 'true';
 
