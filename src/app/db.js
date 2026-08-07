@@ -127,6 +127,16 @@ function classifyDbError(err) {
           + `"projects/<project>/branches/production" --json '{"spec":{"identity_type":"SERVICE_PRINCIPAL","postgres_role":"${process.env.DATABRICKS_CLIENT_ID || '<sp-uuid>'}"}}'`,
     };
   }
+  if (/permission denied for database/i.test(msg)) {
+    return {
+      status: 'no_permission',
+      message: `The "${LAKEBASE_SCHEMA}" schema does not exist and the app service principal `
+             + 'cannot create it — it lacks CREATE on the database.',
+      hint: 'Run this once in the Lakebase SQL editor as a database owner, then restart the app: '
+          + `CREATE SCHEMA IF NOT EXISTS ${LAKEBASE_SCHEMA}; `
+          + `GRANT USAGE, CREATE ON SCHEMA ${LAKEBASE_SCHEMA} TO "${process.env.DATABRICKS_CLIENT_ID || '<sp-uuid>'}";`,
+    };
+  }
   if (/permission denied (to )?(create|for schema)/i.test(msg)) {
     return {
       status: 'no_permission',
@@ -233,6 +243,11 @@ CREATE TABLE IF NOT EXISTS settings (
 );
 `;
 
+/** Tables created by CORE_SCHEMA_DDL — used to decide whether it needs to run. */
+export const CORE_TABLES = [
+  'users', 'data_products', 'access_requests', 'audit_log', 'user_library', 'settings',
+];
+
 // ─── Schema bootstrap — run at startup, before migrations ─────────────────────
 // Creates the schema and core tables if they are missing. Idempotent, so it is
 // safe when deploy.sh or the setup notebook has already initialized the database.
@@ -241,9 +256,30 @@ export async function bootstrapSchema() {
   const pool = await getPool();
   const client = await pool.connect();
   try {
-    await client.query(`CREATE SCHEMA IF NOT EXISTS ${quoteIdent(LAKEBASE_SCHEMA)}`);
+    // "CREATE SCHEMA IF NOT EXISTS" is not a no-op when the schema already
+    // exists: Postgres checks CREATE on the database *before* the IF NOT EXISTS
+    // short-circuit, so it raises "permission denied for database" even when
+    // there is nothing to create. deploy.sh and the setup notebook create the
+    // schema as the deploying user, which leaves the app SP without that
+    // privilege — so only issue DDL that is actually needed.
+    const { rows: [ns] } = await client.query(
+      'SELECT to_regnamespace($1) IS NOT NULL AS present', [LAKEBASE_SCHEMA]);
+    if (!ns?.present) {
+      await client.query(`CREATE SCHEMA IF NOT EXISTS ${quoteIdent(LAKEBASE_SCHEMA)}`);
+    }
+
     await client.query(`SET search_path TO ${quoteIdent(LAKEBASE_SCHEMA)}, public`);
-    await client.query(CORE_SCHEMA_DDL);
+
+    // Same reasoning for the tables — CREATE TABLE IF NOT EXISTS still requires
+    // CREATE on the schema, which the SP lacks when another path created them.
+    const { rows: [t] } = await client.query(
+      `SELECT COUNT(*)::int AS present FROM information_schema.tables
+        WHERE table_schema = $1 AND table_name = ANY($2::text[])`,
+      [LAKEBASE_SCHEMA, CORE_TABLES]);
+    if ((t?.present ?? 0) < CORE_TABLES.length) {
+      await client.query(CORE_SCHEMA_DDL);
+    }
+
     setDbHealth('ok', 'Lakebase connected and initialized.');
   } catch (e) {
     const { status, message, hint } = classifyDbError(e);
