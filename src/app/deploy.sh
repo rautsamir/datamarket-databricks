@@ -28,7 +28,7 @@ warn() { echo -e "${YELLOW}⚠${NC} $*"; }
 fail() { echo -e "${RED}✗ ERROR:${NC} $*"; exit 1; }
 step() { echo -e "\n${BOLD}${BLUE}[$1/$TOTAL_STEPS]${NC} ${BOLD}$2${NC}"; }
 
-TOTAL_STEPS=10
+TOTAL_STEPS=11
 
 # ── Defaults ─────────────────────────────────────────────────────────────────
 PROFILE="DEFAULT"
@@ -261,7 +261,7 @@ print('app.yaml patched with real Lakebase hostname')
   fi
 
   # Skip to grants — app is already deployed via bundle
-  TOTAL_STEPS=10
+  TOTAL_STEPS=11
   SP_UUID=$(databricks apps get "$APP_NAME" --profile "$PROFILE" --output json 2>/dev/null \
     | python3 -c "
 import sys, json
@@ -1009,6 +1009,122 @@ cat <<'QUERY'
   ORDER BY 1 DESC, dbus DESC;
 
 QUERY
+
+# ── Ask AI endpoint verification ──────────────────────────────────────────────
+step 11 "Verifying Ask AI serving endpoint"
+
+# Ask AI is the one app dependency the steps above do not provision. Pay-per-token
+# Foundation Model APIs are not enabled in every workspace or region, so the
+# default endpoint can be genuinely absent — surface that here instead of letting
+# the first user discover it as an error in the UI. This never fails the deploy:
+# Ask AI is optional and the endpoint is changeable in Settings without redeploy.
+
+# On a re-deploy an admin may already have pointed Ask AI at a gateway endpoint,
+# which is stored in Lakebase. Probe what the app will actually use, otherwise
+# this step would warn about an endpoint the app no longer calls.
+ASK_AI_TARGET=""
+if [[ -n "${PG_CONN:-}" && -n "${PG_TOKEN:-}" && -n "$PSQL_BIN" ]]; then
+  ASK_AI_TARGET=$(PGPASSWORD="$PG_TOKEN" psql "$PG_CONN" -tAX -c \
+    "SELECT value FROM \"${APP_NAME}\".settings WHERE key = 'ask_ai_endpoint'" 2>/dev/null \
+    | tr -d '[:space:]' || true)
+  [[ -n "$ASK_AI_TARGET" ]] && info "Using endpoint configured in app Settings: ${ASK_AI_TARGET}"
+fi
+ASK_AI_TARGET="${ASK_AI_TARGET:-${ASK_AI_ENDPOINT:-databricks-meta-llama-3-3-70b-instruct}}"
+
+# Foundation Model API endpoints are system-managed and carry no "id" — only
+# custom endpoints (including gateway/external-model ones) do. Key off "name"
+# for existence, and treat a missing id as "no per-endpoint ACL to check".
+EP_INFO=$(databricks api get "/api/2.0/serving-endpoints/${ASK_AI_TARGET}" \
+  --profile "$PROFILE" 2>/dev/null \
+  | python3 -c "
+import sys, json
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    d = {}
+gw = d.get('ai_gateway') or {}
+feats = [k.replace('_config', '').replace('_', ' ') for k, v in gw.items() if v]
+# Unit separator, not tab: tab is IFS whitespace, so bash would collapse the
+# empty 'id' field of a system endpoint and shift every field after it.
+print('\x1f'.join([
+    d.get('name') or '',
+    (d.get('state') or {}).get('ready') or '',
+    d.get('id') or '',
+    ', '.join(sorted(feats)),
+]))
+" 2>/dev/null || true)
+IFS=$'\037' read -r EP_NAME EP_READY ASK_AI_EP_ID EP_GATEWAY <<< "$EP_INFO"
+
+if [[ -z "$EP_NAME" ]]; then
+  warn "Ask AI endpoint '${ASK_AI_TARGET}' was not found in this workspace."
+  warn "Ask AI will return an error until this is changed — everything else works."
+  info "  Most likely cause: pay-per-token Foundation Model APIs are not enabled"
+  info "  in this workspace or region."
+  info "  Fix in the app (no redeploy): Manage → Settings → Ask AI serving endpoint."
+  info "  Point it at a Mosaic AI Gateway, provisioned throughput, or external model"
+  info "  endpoint. To see what is available here:"
+  info "    databricks serving-endpoints list --profile ${PROFILE}"
+else
+  if [[ "$EP_READY" == "READY" ]]; then
+    ok "Ask AI endpoint '${ASK_AI_TARGET}' exists and is READY"
+  else
+    warn "Ask AI endpoint '${ASK_AI_TARGET}' exists but is not ready (state: ${EP_READY:-unknown})."
+    warn "Ask AI may error until it finishes starting."
+  fi
+
+  # Governance visibility: AI Gateway features are configured on the endpoint, so
+  # this is the only place the deploy can confirm whether Ask AI traffic is
+  # actually governed.
+  if [[ -n "$EP_GATEWAY" ]]; then
+    ok "Mosaic AI Gateway active on this endpoint: ${EP_GATEWAY}"
+  else
+    info "No AI Gateway features configured on this endpoint."
+    info "  To centrally govern Ask AI traffic (rate limits, payload logging,"
+    info "  guardrails), configure AI Gateway on the endpoint in Serving, or point"
+    info "  Ask AI at a governed endpoint in Manage → Settings."
+  fi
+
+  if [[ -z "$ASK_AI_EP_ID" ]]; then
+    # System FMAPI endpoints expose no per-endpoint ACL; access follows workspace
+    # entitlements, so there is nothing to verify or grant here.
+    info "System-managed endpoint — no per-endpoint permissions to check."
+  else
+    SP_CAN_QUERY=$(databricks api get "/api/2.0/permissions/serving-endpoints/${ASK_AI_EP_ID}" \
+      --profile "$PROFILE" 2>/dev/null \
+      | python3 -c "
+import sys, json
+sp = '''${SP_UUID}'''.strip()
+try:
+    acl = json.load(sys.stdin).get('access_control_list', [])
+except Exception:
+    acl = []
+granted = sp and any(
+    e.get('service_principal_name') == sp
+    and any(p.get('permission_level') in ('CAN_QUERY', 'CAN_MANAGE', 'IS_OWNER')
+            for p in e.get('all_permissions', []))
+    for e in acl
+)
+print('yes' if granted else 'no')
+" 2>/dev/null || echo "no")
+
+    if [[ "$SP_CAN_QUERY" == "yes" ]]; then
+      ok "App service principal has query access on the endpoint"
+    else
+      # An inherited or group-based grant can still make this work, so report it
+      # as a note with a fix rather than an error — a false alarm on every deploy
+      # would teach people to ignore this step.
+      warn "App service principal is not listed on this endpoint's permissions."
+      warn "Ask AI will likely fail with a permission error. Grant access with:"
+      cat <<GRANT
+
+  databricks api patch /api/2.0/permissions/serving-endpoints/${ASK_AI_EP_ID} \\
+    --profile ${PROFILE} \\
+    --json '{"access_control_list":[{"service_principal_name":"${SP_UUID}","permission_level":"CAN_QUERY"}]}'
+
+GRANT
+    fi
+  fi
+fi
 
 
 APP_URL=$(databricks apps get "$APP_NAME" --profile "$PROFILE" --output json 2>/dev/null \

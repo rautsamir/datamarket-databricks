@@ -45,6 +45,15 @@ env:
   - name: LAKEBASE_SCHEMA
     value: "datamarket"
 
+  # ── Ask AI model endpoint ─────────────────────────────────────────────────
+  # Serving endpoint backing natural language search. The default is the
+  # pay-per-token FMAPI endpoint. Installers who route model traffic through
+  # Mosaic AI Gateway can override this in Admin → Settings to pick up rate
+  # limits, usage tracking, payload logging, and guardrails — no redeploy.
+  # The app service principal needs CAN_QUERY on the endpoint.
+  - name: ASK_AI_ENDPOINT
+    value: "databricks-meta-llama-3-3-70b-instruct"
+
   # ── Branding (configure post-install via Admin → Settings) ───────────────
   # These defaults are used until an admin saves custom values in the app.
   # No redeployment needed — Settings are stored in Lakebase and take effect

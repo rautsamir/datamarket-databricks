@@ -1,6 +1,34 @@
-import { query } from '../db.js';
+import { query, getSetting } from '../db.js';
 import { getUcAuth } from '../databricks.js';
 import { httpsJsonRequest } from '../auth.js';
+
+// Ask AI calls a Databricks serving endpoint. Which endpoint is configurable so a
+// deployment can point at one governed by Mosaic AI Gateway — rate limits, usage
+// tracking, payload logging, guardrails, and fallbacks are configured on the
+// endpoint itself, so there is no separate gateway URL to call. This also lets a
+// workspace that has not enabled pay-per-token FMAPI use a provisioned throughput
+// or external-model endpoint instead.
+export const DEFAULT_ASK_AI_ENDPOINT = 'databricks-meta-llama-3-3-70b-instruct';
+
+/**
+ * The endpoint name is interpolated into a URL path, so restrict it to the
+ * characters Databricks actually permits. Without this, a settings value could
+ * escape the path segment and address an arbitrary API route.
+ */
+export function sanitizeEndpointName(name) {
+  const trimmed = String(name ?? '').trim();
+  return /^[A-Za-z0-9][A-Za-z0-9._-]{0,126}$/.test(trimmed) ? trimmed : null;
+}
+
+/**
+ * Configured Ask AI endpoint: admin setting, then env var, then the default.
+ * An empty setting means "unset" — clearing the field in the UI reverts to the
+ * deployment default rather than breaking Ask AI.
+ */
+export function askAiEndpoint() {
+  const configured = String(getSetting('ask_ai_endpoint', '') || '').trim();
+  return configured || process.env.ASK_AI_ENDPOINT || DEFAULT_ASK_AI_ENDPOINT;
+}
 
 export function registerRoutes(app) {
   // ─── Ask Catalog — FMAPI semantic search over product metadata ───────────────
@@ -40,10 +68,19 @@ Respond with ONLY a valid JSON array, no other text:
 [{"ref":"DP-001","name":"Product Name","reason":"One sentence why relevant."}]
 If nothing is relevant, return: []`;
 
+      const configured = askAiEndpoint();
+      const endpoint = sanitizeEndpointName(configured);
+      if (!endpoint) {
+        return res.status(500).json({
+          error: 'Ask AI serving endpoint is not a valid endpoint name.',
+          detail: 'Set a valid endpoint under Manage → Settings → Ask AI serving endpoint.',
+        });
+      }
+
       const { host, token } = await getUcAuth();
       const fmResp = await httpsJsonRequest({
         hostname: host.replace(/^https?:\/\//, ''),
-        path: '/serving-endpoints/databricks-meta-llama-3-3-70b-instruct/invocations',
+        path: `/serving-endpoints/${endpoint}/invocations`,
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -53,6 +90,19 @@ If nothing is relevant, return: []`;
         }),
         timeoutMs: 25000
       });
+
+      // A misconfigured endpoint used to fall through as "no matches", which is
+      // indistinguishable from a genuinely empty result. Report it instead.
+      if (fmResp.status >= 400) {
+        const detail = fmResp.data?.message || fmResp.data?.error_code || `HTTP ${fmResp.status}`;
+        console.warn(`[ask-catalog] endpoint "${endpoint}" returned ${fmResp.status}: ${detail}`);
+        return res.status(502).json({
+          error: `Ask AI endpoint "${endpoint}" is not reachable.`,
+          detail: fmResp.status === 404
+            ? 'No serving endpoint with that name exists in this workspace, or the app service principal lacks CAN_QUERY on it.'
+            : detail,
+        });
+      }
 
       const raw = fmResp.data?.choices?.[0]?.message?.content || '[]';
       const jsonMatch = raw.match(/\[[\s\S]*\]/);

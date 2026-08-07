@@ -89,7 +89,7 @@ Pass the same flags you used originally (e.g. `--lakebase-project datamarket-app
 
 ## How it works
 
-The script runs 10 steps end-to-end with no manual input:
+The script runs 11 steps end-to-end with no manual input:
 
 | Step | What happens |
 |---|---|
@@ -103,6 +103,7 @@ The script runs 10 steps end-to-end with no manual input:
 | 8 | Auto-detects a running SQL Warehouse, grants SP `CAN USE` |
 | 9 | Grants SP `USE CATALOG + BROWSE + SELECT` on all Unity Catalog catalogs and schemas |
 | 10 | Tags the App and SQL Warehouse (`app=datamarket`) for spend observability in `system.billing.usage` |
+| 11 | Verifies the Ask AI serving endpoint exists and is reachable; reports whether AI Gateway governance is active. Warns only — never fails the deploy |
 
 After deploy, an onboarding wizard opens in the app. The SQL Warehouse ID is auto-filled from what the script detected — just verify and continue.
 

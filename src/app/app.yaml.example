@@ -35,6 +35,17 @@ env:
   - name: DEMO_MODE
     value: "false"
 
+  # ── Ask AI model endpoint (optional) ──────────────────────────────────────────
+  # Databricks serving endpoint backing natural language search. Defaults to the
+  # pay-per-token FMAPI endpoint below. Point it at an endpoint governed by Mosaic
+  # AI Gateway to centralise rate limits, usage tracking, payload logging, and
+  # guardrails — or at a provisioned throughput / external model endpoint if this
+  # workspace does not have pay-per-token FMAPI enabled. The app service principal
+  # needs CAN_QUERY on whichever endpoint you choose.
+  # Admins can also change this at runtime in Manage → Settings (no redeploy).
+  # - name: ASK_AI_ENDPOINT
+  #   value: "databricks-meta-llama-3-3-70b-instruct"
+
   # ── Branding & integrations ───────────────────────────────────────────────────
   # Everything else (portal name, tagline, logo, SQL Warehouse ID, search chips,
   # About/FAQ/Contact content) is configured via Admin → Settings in the app UI.
