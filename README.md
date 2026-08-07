@@ -15,7 +15,7 @@ A production-ready data product marketplace built **entirely on Databricks**. De
 - **Admin Approval Queue** — Data stewards approve/deny requests; each approval executes a real Unity Catalog `GRANT SELECT` via the SQL Statement Execution API
 - **UC Import** — Browse Unity Catalog (catalog → schema → table) in-app and bulk-register tables as data products in seconds
 - **Data Schema & Sensitivity** — Live column schema pulled from `information_schema`, with PII/Confidential sensitivity auto-detected from column names and UC tags
-- **Ask AI** — Natural language data discovery backed by Databricks FMAPI (Llama 3.3-70B)
+- **Ask AI** — Natural language data discovery backed by any Databricks serving endpoint (defaults to FMAPI Llama 3.3-70B; point it at a Mosaic AI Gateway endpoint in Settings for central governance)
 - **Insights** — Curated gallery of AI/BI dashboards with access-gated "Open" buttons
 - **My Data** — Personal shelf of approved and pinned data products per user
 - **Audit Trail** — Every action (request, approve, deny, revoke) logged persistently to Lakebase
@@ -53,7 +53,7 @@ Databricks App (Serverless Node.js / Express)
 | Database (OLTP) | Lakebase Autoscaling (Databricks managed Postgres) |
 | Data / Governance | Unity Catalog (Delta tables, RBAC, ABAC column masking) |
 | Hosting | Databricks Apps (serverless, SSO auth baked in) |
-| AI Features | FMAPI (Llama 3.3-70B), optional Genie Space + AI/BI Dashboards |
+| AI Features | Configurable serving endpoint (default FMAPI Llama 3.3-70B; Mosaic AI Gateway supported), optional Genie Space + AI/BI Dashboards |
 
 ---
 

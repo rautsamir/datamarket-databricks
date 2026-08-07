@@ -12,6 +12,7 @@ import {
   getDbHealth,
 } from '../db.js';
 import { getUcAuth, ucApiRequest, databricksApi } from '../databricks.js';
+import { askAiEndpoint, sanitizeEndpointName } from './ask-catalog.js';
 
 export function registerRoutes(app) {
   // ─── Health ───────────────────────────────────────────────────────────────────
@@ -44,6 +45,7 @@ export function registerRoutes(app) {
       demoMode:   DEMO_MODE,
       sqlWarehouseId:   getSetting('sql_warehouse_id', SQL_WAREHOUSE_ID),
       askAiEnabled:            getSetting('ask_ai_enabled',            'true') !== 'false',
+      askAiEndpoint:           askAiEndpoint(),
       insightsEnabled:         getSetting('insights_enabled',         'true') !== 'false',
       featureRequestsEnabled:  getSetting('feature_requests_enabled', 'false') === 'true',
       contributeUrl:           getSetting('contribute_url',           ''),
@@ -92,6 +94,16 @@ export function registerRoutes(app) {
     try {
       const updates = req.body; // { key: value, ... }
       if (!updates || typeof updates !== 'object') return res.status(400).json({ error: 'Body must be a JSON object of {key: value}' });
+
+      // Reject a bad serving endpoint at save time rather than on the next Ask AI
+      // query — the name is interpolated into an API path.
+      const ep = updates.ask_ai_endpoint;
+      if (ep != null && String(ep).trim() !== '' && !sanitizeEndpointName(ep)) {
+        return res.status(400).json({
+          error: 'Invalid Ask AI serving endpoint name. Use only letters, digits, dots, hyphens, and underscores.',
+        });
+      }
+
       for (const [key, value] of Object.entries(updates)) {
         await query(
           `INSERT INTO settings (key, value, updated_at) VALUES ($1, $2, NOW())

@@ -80,7 +80,8 @@ export function AdminDemoControlsPanel() {
 
 export function AdminSettingsPanel() {
   const { appName, appSubtitle, appLogoUrl, sqlWarehouseId: cfgWarehouse, rfaEnabled, setupComplete, demoMode, refreshConfig,
-          autoDiscoverEnabled, autoDiscoverPrefix, navLinks: configNavLinks, askAiEnabled: cfgAskAi, insightsEnabled: cfgInsights,
+          autoDiscoverEnabled, autoDiscoverPrefix, navLinks: configNavLinks, askAiEnabled: cfgAskAi,
+          askAiEndpoint: cfgAskAiEndpoint, insightsEnabled: cfgInsights,
           featureRequestsEnabled: cfgFeatureRequests, contributeUrl: cfgContributeUrl,
           aboutText: configAboutText, contactName: configContactName,
           contactEmail: configContactEmail, contactNote: configContactNote,
@@ -104,6 +105,7 @@ export function AdminSettingsPanel() {
     sql_warehouse_id:cfgWarehouse || '',
     rfa_enabled:     String(rfaEnabled),
     ask_ai_enabled:             String(cfgAskAi !== false),
+    ask_ai_endpoint:            cfgAskAiEndpoint || '',
     insights_enabled:           String(cfgInsights !== false),
     feature_requests_enabled:   String(cfgFeatureRequests === true),
     contribute_url:             cfgContributeUrl || '',
@@ -129,6 +131,7 @@ export function AdminSettingsPanel() {
       sql_warehouse_id:cfgWarehouse || '',
       rfa_enabled:     String(rfaEnabled),
       ask_ai_enabled:             String(cfgAskAi !== false),
+      ask_ai_endpoint:            cfgAskAiEndpoint || '',
       insights_enabled:           String(cfgInsights !== false),
       feature_requests_enabled:   String(cfgFeatureRequests === true),
       contribute_url:             cfgContributeUrl || '',
@@ -142,7 +145,7 @@ export function AdminSettingsPanel() {
     setNavLinks(configNavLinks?.length ? configNavLinks : DEFAULT_NAV_LINKS)
     setFaqItems(configFaqItems?.length ? configFaqItems : DEFAULT_FAQ)
     setSearchChips(configSearchChips || [])
-  }, [appName, appSubtitle, appLogoUrl, cfgWarehouse, rfaEnabled, cfgAskAi, cfgInsights, cfgFeatureRequests, cfgContributeUrl,
+  }, [appName, appSubtitle, appLogoUrl, cfgWarehouse, rfaEnabled, cfgAskAi, cfgAskAiEndpoint, cfgInsights, cfgFeatureRequests, cfgContributeUrl,
       autoDiscoverEnabled, autoDiscoverPrefix,
       configNavLinks, configAboutText, configContactName, configContactEmail, configContactNote, configFaqItems, configSearchChips])
 
@@ -302,6 +305,10 @@ export function AdminSettingsPanel() {
             ? <span className="text-emerald-700 font-medium">UC grants enabled — GRANT SELECT will execute on approval</span>
             : <span className="text-amber-700">UC grants disabled — approvals are logged but no UC permissions are set</span>
           }
+        </div>
+        <div className="border-t border-gray-100 pt-4">
+          {field('Ask AI serving endpoint', 'ask_ai_endpoint', 'databricks-meta-llama-3-3-70b-instruct',
+            'Databricks serving endpoint used for natural language search. Point this at an endpoint governed by Mosaic AI Gateway to get rate limits, usage tracking, payload logging, and guardrails. The app service principal needs CAN_QUERY on it.')}
         </div>
       </div>
 
