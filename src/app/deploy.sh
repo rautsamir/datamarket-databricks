@@ -497,10 +497,20 @@ for f in index.html vite.config.js tailwind.config.js postcss.config.js jsconfig
       --profile "$PROFILE" 2>/dev/null || true
 done
 
-# Remove any dist/ left behind by an earlier deploy, so a stale bundle can never
-# shadow the freshly built one.
-databricks workspace delete "${WORKSPACE_PATH}/dist" --recursive \
-  --profile "$PROFILE" 2>/dev/null || true
+# Remove build artifacts left behind by an earlier deploy, so a stale bundle can
+# never shadow the freshly built one.
+#
+# node_modules matters more than it looks. This script never uploads it, but
+# other deploy paths have, and nothing removed it. Native binaries built for the
+# deploying machine (a macOS esbuild, say) then land in a Linux build container,
+# and because the tree looks complete npm reports "up to date" and installs
+# nothing — so the build runs against dependencies compiled for the wrong OS and
+# fails with an unreadable error from esbuild. Always start from a clean tree and
+# let the platform install for its own architecture.
+for stale in dist node_modules; do
+  databricks workspace delete "${WORKSPACE_PATH}/${stale}" --recursive \
+    --profile "$PROFILE" 2>/dev/null || true
+done
 
 info "Uploading backend modules..."
 for f in app.js db.js auth.js databricks.js; do
@@ -599,30 +609,46 @@ DEPLOY_OUT=$(databricks apps deploy "$APP_NAME" \
 # The CLI's output shape differs between versions and between text and JSON modes,
 # so matching on stdout alone reported a failure for deploys that had actually
 # succeeded. Confirm against the API before believing the deploy failed.
-deploy_succeeded() {
-  echo "$DEPLOY_OUT" | grep -qi 'SUCCEEDED' && return 0
-  local state
-  state=$(databricks apps get "$APP_NAME" --profile "$PROFILE" --output json 2>/dev/null \
+# Report the deployment's own state, not the app's.
+#
+# compute_status is deliberately ignored: it reports whether the app container is
+# running, and it stays ACTIVE while a new deployment's build fails. Reading it as
+# success is what let a failed build print "App deployed successfully". The build
+# is also asynchronous — the deploy command returns before it finishes — so poll
+# until the deployment reaches a terminal state instead of sampling once.
+deployment_state() {
+  databricks apps get "$APP_NAME" --profile "$PROFILE" --output json 2>/dev/null \
     | python3 -c "
 import json, sys
 try:
     app = json.load(sys.stdin)
 except Exception:
-    print('')
-    sys.exit(0)
-dep = app.get('active_deployment') or {}
-print(((dep.get('status') or {}).get('state'))
-      or ((app.get('app_status') or {}).get('state'))
-      or '')
-" 2>/dev/null)
-  [[ "$state" == "SUCCEEDED" || "$state" == "RUNNING" || "$state" == "ACTIVE" ]]
+    print('|'); sys.exit(0)
+dep = app.get('pending_deployment') or app.get('active_deployment') or {}
+st = dep.get('status') or {}
+# '|' rather than a tab: bash collapses repeated whitespace separators, which
+# would shift the message into the state when one field is empty.
+print((st.get('state') or '') + '|' + (st.get('message') or ''))
+" 2>/dev/null || echo '|'
 }
 
-if deploy_succeeded; then
+DEPLOY_STATE=""; DEPLOY_MSG=""
+for _ in $(seq 1 60); do
+  IFS='|' read -r DEPLOY_STATE DEPLOY_MSG <<< "$(deployment_state)"
+  case "$DEPLOY_STATE" in
+    SUCCEEDED|FAILED|CANCELLED|ERROR) break ;;
+  esac
+  sleep 5
+done
+
+if [[ "$DEPLOY_STATE" == "SUCCEEDED" ]]; then
   ok "App deployed successfully"
 else
-  warn "Deploy did not reach SUCCEEDED state:"
-  echo "$DEPLOY_OUT" | tail -10
+  warn "App deployment did not succeed — state: ${DEPLOY_STATE:-unknown}"
+  [[ -n "$DEPLOY_MSG" ]] && warn "  ${DEPLOY_MSG}"
+  echo ""
+  warn "See the build log for the cause:"
+  warn "  databricks apps logs ${APP_NAME} --tail-lines 100 --profile ${PROFILE}"
   echo ""
   warn "Continuing with the remaining setup steps so the workspace is left in a"
   warn "usable state. Fix the error above and re-run deploy — the database and"
