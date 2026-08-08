@@ -44,13 +44,24 @@ export const APP_LOGO_URL = process.env.APP_LOGO_URL || '/datamarket-logo.svg';
 
 let dbPool = null;
 let poolCreatedAt = 0;
+let poolPromise = null;
+let lastCredentialRefresh = 0;
 const POOL_TTL_MS = 55 * 60 * 1000; // recreate pool every 55 min (token TTL is 1h)
+const CREDENTIAL_REFRESH_COOLDOWN_MS = 30 * 1000;
 
 export async function getPool() {
   const now = Date.now();
   // Recreate pool before token expires so in-flight queries aren't dropped
   if (dbPool && now < poolCreatedAt + POOL_TTL_MS) return dbPool;
 
+  // Concurrent callers share one creation. Without this, a burst of requests
+  // against an expired pool each mints its own pool and credential.
+  if (!poolPromise) poolPromise = createPool().finally(() => { poolPromise = null; });
+  return poolPromise;
+}
+
+async function createPool() {
+  const now = Date.now();
   if (dbPool) { try { await dbPool.end(); } catch (_) {} }
 
   let pgPassword;
@@ -89,7 +100,36 @@ export async function getPool() {
 
 export async function query(sql, params = []) {
   const pool = await getPool();
-  return pool.query(sql, params);
+  try {
+    return await pool.query(sql, params);
+  } catch (e) {
+    // The cached credential can stop working before the 55-minute TTL is up —
+    // notably when the SP's Postgres role is recreated, which happens whenever
+    // the Lakebase resource binding is removed and re-added. Holding the dead
+    // pool until the TTL expires would leave the app broken for the best part
+    // of an hour, and the fallback for a failed query is the demo persona, so
+    // the failure looks like a login bug rather than a database one. Discard
+    // the pool and retry once with a freshly minted credential.
+    // Rate-limited, because when the role is genuinely missing rather than
+    // merely stale every request would otherwise mint a new credential.
+    if (!/password authentication failed/i.test(e.message || '')) throw e;
+    if (Date.now() - lastCredentialRefresh < CREDENTIAL_REFRESH_COOLDOWN_MS) throw e;
+    lastCredentialRefresh = Date.now();
+    console.warn('[Lakebase] Credential rejected — refreshing and retrying once.');
+    poolCreatedAt = 0;
+    try {
+      return await (await getPool()).query(sql, params);
+    } catch (retryError) {
+      // A freshly minted credential being rejected means the SP has no usable
+      // Postgres role — not a stale password. Health is otherwise only ever set
+      // during startup, so without this the app keeps reporting "ok" while every
+      // query fails, and the UI shows the demo persona instead of the setup
+      // diagnostic. Record the real state so the operator sees the cause.
+      const { status, message, hint } = classifyDbError(retryError);
+      setDbHealth(status, message, hint);
+      throw retryError;
+    }
+  }
 }
 
 export async function closePool() {

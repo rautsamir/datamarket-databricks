@@ -1152,17 +1152,19 @@ fi
 # ── Resource tagging for spend/consumption observability ─────────────────────
 step 10 "Tagging Databricks resources for spend observability"
 
-TAGS_JSON="{\"app\":\"datamarket\",\"purpose\":\"data_marketplace\",\"environment\":\"${DEMO_MODE_FLAG:-production}\"}"
-
-# Tag the Databricks App
-APP_TAG_RESULT=$(databricks api patch "/api/2.0/apps/${APP_NAME}" \
-  --profile "$PROFILE" \
-  --json "{\"custom_tags\":${TAGS_JSON}}" 2>&1 || echo "error")
-if echo "$APP_TAG_RESULT" | grep -qi "error\|INTERNAL"; then
-  warn "App tagging skipped (API may not support PATCH custom_tags in this workspace version)"
-else
-  ok "App tagged: app=datamarket, purpose=data_marketplace"
-fi
+# Databricks Apps have no custom_tags field. Patching one in is not a harmless
+# no-op: the Apps update API replaces the whole spec, so a body of just
+# {"custom_tags": ...} silently drops the unknown field AND clears `resources`,
+# unbinding Lakebase. Removing that binding deletes the SP's Postgres role, so
+# the app authenticates for a couple of minutes and then fails every query with
+# "password authentication failed" — which the UI shows as the demo persona.
+#
+# Serverless app DBUs are attributed with a serverless budget policy instead,
+# which is what the app's effective_budget_policy_id refers to.
+info "Databricks Apps do not support custom tags — attributing app DBUs"
+info "requires a serverless budget policy:"
+info "  → Settings → Compute → Serverless budget policies → create one tagged app=datamarket"
+info "  → then attach it to '${APP_NAME}' under the app's Settings"
 
 # Tag the SQL Warehouse
 if [[ -n "$WAREHOUSE_ID" ]]; then
@@ -1191,7 +1193,7 @@ cat <<'QUERY'
   SELECT usage_date,
          usage_type,
          CASE
-           WHEN custom_tags['app'] = 'datamarket'           THEN 'App / Warehouse'
+           WHEN custom_tags['app'] = 'datamarket'           THEN 'Warehouse'
            WHEN sku_name LIKE '%LAKEBASE%'                  THEN 'Lakebase (Postgres)'
            WHEN sku_name LIKE '%FOUNDATION_MODEL%'
              OR sku_name LIKE '%LLAMA%'
@@ -1325,6 +1327,20 @@ GRANT
   fi
 fi
 
+
+# The Lakebase binding is the app's lifeline: without it the SP has no Postgres
+# role, every query fails, and the UI quietly falls back to the demo persona
+# instead of showing an error. It is also easy to destroy by accident, because
+# the Apps update API replaces the whole spec — any later call that omits
+# `resources` unbinds the database. Re-assert it last, after every step that
+# touches the app, so a deploy never ends with a silently broken app.
+ensure_lakebase_binding
+if [[ "${LAKEBASE_BINDING_CHANGED}" == "true" ]]; then
+  warn "The Lakebase binding had been lost and was restored — restarting the app"
+  warn "so it picks up a working database credential."
+  databricks apps stop  "$APP_NAME" --profile "$PROFILE" >/dev/null 2>&1 || true
+  databricks apps start "$APP_NAME" --profile "$PROFILE" >/dev/null 2>&1 || true
+fi
 
 APP_URL=$(databricks apps get "$APP_NAME" --profile "$PROFILE" --output json 2>/dev/null \
   | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('url',''))" 2>/dev/null || true)
