@@ -117,7 +117,7 @@ const STEPS = [
 ]
 
 export function FirstRunWizard({ onDismiss }) {
-  const { appName, refreshConfig } = useAppConfig()
+  const { appName, refreshConfig, sqlWarehouseId } = useAppConfig()
   const [step, setStep]               = useState(0)
 
   // Step 0 — Warehouse
@@ -137,16 +137,16 @@ export function FirstRunWizard({ onDismiss }) {
   const [showImport, setShowImport] = useState(false)
   const [imported, setImported]     = useState(false)
 
-  // Pre-fill warehouse ID from settings
+  // Pre-fill the warehouse the deploy script already found and granted access
+  // to, so this step is a confirmation rather than a scavenger hunt. Config is
+  // the right source because it resolves the saved setting over the deploy-time
+  // default; the settings endpoint returns only persisted rows, which on a first
+  // run is exactly the case where the field would otherwise be empty.
   useEffect(() => {
-    fetch('/api/portal/settings')
-      .then(r => r.ok ? r.json() : null)
-      .then(data => {
-        const id = data?.sql_warehouse_id || ''
-        if (id) { setWarehouseId(id); setPreFilled(true) }
-      })
-      .catch(() => {})
-  }, [])
+    if (!sqlWarehouseId) return
+    setWarehouseId(prev => prev || sqlWarehouseId)
+    setPreFilled(true)
+  }, [sqlWarehouseId])
 
   // Load access check whenever we enter step 1
   const runAccessCheck = useCallback(async () => {

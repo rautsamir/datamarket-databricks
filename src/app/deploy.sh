@@ -163,6 +163,56 @@ except: print('')
 " 2>/dev/null || true
 }
 
+# ── Helper: pick a SQL Warehouse when the operator did not name one ──────────
+# Runs before app.yaml is generated so the chosen id can be baked into the app's
+# environment. That is what lets the setup wizard pre-fill the field for
+# confirmation rather than sending the operator off to find an id the deploy
+# already knows. Granting on the warehouse still happens later, because that
+# needs the app's service principal, which does not exist yet at this point.
+#
+# Idempotent, since the grant step calls it again: the guard covers the case
+# where detection ran and found nothing, so it is not retried on every call.
+WAREHOUSE_DETECTED="false"
+detect_warehouse() {
+  [[ -n "$WAREHOUSE_ID" || "$WAREHOUSE_DETECTED" == "true" ]] && return 0
+  WAREHOUSE_DETECTED="true"
+
+  info "No --warehouse-id provided — auto-detecting..."
+  WAREHOUSE_ID=$(databricks warehouses list --profile "$PROFILE" -o json 2>/dev/null \
+    | python3 -c "
+import sys, json
+
+data = json.load(sys.stdin)
+warehouses = data if isinstance(data, list) else data.get('warehouses', data.get('items', []))
+
+def score(w):
+    name  = (w.get('name') or '').lower()
+    state = (w.get('state') or '').upper()
+    wtype = (w.get('warehouse_type') or '').upper()
+    s = 0
+    if state == 'RUNNING':   s += 10
+    if 'starter' in name:    s += 4
+    if 'serverless' in name: s += 3
+    if wtype == 'PRO':       s += 2
+    return s
+
+best = sorted(warehouses, key=score, reverse=True)
+if best:
+    w = best[0]
+    print(w.get('id',''))
+    print(f'  Selected: {w.get(\"name\")} ({w.get(\"warehouse_type\")}, {w.get(\"state\")})', file=sys.stderr)
+" 2>/tmp/wh_detect_log.txt || true)
+  [[ -f /tmp/wh_detect_log.txt ]] && cat /tmp/wh_detect_log.txt >&2 || true
+  rm -f /tmp/wh_detect_log.txt
+  if [[ -n "$WAREHOUSE_ID" ]]; then
+    ok "Auto-detected warehouse: ${WAREHOUSE_ID}"
+    info "Pass --warehouse-id ${WAREHOUSE_ID} to skip detection on future runs."
+  else
+    warn "Could not auto-detect a SQL Warehouse. UC GRANTs won't execute until one is set."
+    warn "After deploy: Manage → Settings → SQL Warehouse ID"
+  fi
+}
+
 # ── Helper: is a Lakebase project actually present? ──────────────────────────
 # list-projects is the only authoritative check. Branch lookups conflate three
 # different states — absent, still provisioning, and slug-tombstoned — which is
@@ -386,6 +436,7 @@ if [[ "$USE_BUNDLE" == "true" ]]; then
   step 4 "Checking app.yaml"
   if [[ ! -f "${SCRIPT_DIR}/app.yaml" ]]; then
     info "app.yaml not found — generating from values provided..."
+    detect_warehouse
     # Discover Lakebase hostname for app.yaml (needed even in bundle mode)
     LAKEBASE_HOST=""
     LAKEBASE_CACHE_FILE="${SCRIPT_DIR}/.lakebase-${APP_NAME}.cache"
@@ -420,6 +471,8 @@ env:
     value: "${APP_NAME}"
   - name: LAKEBASE_ENDPOINT
     value: "${LAKEBASE_ENDPOINT}"
+  - name: SQL_WAREHOUSE_ID
+    value: "${WAREHOUSE_ID}"
   - name: DEMO_MODE
     value: "${DEMO_MODE}"
 YAML
@@ -593,6 +646,9 @@ ok "Lakebase endpoint: ${LAKEBASE_ENDPOINT}"
 # ── Generate app.yaml ─────────────────────────────────────────────────────────
 step 4 "Generating app.yaml"
 
+# Detect before writing app.yaml so the id is part of the app's environment.
+detect_warehouse
+
 APP_YAML_PATH="${SCRIPT_DIR}/app.yaml"
 
 cat > "$APP_YAML_PATH" << YAML
@@ -618,6 +674,13 @@ env:
     value: "${APP_NAME}"
   - name: LAKEBASE_ENDPOINT
     value: "${LAKEBASE_ENDPOINT}"
+
+  # ── SQL Warehouse ─────────────────────────────────────────────────────────
+  # Used to run Unity Catalog GRANTs when an access request is approved. Acts as
+  # the default only — the value saved in Settings wins, so an admin can change
+  # warehouses in the UI without redeploying.
+  - name: SQL_WAREHOUSE_ID
+    value: "${WAREHOUSE_ID}"
 
   # ── Mode ──────────────────────────────────────────────────────────────────
   # false = real SSO identity + UC grants. true = persona switcher (demos only)
@@ -1029,43 +1092,10 @@ fi
 # ── Warehouse SP permission ───────────────────────────────────────────────────
 step 8 "Granting SQL Warehouse 'Can use' to app service principal"
 
-# Auto-detect warehouse if not provided
-if [[ -z "$WAREHOUSE_ID" ]]; then
-  info "No --warehouse-id provided — auto-detecting..."
-  WAREHOUSE_ID=$(databricks warehouses list --profile "$PROFILE" -o json 2>/dev/null \
-    | python3 -c "
-import sys, json
-
-data = json.load(sys.stdin)
-warehouses = data if isinstance(data, list) else data.get('warehouses', data.get('items', []))
-
-def score(w):
-    name  = (w.get('name') or '').lower()
-    state = (w.get('state') or '').upper()
-    wtype = (w.get('warehouse_type') or '').upper()
-    s = 0
-    if state == 'RUNNING':   s += 10
-    if 'starter' in name:    s += 4
-    if 'serverless' in name: s += 3
-    if wtype == 'PRO':       s += 2
-    return s
-
-best = sorted(warehouses, key=score, reverse=True)
-if best:
-    w = best[0]
-    print(w.get('id',''))
-    import sys
-    print(f'  Selected: {w.get(\"name\")} ({w.get(\"warehouse_type\")}, {w.get(\"state\")})', file=sys.stderr)
-" 2>/tmp/wh_detect_log.txt || true)
-  [[ -f /tmp/wh_detect_log.txt ]] && cat /tmp/wh_detect_log.txt >&2 || true
-  if [[ -n "$WAREHOUSE_ID" ]]; then
-    ok "Auto-detected warehouse: ${WAREHOUSE_ID}"
-    info "Pass --warehouse-id ${WAREHOUSE_ID} to skip detection on future runs."
-  else
-    warn "Could not auto-detect a SQL Warehouse. UC GRANTs won't execute until one is set."
-    warn "After deploy: Manage → Settings → SQL Warehouse ID"
-  fi
-fi
+# Detection already ran before app.yaml was generated, so the id could be baked
+# into the app's environment. Granting still has to happen here, because it
+# needs the service principal, which does not exist until the app is created.
+detect_warehouse
 
 if [[ -z "$WAREHOUSE_ID" ]]; then
   : # skip silently — warned above
