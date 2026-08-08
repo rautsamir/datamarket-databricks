@@ -265,8 +265,34 @@ ensure_lakebase_binding() {
     return 0
   fi
 
+  # The binding needs the database's *resource path*, not the Postgres database
+  # name. Note the two differ by a character: the resource id is
+  # "databricks-postgres" while the database itself is "databricks_postgres".
+  local branch_path db_path
+  branch_path="projects/${LAKEBASE_PROJECT}/branches/${BRANCH_NAME}"
+  db_path=$(databricks api get "/api/2.0/postgres/${branch_path}/databases" \
+    --profile "$PROFILE" 2>/dev/null \
+    | PG_DB="$LAKEBASE_DB_NAME" python3 -c "
+import json, os, sys
+try:
+    dbs = json.load(sys.stdin).get('databases') or []
+except Exception:
+    sys.exit(1)
+# Match on the real Postgres database name, falling back to the first database
+# in the branch so a non-default name still binds to something usable.
+want = os.environ['PG_DB']
+hit = next((d for d in dbs if (d.get('status') or {}).get('postgres_database') == want), None)
+print((hit or (dbs[0] if dbs else {})).get('name', ''))
+" 2>/dev/null || true)
+
+  if [[ -z "$db_path" ]]; then
+    warn "Could not resolve the Lakebase database path — skipping the binding."
+    warn "Add the database under the app's Settings with 'Can connect and create'."
+    return 0
+  fi
+
   plan=$(databricks apps get "$APP_NAME" --profile "$PROFILE" --output json 2>/dev/null \
-    | LB_BRANCH="projects/${LAKEBASE_PROJECT}/branches/${BRANCH_NAME}" python3 -c "
+    | LB_BRANCH="$branch_path" LB_DB="$db_path" python3 -c "
 import json, os, sys
 try:
     app = json.load(sys.stdin)
@@ -288,13 +314,16 @@ want = {
     'name': 'postgres',   # the conventional key for Lakebase Autoscaling
     'description': 'Lakebase database holding DataMarket catalog, requests, and audit metadata.',
     'postgres': {
+        # Both fields are required. The API rejects a branch-only binding even
+        # though the docs describe the database as optional.
         'branch': os.environ['LB_BRANCH'],
+        'database': os.environ['LB_DB'],
         'permission': 'CAN_CONNECT_AND_CREATE',
     },
 }
 # Everything else the operator attached (warehouse, endpoints, secrets) is
-# preserved verbatim — apps update takes a whole app body, not a patch, so
-# anything omitted here is what gets dropped.
+# preserved verbatim — the update replaces the whole resource list, so anything
+# omitted here is what gets dropped.
 payload = {'resources': current + [want]}
 if app.get('description'):
     payload['description'] = app['description']
@@ -308,9 +337,16 @@ print(json.dumps(payload))
     warn "If the app reports insufficient database permissions, add the database"
     warn "under the app's Settings with 'Can connect and create'."
   else
-    out=$(databricks apps update "$APP_NAME" --json "$plan" \
-      --profile "$PROFILE" -o json 2>&1 || true)
-    if printf '%s' "$out" | grep -qE "CAN_CONNECT_AND_CREATE|\"postgres\""; then
+    # `databricks apps update` validates the body against the CLI's own typed
+    # model, which as of v0.288.0 does not know the `postgres` resource type and
+    # rejects it with "unknown field: postgres" before the request is ever sent.
+    # The REST API accepts it, so go straight there.
+    printf '%s' "$plan" > "${TMPDIR:-/tmp}/datamarket-bind-$$.json"
+    out=$(databricks api patch "/api/2.0/apps/${APP_NAME}" \
+      --json "@${TMPDIR:-/tmp}/datamarket-bind-$$.json" \
+      --profile "$PROFILE" 2>&1 || true)
+    rm -f "${TMPDIR:-/tmp}/datamarket-bind-$$.json"
+    if printf '%s' "$out" | grep -qE "CAN_CONNECT_AND_CREATE"; then
       LAKEBASE_BINDING_CHANGED="true"
       ok "Lakebase bound — Databricks created the SP role and granted CONNECT + CREATE"
     else
@@ -1146,7 +1182,7 @@ fi
 
 info "Tags flow into system.billing.usage under the custom_tags column."
 info "Note: Lakebase custom_tags are UI-only (CLI API does not expose the field yet)."
-info "  → Workspace → Lakebase → ${APP_NAME} → Settings → Custom tags → add app=datamarket"
+info "  → Workspace → Lakebase → ${LAKEBASE_PROJECT} → Settings → Custom tags → add app=datamarket"
 info "Note: FMAPI (Ask AI) usage has no taggable resource — filter by sku_name instead."
 info "Full DataMarket spend query:"
 cat <<'QUERY'
