@@ -163,6 +163,72 @@ except: print('')
 " 2>/dev/null || true
 }
 
+# ── Helper: is a Lakebase project actually present? ──────────────────────────
+# list-projects is the only authoritative check. Branch lookups conflate three
+# different states — absent, still provisioning, and slug-tombstoned — which is
+# what made stuck projects so hard to diagnose.
+_project_exists() {
+  databricks postgres list-projects --profile "$PROFILE" -o json 2>/dev/null \
+  | WANT="projects/$1" python3 -c "
+import sys, json, os
+try:
+    items = json.load(sys.stdin)
+    if not isinstance(items, list): items = []
+except Exception:
+    sys.exit(2)
+sys.exit(0 if any(p.get('name') == os.environ['WANT'] for p in items) else 1)
+" 2>/dev/null
+}
+
+# ── Helper: resolve a usable Lakebase project name ───────────────────────────
+# Deleted Lakebase projects keep their slug. The tombstone is invisible —
+# list-projects does not show it and delete-project reports "not found" — but
+# it still blocks create-project with "already exists", which used to dead-end
+# the deploy. When that happens, fall forward to the next candidate name.
+#
+# Candidates are checked reuse-first and are deterministic on purpose. If a run
+# lands on "<base>-new", every later run finds that project already present and
+# reuses it. A random suffix would mint a fresh empty database on every deploy
+# and silently strand the previous one's data.
+_resolve_lakebase_project() {
+  local base="$1" candidate out
+  for candidate in "$base" "${base}-new" "${base}-new-2" "${base}-new-3"; do
+    if _project_exists "$candidate"; then
+      if [[ "$candidate" != "$base" ]]; then
+        warn "Reusing Lakebase project '${candidate}' — the slug '${base}' is taken"
+        warn "by a deleted project and cannot be reused."
+      fi
+      LAKEBASE_PROJECT="$candidate"
+      return 0
+    fi
+
+    info "Project '${candidate}' not found — creating Lakebase Autoscaling project..."
+    info "(This takes ~2–3 minutes on first deploy — the CLI will wait automatically)"
+    out=$(databricks postgres create-project "$candidate" \
+      --profile "$PROFILE" -o json 2>&1 || true)
+
+    if printf '%s' "$out" | python3 -c "import sys,json; json.load(sys.stdin)" &>/dev/null; then
+      ok "Project '${candidate}' created"
+      LAKEBASE_PROJECT="$candidate"
+      return 0
+    fi
+
+    if printf '%s' "$out" | grep -qiE "already exists|slug"; then
+      warn "The name '${candidate}' is held by a deleted Lakebase project — trying the next name."
+      continue
+    fi
+
+    # Anything else is a real failure (permissions, quota, service error) and
+    # renaming will not help, so surface it rather than churning through names.
+    warn "create-project failed for '${candidate}': ${out:0:200}"
+    LAKEBASE_PROJECT="$candidate"
+    return 0
+  done
+
+  fail "Could not find or create a Lakebase project. Tried: ${base}, ${base}-new, ${base}-new-2, ${base}-new-3.
+Pick an unused name explicitly:  ./deploy.sh --lakebase-project <name>"
+}
+
 # ── Lakebase resource binding ────────────────────────────────────────────────
 # Creating a Postgres role by hand only lets the SP *authenticate*. What grants
 # it CREATE on the database is binding the database as an app resource. Binding
@@ -419,23 +485,12 @@ LAKEBASE_ENDPOINT=""
 LAKEBASE_CACHE_FILE="${SCRIPT_DIR}/.lakebase-${APP_NAME}.cache"
 
 info "Looking up Lakebase project: ${LAKEBASE_PROJECT}"
+# May change LAKEBASE_PROJECT if the requested slug is held by a deleted project.
+_resolve_lakebase_project "$LAKEBASE_PROJECT"
 BRANCH_NAME=$(_get_branch)
 
-# ── Project doesn't exist yet — create it ─────────────────────────────────────
+# ── Branch not up yet — wait for it ───────────────────────────────────────────
 if [[ -z "$BRANCH_NAME" ]]; then
-  info "Project '${LAKEBASE_PROJECT}' not found — creating Lakebase Autoscaling project..."
-  info "(This takes ~2–3 minutes on first deploy — the CLI will wait automatically)"
-
-  CREATE_OUT=$(databricks postgres create-project "$LAKEBASE_PROJECT" \
-    --profile "$PROFILE" -o json 2>&1 || true)
-
-  if echo "$CREATE_OUT" | python3 -c "import sys,json; json.load(sys.stdin)" &>/dev/null; then
-    ok "Project '${LAKEBASE_PROJECT}' created"
-  else
-    # May already exist or be in progress — not fatal
-    warn "create-project output: ${CREATE_OUT:0:200}"
-  fi
-
   # Poll for branch (provisioned after project creation)
   info "Waiting for Lakebase branch to be ready..."
   for i in $(seq 1 36); do
