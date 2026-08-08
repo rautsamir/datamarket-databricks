@@ -34,6 +34,7 @@ TOTAL_STEPS=11
 PROFILE="DEFAULT"
 ADMIN_EMAIL=""
 LAKEBASE_PROJECT="datamarket"
+LAKEBASE_DB_NAME="databricks_postgres"   # the database inside the Lakebase project
 APP_NAME="datamarket"
 DEMO_MODE="false"
 SEED_DATA=""          # empty = auto (true when demo-mode, false otherwise)
@@ -126,6 +127,134 @@ WS_USER_PATH="${WS_USER//@/%40}"  # URL-encode @ for workspace path display
 WORKSPACE_PATH="/Workspace/Users/${WS_USER}/${APP_NAME}"
 info "Workspace path: ${WORKSPACE_PATH}"
 
+# ── Helper: get the first/production branch name for a project ────────────────
+_get_branch() {
+  databricks postgres list-branches "projects/${LAKEBASE_PROJECT}" \
+    --profile "$PROFILE" -o json 2>/dev/null \
+  | python3 -c "
+import sys, json
+try:
+    items = json.load(sys.stdin)
+    if not isinstance(items, list): items = []
+    # resource names look like 'projects/foo/branches/bar' — extract short name
+    names = [b.get('name','').split('/')[-1] for b in items if b.get('name','')]
+    prod = next((n for n in names if n == 'production'), '')
+    print(prod or (names[0] if names else ''))
+except: print('')
+" 2>/dev/null || true
+}
+
+# ── Helper: get endpoint hostname for a branch ────────────────────────────────
+_get_host() {
+  local branch="$1"
+  databricks postgres list-endpoints "projects/${LAKEBASE_PROJECT}/branches/${branch}" \
+    --profile "$PROFILE" -o json 2>/dev/null \
+  | python3 -c "
+import sys, json
+try:
+    items = json.load(sys.stdin)
+    if not isinstance(items, list): items = []
+    for ep in items:
+        host = ep.get('status', {}).get('hosts', {}).get('host', '')
+        if host:
+            print(host)
+            break
+except: print('')
+" 2>/dev/null || true
+}
+
+# ── Lakebase resource binding ────────────────────────────────────────────────
+# Creating a Postgres role by hand only lets the SP *authenticate*. What grants
+# it CREATE on the database is binding the database as an app resource. Binding
+# it does both: Databricks creates the SP's Postgres role (named after its
+# client ID, reusing one that already exists) and grants CONNECT + CREATE.
+# Without the binding the app connects successfully and then fails with
+# "permission denied for database" the moment it tries to create its schema.
+#
+# Every path that produces an app must call this, so it lives in one function
+# rather than inline in the standard path: `databricks bundle deploy` creates
+# the app with no resources too, and the notebook path shells out to deploy.sh.
+#
+# DataMarket provisions Lakebase *Autoscaling* (projects and branches), whose
+# resource type is `postgres` and which is addressed by branch resource path.
+# The `database` type with instance_name is Lakebase Provisioned — a different
+# type that mints a *separate* Postgres role. Databricks documents that
+# switching an app between the two orphans the data owned by the old role, so
+# this never rewrites an existing binding of either type; it only adds one when
+# the app has none.
+LAKEBASE_BINDING_CHANGED="false"
+ensure_lakebase_binding() {
+  info "Binding Lakebase database to the app..."
+  local plan out
+  LAKEBASE_BINDING_CHANGED="false"
+
+  # BRANCH_NAME is only assigned inside branch-detection conditionals, so under
+  # `set -u` an unresolved branch would abort the whole deploy on an unbound
+  # variable. Degrade to a warning instead — a missing binding is recoverable
+  # from the app's Settings, a dead deploy script is not.
+  if [[ -z "${BRANCH_NAME:-}" ]]; then
+    warn "Lakebase branch could not be resolved — skipping the database binding."
+    warn "Add the database under the app's Settings with 'Can connect and create',"
+    warn "or re-run deploy once the Lakebase project is ready."
+    return 0
+  fi
+
+  plan=$(databricks apps get "$APP_NAME" --profile "$PROFILE" --output json 2>/dev/null \
+    | LB_BRANCH="projects/${LAKEBASE_PROJECT}/branches/${BRANCH_NAME}" python3 -c "
+import json, os, sys
+try:
+    app = json.load(sys.stdin)
+except Exception:
+    sys.exit(1)
+current = app.get('resources') or []
+
+# Treat either Lakebase type as 'already bound'. The name check matters because
+# the CLI does not always serialize the 'postgres' sub-object back to us, so a
+# bound app can look bare apart from its resource key.
+def is_db_binding(r):
+    return 'postgres' in r or 'database' in r or r.get('name') in ('postgres', 'database')
+
+if any(is_db_binding(r) for r in current):
+    print('ALREADY_BOUND')
+    sys.exit(0)
+
+want = {
+    'name': 'postgres',   # the conventional key for Lakebase Autoscaling
+    'description': 'Lakebase database holding DataMarket catalog, requests, and audit metadata.',
+    'postgres': {
+        'branch': os.environ['LB_BRANCH'],
+        'permission': 'CAN_CONNECT_AND_CREATE',
+    },
+}
+# Everything else the operator attached (warehouse, endpoints, secrets) is
+# preserved verbatim — apps update takes a whole app body, not a patch, so
+# anything omitted here is what gets dropped.
+payload = {'resources': current + [want]}
+if app.get('description'):
+    payload['description'] = app['description']
+print(json.dumps(payload))
+" 2>/dev/null || true)
+
+  if [[ "$plan" == "ALREADY_BOUND" ]]; then
+    ok "Lakebase already bound to the app"
+  elif [[ -z "$plan" ]]; then
+    warn "Could not read the app's resources — skipping the Lakebase binding."
+    warn "If the app reports insufficient database permissions, add the database"
+    warn "under the app's Settings with 'Can connect and create'."
+  else
+    out=$(databricks apps update "$APP_NAME" --json "$plan" \
+      --profile "$PROFILE" -o json 2>&1 || true)
+    if printf '%s' "$out" | grep -qE "CAN_CONNECT_AND_CREATE|\"postgres\""; then
+      LAKEBASE_BINDING_CHANGED="true"
+      ok "Lakebase bound — Databricks created the SP role and granted CONNECT + CREATE"
+    else
+      warn "Could not bind the Lakebase database: ${out:0:180}"
+      warn "The app may fail with 'permission denied for database'. Add the database"
+      warn "under the app's Settings with 'Can connect and create', then restart."
+    fi
+  fi
+}
+
 # ── Bundle path ───────────────────────────────────────────────────────────────
 # When --use-bundle true, the DAB handles Lakebase provisioning + app deploy.
 # deploy.sh then picks up from Step 7 (Lakebase schema grants) onwards.
@@ -158,23 +287,10 @@ if [[ "$USE_BUNDLE" == "true" ]]; then
     # Discover Lakebase hostname for app.yaml (needed even in bundle mode)
     LAKEBASE_HOST=""
     LAKEBASE_CACHE_FILE="${SCRIPT_DIR}/.lakebase-${APP_NAME}.cache"
-    BRANCH_NAME=$(databricks api get "2.0/postgres/autoscaling/projects/${LAKEBASE_PROJECT}/branches" \
-      --profile "$PROFILE" 2>/dev/null \
-      | python3 -c "
-import sys, json
-try:
-    d = json.load(sys.stdin)
-    branches = d.get('branches', d.get('items', []))
-    prod = next((b.get('name','') for b in branches if b.get('name','') == 'production'), '')
-    first = branches[0].get('name','') if branches else ''
-    print(prod or first)
-except: print('')
-" 2>/dev/null || true)
+    BRANCH_NAME=$(_get_branch)
     if [[ -n "$BRANCH_NAME" ]]; then
       LAKEBASE_ENDPOINT_PATH="projects/${LAKEBASE_PROJECT}/branches/${BRANCH_NAME}/endpoints/primary"
-      LAKEBASE_HOST=$(databricks api get "2.0/postgres/endpoints/${LAKEBASE_ENDPOINT_PATH}" \
-        --profile "$PROFILE" 2>/dev/null \
-        | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('read_write_dns','') or d.get('dns','') or '')" 2>/dev/null || true)
+      LAKEBASE_HOST=$(_get_host "$BRANCH_NAME")
     fi
     if [[ -z "$LAKEBASE_HOST" && -f "$LAKEBASE_CACHE_FILE" ]]; then
       LAKEBASE_HOST=$(cat "$LAKEBASE_CACHE_FILE" 2>/dev/null || true)
@@ -197,7 +313,7 @@ env:
   - name: LAKEBASE_HOST
     value: "${LAKEBASE_HOST}"
   - name: LAKEBASE_DB
-    value: "databricks_postgres"
+    value: "${LAKEBASE_DB_NAME}"
   - name: LAKEBASE_SCHEMA
     value: "${APP_NAME}"
   - name: LAKEBASE_ENDPOINT
@@ -224,23 +340,10 @@ YAML
   # After bundle deploy, update app.yaml with discovered Lakebase hostname if missing
   step 6 "Refreshing app.yaml with Lakebase hostname"
   LAKEBASE_CACHE_FILE="${SCRIPT_DIR}/.lakebase-${APP_NAME}.cache"
-  BRANCH_NAME=$(databricks api get "2.0/postgres/autoscaling/projects/${LAKEBASE_PROJECT}/branches" \
-    --profile "$PROFILE" 2>/dev/null \
-    | python3 -c "
-import sys, json
-try:
-    d = json.load(sys.stdin)
-    branches = d.get('branches', d.get('items', []))
-    prod = next((b.get('name','') for b in branches if b.get('name','') == 'production'), '')
-    first = branches[0].get('name','') if branches else ''
-    print(prod or first)
-except: print('')
-" 2>/dev/null || true)
+  BRANCH_NAME=$(_get_branch)
   if [[ -n "$BRANCH_NAME" ]]; then
     LAKEBASE_ENDPOINT="projects/${LAKEBASE_PROJECT}/branches/${BRANCH_NAME}/endpoints/primary"
-    LAKEBASE_HOST=$(databricks api get "2.0/postgres/endpoints/${LAKEBASE_ENDPOINT}" \
-      --profile "$PROFILE" 2>/dev/null \
-      | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('read_write_dns','') or d.get('dns','') or '')" 2>/dev/null || true)
+    LAKEBASE_HOST=$(_get_host "$BRANCH_NAME")
     if [[ -n "$LAKEBASE_HOST" ]]; then
       echo "$LAKEBASE_HOST" > "$LAKEBASE_CACHE_FILE"
       # Patch app.yaml with real hostname
@@ -258,6 +361,17 @@ print('app.yaml patched with real Lakebase hostname')
         --profile "$PROFILE" 2>&1 | tail -3 || true
       ok "app.yaml updated: ${LAKEBASE_HOST}"
     fi
+  fi
+
+  # `databricks bundle deploy` creates the app without any resource bindings, so
+  # the SP has no CREATE on the database. Unlike the standard path, the app has
+  # already started by this point, so a new binding needs a restart to reach it.
+  ensure_lakebase_binding
+  if [[ "$LAKEBASE_BINDING_CHANGED" == "true" ]]; then
+    info "Restarting the app so the database binding takes effect..."
+    databricks apps stop "$APP_NAME" --profile "$PROFILE" >/dev/null 2>&1 || true
+    databricks apps start "$APP_NAME" --profile "$PROFILE" >/dev/null 2>&1 || true
+    ok "App restarted"
   fi
 
   # Skip to grants — app is already deployed via bundle
@@ -303,42 +417,6 @@ ok "Auth token is valid"
 LAKEBASE_HOST=""
 LAKEBASE_ENDPOINT=""
 LAKEBASE_CACHE_FILE="${SCRIPT_DIR}/.lakebase-${APP_NAME}.cache"
-
-# ── Helper: get the first/production branch name for a project ────────────────
-_get_branch() {
-  databricks postgres list-branches "projects/${LAKEBASE_PROJECT}" \
-    --profile "$PROFILE" -o json 2>/dev/null \
-  | python3 -c "
-import sys, json
-try:
-    items = json.load(sys.stdin)
-    if not isinstance(items, list): items = []
-    # resource names look like 'projects/foo/branches/bar' — extract short name
-    names = [b.get('name','').split('/')[-1] for b in items if b.get('name','')]
-    prod = next((n for n in names if n == 'production'), '')
-    print(prod or (names[0] if names else ''))
-except: print('')
-" 2>/dev/null || true
-}
-
-# ── Helper: get endpoint hostname for a branch ────────────────────────────────
-_get_host() {
-  local branch="$1"
-  databricks postgres list-endpoints "projects/${LAKEBASE_PROJECT}/branches/${branch}" \
-    --profile "$PROFILE" -o json 2>/dev/null \
-  | python3 -c "
-import sys, json
-try:
-    items = json.load(sys.stdin)
-    if not isinstance(items, list): items = []
-    for ep in items:
-        host = ep.get('status', {}).get('hosts', {}).get('host', '')
-        if host:
-            print(host)
-            break
-except: print('')
-" 2>/dev/null || true
-}
 
 info "Looking up Lakebase project: ${LAKEBASE_PROJECT}"
 BRANCH_NAME=$(_get_branch)
@@ -444,7 +522,7 @@ env:
   - name: LAKEBASE_HOST
     value: "${LAKEBASE_HOST}"
   - name: LAKEBASE_DB
-    value: "databricks_postgres"
+    value: "${LAKEBASE_DB_NAME}"
   - name: LAKEBASE_SCHEMA
     value: "${APP_NAME}"
   - name: LAKEBASE_ENDPOINT
@@ -545,6 +623,10 @@ if ! databricks apps get "$APP_NAME" --profile "$PROFILE" --output json >/dev/nu
   info "App does not exist yet — creating..."
   databricks apps create "$APP_NAME" --profile "$PROFILE" 2>&1 | tail -3
 fi
+
+# The app exists now but has not been deployed, so bind the database before it
+# ever starts — the first thing it does on boot is create its schema.
+ensure_lakebase_binding
 
 # ── Ensure the app SP has a Lakebase role BEFORE the app starts ───────────────
 # The app creates its own schema and tables on first start, but it cannot create
@@ -712,7 +794,7 @@ else
   else
     # Step 1: Create schema + apply schema.sql (creates all core tables)
     SCHEMA_SQL="${SCRIPT_DIR}/../../schema/schema.sql"
-    PG_CONN="host=${LAKEBASE_HOST} port=5432 dbname=databricks_postgres sslmode=require user=${DATABRICKS_USER:-${ADMIN_EMAIL}}"
+    PG_CONN="host=${LAKEBASE_HOST} port=5432 dbname=${LAKEBASE_DB_NAME} sslmode=require user=${DATABRICKS_USER:-${ADMIN_EMAIL}}"
 
     SCHEMA_OUT=$(PGPASSWORD="$PG_TOKEN" psql "$PG_CONN" \
       -c "CREATE SCHEMA IF NOT EXISTS datamarket; SET search_path TO datamarket;" \
@@ -826,9 +908,9 @@ except: print('')
 
     # Step 3: Grant the SP schema access
     GRANT_OUT=$(PGPASSWORD="$PG_TOKEN" psql \
-      "host=${LAKEBASE_HOST} port=5432 dbname=databricks_postgres sslmode=require user=${DATABRICKS_USER:-${ADMIN_EMAIL}}" \
+      "host=${LAKEBASE_HOST} port=5432 dbname=${LAKEBASE_DB_NAME} sslmode=require user=${DATABRICKS_USER:-${ADMIN_EMAIL}}" \
       -c "
-        GRANT CONNECT ON DATABASE databricks_postgres TO \"${SP_UUID}\";
+        GRANT CONNECT ON DATABASE ${LAKEBASE_DB_NAME} TO \"${SP_UUID}\";
         GRANT USAGE  ON SCHEMA datamarket TO \"${SP_UUID}\";
         GRANT CREATE ON SCHEMA datamarket TO \"${SP_UUID}\";
         GRANT ALL PRIVILEGES ON ALL TABLES    IN SCHEMA datamarket TO \"${SP_UUID}\";
