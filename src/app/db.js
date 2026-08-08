@@ -117,7 +117,7 @@ function setDbHealth(status, message, hint = '') {
 }
 
 // Classify a Postgres/driver error into an actionable health state.
-function classifyDbError(err) {
+export function classifyDbError(err) {
   const msg = err?.message || String(err);
   if (/password authentication failed/i.test(msg)) {
     return {
@@ -132,9 +132,14 @@ function classifyDbError(err) {
       status: 'no_permission',
       message: `The "${LAKEBASE_SCHEMA}" schema does not exist and the app service principal `
              + 'cannot create it — it lacks CREATE on the database.',
+      // The schema name is quoted here for the same reason it is quoted in the
+      // queries below: it defaults to the app name, which routinely contains a
+      // hyphen. Unquoted, Postgres reads "datamarket-v3" as a subtraction and
+      // the remediation this screen tells the operator to run is a syntax error.
       hint: 'Run this once in the Lakebase SQL editor as a database owner, then restart the app: '
-          + `CREATE SCHEMA IF NOT EXISTS ${LAKEBASE_SCHEMA}; `
-          + `GRANT USAGE, CREATE ON SCHEMA ${LAKEBASE_SCHEMA} TO "${process.env.DATABRICKS_CLIENT_ID || '<sp-uuid>'}";`,
+          + `CREATE SCHEMA IF NOT EXISTS ${quoteIdent(LAKEBASE_SCHEMA)}; `
+          + `GRANT USAGE, CREATE ON SCHEMA ${quoteIdent(LAKEBASE_SCHEMA)} `
+          + `TO ${quoteIdent(process.env.DATABRICKS_CLIENT_ID || '<sp-uuid>')};`,
     };
   }
   if (/permission denied (to )?(create|for schema)/i.test(msg)) {
