@@ -615,12 +615,13 @@ export function DataMarketRegisterPage({ onNavigate, editProduct = null }) {
             {isEditMode && (
               <button
                 type="button"
-                disabled={submitting || !productRef}
+                disabled={submitting}
                 onClick={() => saveEdit({ exit: true })}
                 title="Save the fields on this form and return to Discover"
-                className="px-5 py-2 rounded-lg text-sm font-medium border-2 disabled:opacity-60 disabled:cursor-not-allowed hover:bg-blue-50"
-                style={{ borderColor: DataMarket_BLUE, color: DataMarket_BLUE }}
+                className="flex items-center gap-2 px-5 py-2 rounded-lg text-sm font-medium text-white disabled:opacity-60 disabled:cursor-not-allowed shadow-sm"
+                style={{ backgroundColor: DataMarket_BLUE }}
               >
+                {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
                 {submitting ? 'Saving…' : 'Save and Exit'}
               </button>
             )}
@@ -628,8 +629,8 @@ export function DataMarketRegisterPage({ onNavigate, editProduct = null }) {
               <button
                 type="button"
                 onClick={() => setCurrentStep(s => s + 1)}
-                className="px-6 py-2 rounded-lg text-sm font-medium text-white"
-                style={{ backgroundColor: DataMarket_BLUE }}
+                className="px-6 py-2 rounded-lg text-sm font-medium border-2 text-gray-700 hover:bg-gray-50"
+                style={{ borderColor: '#d1d5db' }}
               >
                 Next
               </button>
