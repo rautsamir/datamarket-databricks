@@ -640,6 +640,8 @@ export function DataMarketProductDetailPage({ product, onBack, onNavigate }) {
                 domain: product.domain || product.category || '',
                 refresh_frequency: product.refresh_frequency || product.refreshFrequency || 'Daily',
                 classification: product.classification || product.data_classification || 'Internal',
+                report_url: product.report_url || product.reportUrl || product.productUrl || '',
+                type: product.type || 'Dataset',
                 tags: product.tags || [],
               },
             })}

@@ -37,19 +37,28 @@ export function DataMarketRegisterPage({ onNavigate, editProduct = null }) {
 
   const [form, setForm] = useState(() => {
     if (!editProduct) return blankForm
-    const tags = Array.isArray(editProduct.tags)
-      ? editProduct.tags
-      : typeof editProduct.tags === 'string'
-        ? JSON.parse(editProduct.tags || '[]')
-        : []
+    const rawTags = editProduct.tags
+    let tags = []
+    try {
+      if (Array.isArray(rawTags)) tags = rawTags
+      else if (typeof rawTags === 'string') {
+        const s = rawTags.trim()
+        if (s.startsWith('[')) tags = JSON.parse(s)
+        else if (s.startsWith('{')) tags = s.replace(/^\{|\}$/g, '').split(',').map(t => t.replace(/^"|"$/g, '').trim()).filter(Boolean)
+        else if (s) tags = s.split(',').map(t => t.trim()).filter(Boolean)
+      }
+    } catch { tags = [] }
+    // Prefer the portal product type over source_type — source_type is often the
+    // platform ("Databricks") and is not one of the type pills.
+    const type = editProduct.type || editProduct.source_type || 'Dashboard'
     return {
       name: editProduct.display_name || editProduct.name || '',
       description: editProduct.description || '',
-      type: editProduct.source_type || editProduct.type || 'Dashboard',
-      source: editProduct.domain || editProduct.source || '',
+      type,
+      source: editProduct.domain || editProduct.category || editProduct.source || '',
       tags,
-      refreshFrequency: editProduct.refresh_frequency || 'Daily',
-      productUrl: editProduct.report_url || editProduct.productUrl || '',
+      refreshFrequency: editProduct.refresh_frequency || editProduct.refreshFrequency || 'Daily',
+      productUrl: editProduct.report_url || editProduct.reportUrl || editProduct.productUrl || '',
       usageDescription: editProduct.usageDescription || '',
       useCases: editProduct.useCases || '',
       sla: editProduct.sla || '',
@@ -89,6 +98,8 @@ export function DataMarketRegisterPage({ onNavigate, editProduct = null }) {
     tags: prev.tags.includes(tag) ? prev.tags.filter(t => t !== tag) : [...prev.tags, tag]
   }))
 
+  const productRef = editProduct?.product_ref || editProduct?.ref || editProduct?.id || null
+
   const buildEditPayload = () => ({
     display_name: form.name,
     description: form.description,
@@ -104,12 +115,17 @@ export function DataMarketRegisterPage({ onNavigate, editProduct = null }) {
     data_classification: form.classification,
   })
 
+  // Partial saves are intentional — stewards edit one or two fields on step 1
+  // and leave without walking the whole wizard.
   const saveEdit = async ({ exit } = {}) => {
-    if (!isEditMode) return false
+    if (!isEditMode || !productRef) {
+      setSubmitError('Cannot save — missing product reference. Re-open Edit from the product page.')
+      return false
+    }
     setSubmitting(true)
     setSubmitError(null)
     try {
-      const res = await fetch(`/api/portal/products/${editProduct.product_ref}`, {
+      const res = await fetch(`/api/portal/products/${encodeURIComponent(productRef)}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(buildEditPayload()),
@@ -571,91 +587,103 @@ export function DataMarketRegisterPage({ onNavigate, editProduct = null }) {
         {renderStep()}
       </div>
 
-      {/* Actions */}
-      <div className="flex items-center justify-between">
+      {/* Actions — edit mode can save from any step; create still walks the wizard */}
+      <div className="flex flex-col gap-2">
         {submitError && (
-          <p className="text-sm text-red-600 mb-2">{submitError}</p>
+          <p className="text-sm text-red-600">{submitError}</p>
         )}
-        <div className="flex gap-2">
-          <button onClick={() => onNavigate('discover')} className="px-4 py-2 text-sm text-gray-500 hover:text-gray-700">
-            Discard Draft
-          </button>
-          <button
-            type="button"
-            disabled={submitting || !isEditMode}
-            onClick={() => saveEdit({ exit: true })}
-            title={isEditMode ? 'Save current fields and leave' : 'Save draft is available after first submit'}
-            className="px-4 py-2 border border-gray-200 rounded-lg text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            Save and Exit
-          </button>
-        </div>
-        <div className="flex gap-2">
-          {currentStep > 1 && (
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex gap-2">
             <button
-              onClick={() => setCurrentStep(s => s - 1)}
-              className="px-5 py-2 border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50"
+              type="button"
+              onClick={() => onNavigate(isEditMode ? 'discover' : 'discover')}
+              className="px-4 py-2 text-sm text-gray-500 hover:text-gray-700"
             >
-              Back
+              {isEditMode ? 'Cancel' : 'Discard Draft'}
             </button>
-          )}
-          {currentStep < 5 ? (
-            <button
-              onClick={() => setCurrentStep(s => s + 1)}
-              className="px-6 py-2 rounded-lg text-sm font-medium text-white"
-              style={{ backgroundColor: DataMarket_BLUE }}
-            >
-              Next
-            </button>
-          ) : (
-            <button
-              disabled={submitting}
-              onClick={async () => {
-                if (isEditMode) {
-                  await saveEdit({ exit: false })
-                  return
-                }
-                setSubmitting(true)
-                setSubmitError(null)
-                try {
-                  const res = await fetch('/api/portal/products', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                      name: form.name,
-                      description: form.description,
-                      type: form.type,
-                      source: form.source,
-                      tags: form.tags,
-                      refreshFrequency: form.refreshFrequency,
-                      productUrl: form.productUrl,
-                      ownerEmail: form.dataOwner || persona.email,
-                      classification: form.classification,
-                      domain: form.source,
-                      hasPII: form.hasPII,
-                      submittedBy: persona.email
-                    })
-                  })
-                  if (!res.ok) {
-                    let detail = ''
-                    try { detail = (await res.json()).error || '' } catch { detail = await res.text() }
-                    throw new Error(detail || `HTTP ${res.status}`)
+          </div>
+          <div className="flex gap-2 flex-wrap justify-end">
+            {currentStep > 1 && (
+              <button
+                type="button"
+                onClick={() => setCurrentStep(s => s - 1)}
+                className="px-5 py-2 border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50"
+              >
+                Back
+              </button>
+            )}
+            {isEditMode && (
+              <button
+                type="button"
+                disabled={submitting || !productRef}
+                onClick={() => saveEdit({ exit: true })}
+                title="Save the fields on this form and return to Discover"
+                className="px-5 py-2 rounded-lg text-sm font-medium border-2 disabled:opacity-60 disabled:cursor-not-allowed hover:bg-blue-50"
+                style={{ borderColor: DataMarket_BLUE, color: DataMarket_BLUE }}
+              >
+                {submitting ? 'Saving…' : 'Save and Exit'}
+              </button>
+            )}
+            {currentStep < 5 ? (
+              <button
+                type="button"
+                onClick={() => setCurrentStep(s => s + 1)}
+                className="px-6 py-2 rounded-lg text-sm font-medium text-white"
+                style={{ backgroundColor: DataMarket_BLUE }}
+              >
+                Next
+              </button>
+            ) : (
+              <button
+                type="button"
+                disabled={submitting}
+                onClick={async () => {
+                  if (isEditMode) {
+                    await saveEdit({ exit: false })
+                    return
                   }
-                  setSubmitted(true)
-                } catch (e) {
-                  setSubmitError(e.message ? `Submission failed — ${e.message}` : 'Submission failed — please try again.')
-                  console.error(e)
-                } finally {
-                  setSubmitting(false)
-                }
-              }}
-              className="flex items-center gap-2 px-6 py-2 rounded-lg text-sm font-medium text-white disabled:opacity-60"
-              style={{ backgroundColor: DataMarket_BLUE }}
-            >
-              {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
-              {isEditMode ? 'Save Changes' : 'Submit for Review'}
-            </button>
-          )}
+                  setSubmitting(true)
+                  setSubmitError(null)
+                  try {
+                    const res = await fetch('/api/portal/products', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        name: form.name,
+                        description: form.description,
+                        type: form.type,
+                        source: form.source,
+                        tags: form.tags,
+                        refreshFrequency: form.refreshFrequency,
+                        productUrl: form.productUrl,
+                        ownerEmail: form.dataOwner || persona.email,
+                        classification: form.classification,
+                        domain: form.source,
+                        hasPII: form.hasPII,
+                        submittedBy: persona.email
+                      })
+                    })
+                    if (!res.ok) {
+                      let detail = ''
+                      try { detail = (await res.json()).error || '' } catch { detail = await res.text() }
+                      throw new Error(detail || `HTTP ${res.status}`)
+                    }
+                    setSubmitted(true)
+                  } catch (e) {
+                    setSubmitError(e.message ? `Submission failed — ${e.message}` : 'Submission failed — please try again.')
+                    console.error(e)
+                  } finally {
+                    setSubmitting(false)
+                  }
+                }}
+                className="flex items-center gap-2 px-6 py-2 rounded-lg text-sm font-medium text-white disabled:opacity-60"
+                style={{ backgroundColor: DataMarket_BLUE }}
+              >
+                {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
+                {isEditMode ? 'Save Changes' : 'Submit for Review'}
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </div>
