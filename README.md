@@ -1,10 +1,10 @@
 # DataMarket — Self-Service Data Product Marketplace on Databricks
 
-![DataMarket](docs/datamarket-thumbnail.png)
+![DataMarket — replace $500K–$1M proprietary portals with a governed marketplace on Databricks](docs/datamarket-thumbnail.png)
 
 A production-ready data product marketplace built **entirely on Databricks**. Designed to show enterprise and public sector customers that a modern data portal — with AI-powered discovery, real RBAC/ABAC enforcement, and persistent access workflows — can be delivered natively on Databricks, without third-party vendor tooling.
 
-> **Origin:** Built as a proof-of-concept to show how Databricks can replace proprietary data portals costing $500K–$1M+. Reusable across any industry vertical.
+> **The problem we solve:** Proprietary data portals routinely run **$500K–$1M+** and still sit beside the lakehouse. DataMarket is the POC that proves you can replace that spend with governed discovery, access requests, and AI — on Databricks itself. Reusable across any industry vertical.
 
 ---
 
