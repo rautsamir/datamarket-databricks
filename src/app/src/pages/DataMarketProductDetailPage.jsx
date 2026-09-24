@@ -630,7 +630,19 @@ export function DataMarketProductDetailPage({ product, onBack, onNavigate }) {
         </button>
         {isAdmin && onNavigate && (
           <button
-            onClick={() => onNavigate('register', { editProduct: product })}
+            onClick={() => onNavigate('register', {
+              editProduct: {
+                ...product,
+                product_ref: product.product_ref || product.ref,
+                display_name: product.display_name || product.name,
+                owner_email: product.owner_email || product.owner || '',
+                source_system: product.source_system || product.source || '',
+                domain: product.domain || product.category || '',
+                refresh_frequency: product.refresh_frequency || product.refreshFrequency || 'Daily',
+                classification: product.classification || product.data_classification || 'Internal',
+                tags: product.tags || [],
+              },
+            })}
             className="flex items-center gap-2 text-sm font-medium text-white px-4 py-2 rounded-lg"
             style={{ backgroundColor: DataMarket_BLUE }}
           >
@@ -837,7 +849,14 @@ export function DataMarketProductDetailPage({ product, onBack, onNavigate }) {
                 </div>
                 <div>
                   <p className="text-xs text-gray-400 font-medium uppercase tracking-wide">Last Updated</p>
-                  <p className="text-sm font-medium text-gray-800 mt-0.5">{product.lastUpdated || '02/11/2025'}</p>
+                  <p className="text-sm font-medium text-gray-800 mt-0.5">
+                    {product.lastUpdated
+                      || (product.lastRefreshed
+                        ? (product.lastRefreshed instanceof Date
+                            ? product.lastRefreshed.toLocaleDateString()
+                            : new Date(product.lastRefreshed).toLocaleDateString())
+                        : '—')}
+                  </p>
                 </div>
               </div>
 

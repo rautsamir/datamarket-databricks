@@ -53,10 +53,10 @@ export function DataMarketRegisterPage({ onNavigate, editProduct = null }) {
       usageDescription: editProduct.usageDescription || '',
       useCases: editProduct.useCases || '',
       sla: editProduct.sla || '',
-      dataOwner: editProduct.owner_email || '',
+      dataOwner: editProduct.owner_email || editProduct.owner || '',
       steward: editProduct.steward || '',
       contributors: editProduct.contributors || [],
-      classification: editProduct.data_classification || 'Internal',
+      classification: editProduct.classification || editProduct.data_classification || 'Internal',
       accessLevel: editProduct.accessLevel || 'Read Only',
       hasPII: editProduct.has_pii || false,
       retentionYears: editProduct.retentionYears || '7',
@@ -88,6 +88,48 @@ export function DataMarketRegisterPage({ onNavigate, editProduct = null }) {
     ...prev,
     tags: prev.tags.includes(tag) ? prev.tags.filter(t => t !== tag) : [...prev.tags, tag]
   }))
+
+  const buildEditPayload = () => ({
+    display_name: form.name,
+    description: form.description,
+    type: form.type,
+    // Keep system-of-record and domain distinct — older builds swapped these.
+    source_system: editProduct?.source_system || editProduct?.source || form.source,
+    domain: form.source || editProduct?.domain || '',
+    tags: form.tags,
+    refresh_frequency: form.refreshFrequency,
+    report_url: form.productUrl || null,
+    owner_email: form.dataOwner || persona.email || '',
+    classification: form.classification,
+    data_classification: form.classification,
+  })
+
+  const saveEdit = async ({ exit } = {}) => {
+    if (!isEditMode) return false
+    setSubmitting(true)
+    setSubmitError(null)
+    try {
+      const res = await fetch(`/api/portal/products/${editProduct.product_ref}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(buildEditPayload()),
+      })
+      if (!res.ok) {
+        let detail = ''
+        try { detail = (await res.json()).error || '' } catch { detail = await res.text() }
+        throw new Error(detail || `HTTP ${res.status}`)
+      }
+      if (exit) onNavigate('discover')
+      else setSubmitted(true)
+      return true
+    } catch (e) {
+      setSubmitError(e.message ? `Save failed — ${e.message}` : 'Submission failed — please try again.')
+      console.error(e)
+      return false
+    } finally {
+      setSubmitting(false)
+    }
+  }
 
   const addCustomTag = () => {
     const tag = customTagInput.trim()
@@ -538,7 +580,13 @@ export function DataMarketRegisterPage({ onNavigate, editProduct = null }) {
           <button onClick={() => onNavigate('discover')} className="px-4 py-2 text-sm text-gray-500 hover:text-gray-700">
             Discard Draft
           </button>
-          <button className="px-4 py-2 border border-gray-200 rounded-lg text-sm text-gray-600 hover:bg-gray-50">
+          <button
+            type="button"
+            disabled={submitting || !isEditMode}
+            onClick={() => saveEdit({ exit: true })}
+            title={isEditMode ? 'Save current fields and leave' : 'Save draft is available after first submit'}
+            className="px-4 py-2 border border-gray-200 rounded-lg text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
             Save and Exit
           </button>
         </div>
@@ -563,50 +611,39 @@ export function DataMarketRegisterPage({ onNavigate, editProduct = null }) {
             <button
               disabled={submitting}
               onClick={async () => {
+                if (isEditMode) {
+                  await saveEdit({ exit: false })
+                  return
+                }
                 setSubmitting(true)
                 setSubmitError(null)
                 try {
-                  let res
-                  if (isEditMode) {
-                    res = await fetch(`/api/portal/products/${editProduct.product_ref}`, {
-                      method: 'PUT',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({
-                        display_name: form.name,
-                        description: form.description,
-                        source_type: form.type,
-                        domain: form.source,
-                        tags: form.tags,
-                        refresh_frequency: form.refreshFrequency,
-                        report_url: form.productUrl,
-                        owner_email: form.dataOwner || persona.email,
-                        data_classification: form.classification,
-                      })
+                  const res = await fetch('/api/portal/products', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      name: form.name,
+                      description: form.description,
+                      type: form.type,
+                      source: form.source,
+                      tags: form.tags,
+                      refreshFrequency: form.refreshFrequency,
+                      productUrl: form.productUrl,
+                      ownerEmail: form.dataOwner || persona.email,
+                      classification: form.classification,
+                      domain: form.source,
+                      hasPII: form.hasPII,
+                      submittedBy: persona.email
                     })
-                  } else {
-                    res = await fetch('/api/portal/products', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({
-                        name: form.name,
-                        description: form.description,
-                        type: form.type,
-                        source: form.source,
-                        tags: form.tags,
-                        refreshFrequency: form.refreshFrequency,
-                        productUrl: form.productUrl,
-                        ownerEmail: form.dataOwner || persona.email,
-                        classification: form.classification,
-                        domain: form.source,
-                        hasPII: form.hasPII,
-                        submittedBy: persona.email
-                      })
-                    })
+                  })
+                  if (!res.ok) {
+                    let detail = ''
+                    try { detail = (await res.json()).error || '' } catch { detail = await res.text() }
+                    throw new Error(detail || `HTTP ${res.status}`)
                   }
-                  if (!res.ok) throw new Error(await res.text())
                   setSubmitted(true)
                 } catch (e) {
-                  setSubmitError('Submission failed — please try again.')
+                  setSubmitError(e.message ? `Submission failed — ${e.message}` : 'Submission failed — please try again.')
                   console.error(e)
                 } finally {
                   setSubmitting(false)

@@ -370,29 +370,67 @@ export function registerRoutes(app) {
     try {
       const { ref } = req.params;
       const {
-        uc_full_name, source_type, refresh_frequency, report_url, domain,
-        description, display_name, owner_email, data_classification, tags
+        uc_full_name, source_type, source_system, type, refresh_frequency, report_url, domain,
+        description, display_name, owner_email, data_classification, classification, tags
       } = req.body;
-      const sets = [];
-      const params = [];
-      if (uc_full_name !== undefined)        { params.push(uc_full_name);          sets.push(`uc_full_name = $${params.length}`); }
-      if (source_type !== undefined)         { params.push(source_type);            sets.push(`source_system = $${params.length}`); }
-      if (refresh_frequency !== undefined)   { params.push(refresh_frequency);      sets.push(`refresh_frequency = $${params.length}`); }
-      if (report_url !== undefined)          { params.push(report_url);             sets.push(`report_url = $${params.length}`); }
-      if (domain !== undefined)              { params.push(domain);                 sets.push(`domain = $${params.length}`); }
-      if (description !== undefined)         { params.push(description);            sets.push(`description = $${params.length}`); }
-      if (display_name !== undefined)        { params.push(display_name);           sets.push(`display_name = $${params.length}`); }
-      if (owner_email !== undefined)         { params.push(owner_email);            sets.push(`owner_email = $${params.length}`); }
-      if (data_classification !== undefined) { params.push(data_classification);    sets.push(`data_classification = $${params.length}`); }
-      if (tags !== undefined)                { params.push(tags);                  sets.push(`tags = $${params.length}`); }
+
+      const tagArr = tags === undefined ? undefined
+        : Array.isArray(tags) ? tags
+        : typeof tags === 'string'
+          ? tags.replace(/^[{}"]+|[{}"]+$/g, '').split(',').map(t => t.trim()).filter(Boolean)
+          : [];
+
+      // Core columns that every DataMarket schema has had since day one.
+      // Optional columns (report_url, data_classification, …) are added by
+      // runMigrations(); if a workspace is still on an older schema, retry
+      // without them so a small metadata edit never hard-fails.
+      const buildSets = ({ includeOptional }) => {
+        const sets = [];
+        const params = [];
+        const set = (col, val) => {
+          params.push(val);
+          sets.push(`${col} = $${params.length}`);
+        };
+        if (uc_full_name !== undefined)      set('uc_full_name', uc_full_name);
+        if (source_system !== undefined)     set('source_system', source_system);
+        else if (source_type !== undefined)  set('source_system', source_type);
+        if (type !== undefined)              set('type', type);
+        if (refresh_frequency !== undefined) set('refresh_frequency', refresh_frequency);
+        if (domain !== undefined)            set('domain', domain);
+        if (description !== undefined)       set('description', description);
+        if (display_name !== undefined)      set('display_name', display_name);
+        if (owner_email !== undefined)       set('owner_email', owner_email);
+        const classif = data_classification !== undefined ? data_classification : classification;
+        if (classif !== undefined)           set('classification', classif);
+        if (tagArr !== undefined)            set('tags', tagArr);
+        if (includeOptional && report_url !== undefined) set('report_url', report_url);
+        return { sets, params };
+      };
+
+      let { sets, params } = buildSets({ includeOptional: true });
       if (sets.length === 0) return res.status(400).json({ error: 'Nothing to update' });
       sets.push('updated_at = NOW()');
       params.push(ref);
-      const { rows: [product] } = await query(
-        `UPDATE data_products SET ${sets.join(', ')} WHERE product_ref = $${params.length} RETURNING *`, params);
+
+      let product;
+      try {
+        ({ rows: [product] } = await query(
+          `UPDATE data_products SET ${sets.join(', ')} WHERE product_ref = $${params.length} RETURNING *`,
+          params));
+      } catch (e) {
+        if (!/column .* does not exist/i.test(e.message || '')) throw e;
+        ({ sets, params } = buildSets({ includeOptional: false }));
+        sets.push('updated_at = NOW()');
+        params.push(ref);
+        ({ rows: [product] } = await query(
+          `UPDATE data_products SET ${sets.join(', ')} WHERE product_ref = $${params.length} RETURNING *`,
+          params));
+      }
+
       if (!product) return res.status(404).json({ error: 'Product not found' });
       res.json(product);
     } catch (e) {
+      console.error('[PUT /api/portal/products/:ref]', e.message);
       res.status(500).json({ error: e.message });
     }
   });
@@ -663,7 +701,9 @@ export function registerRoutes(app) {
         const finalTags = `{${[...tagSet].map(tag => `"${tag.replace(/"/g, '')}"`).join(',')}}`;
 
         const description = ucComment || t.description || `Imported from Unity Catalog: ${t.full_name}`;
-        const ownerEmail  = ucOwner || t.owner_email || 'datasteward@example.org';
+        // Prefer a real UC owner. Never invent a demo steward email — that shows up in
+        // the product sidebar and looks like production metadata when it is not.
+        const ownerEmail  = ucOwner || t.owner_email || process.env.ADMIN_EMAIL || '';
 
         const { rows: [product] } = await query(
           `INSERT INTO data_products
