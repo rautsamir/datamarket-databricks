@@ -119,24 +119,42 @@ export function registerRoutes(app) {
         ? `GRANT SELECT ON ${req_.uc_full_name} TO \`${req_.requester_email}\`;`
         : `-- No UC table linked for ${req_.product_name} (set uc_full_name on the product to enable automatic grants)`;
 
+      // Execute the real GRANT in UC first (skipped in demo mode or when no table is linked)
+      const grantResult = req_.uc_full_name
+        ? await executeUcStatement(ucGrantSql)
+        : { executed: false, reason: 'no_uc_table' };
+
+      // Approving without the grant would tell the requester they have access they don't.
+      // With no warehouse configured the admin runs the displayed GRANT by hand.
+      const grantSkipped = ['demo_mode', 'no_warehouse', 'no_uc_table'].includes(grantResult.reason);
+      if (!grantResult.executed && !grantResult.pending && !grantSkipped) {
+        try {
+          await query(`INSERT INTO audit_log (event_type, actor_email, target_type, target_id, target_name, metadata)
+            VALUES ('GRANT_FAILED', $1, 'access_request', $2, $3, $4)`,
+            [adminEmail, req_.request_id, req_.request_ref, JSON.stringify({ ucGrantSql, error: grantResult.reason })]);
+        } catch (_) {}
+        return res.status(502).json({
+          error: `Unity Catalog rejected the grant: ${(grantResult.reason || 'unknown error').replace(/\.$/, '')}. The request is still pending.`,
+          uc_grant_sql: ucGrantSql,
+        });
+      }
+
       const { rows: [adminUser] } = await query('SELECT user_id FROM users WHERE email = $1', [adminEmail]);
 
       await query(`UPDATE access_requests SET status = 'Approved', resolved_at = NOW(),
-        resolved_by = $1, uc_grant_issued = TRUE, uc_grant_sql = $2, updated_at = NOW(),
+        resolved_by = $1, uc_grant_issued = $2, uc_grant_sql = $3, updated_at = NOW(),
         expires_at = NOW() + INTERVAL '90 days'
-        WHERE request_ref = $3`,
-        [adminUser?.user_id || null, ucGrantSql, req_.request_ref]);
+        WHERE request_ref = $4`,
+        [adminUser?.user_id || null, !!(grantResult.executed || grantResult.pending), ucGrantSql, req_.request_ref]);
 
-      // Execute the real GRANT in UC (skipped in demo mode)
-      const grantResult = await executeUcStatement(ucGrantSql);
-
+      const ucResult = { uc_executed: grantResult.executed, uc_status: grantResult.status || null, uc_error: grantResult.reason || null };
       try {
         await query(`INSERT INTO audit_log (event_type, actor_email, target_type, target_id, target_name, metadata)
           VALUES ('REQUEST_APPROVED', $1, 'access_request', $2, $3, $4)`,
-          [adminEmail, req_.request_id, req_.request_ref, JSON.stringify({ ucGrantSql, uc_executed: grantResult.executed })]);
+          [adminEmail, req_.request_id, req_.request_ref, JSON.stringify({ ucGrantSql, ...ucResult })]);
       } catch (_) {}
 
-      res.json({ status: 'Approved', uc_grant_sql: ucGrantSql, uc_executed: grantResult.executed });
+      res.json({ status: 'Approved', uc_grant_sql: ucGrantSql, ...ucResult });
     } catch (e) {
       console.error('[PUT approve]', e.message);
       res.status(500).json({ error: e.message });
@@ -197,15 +215,18 @@ export function registerRoutes(app) {
         [reason, revokeSql, req_.request_ref]);
 
       // Execute the real REVOKE in UC (skipped in demo mode)
-      const revokeResult = await executeUcStatement(revokeSql);
+      const revokeResult = revokeSql.startsWith('REVOKE')
+        ? await executeUcStatement(revokeSql)
+        : { executed: false, reason: 'no_uc_table' };
+      const ucResult = { uc_executed: revokeResult.executed, uc_status: revokeResult.status || null, uc_error: revokeResult.reason || null };
 
       try {
         await query(`INSERT INTO audit_log (event_type, actor_email, target_name, metadata)
           VALUES ('ACCESS_REVOKED', $1, $2, $3)`,
-          [adminEmail, req_.request_ref, JSON.stringify({ reason, revokeSql, uc_executed: revokeResult.executed })]);
+          [adminEmail, req_.request_ref, JSON.stringify({ reason, revokeSql, ...ucResult })]);
       } catch (_) {}
 
-      res.json({ status: 'Revoked', revoke_sql: revokeSql, uc_executed: revokeResult.executed });
+      res.json({ status: 'Revoked', revoke_sql: revokeSql, ...ucResult });
     } catch (e) {
       console.error('[PUT revoke]', e.message);
       res.status(500).json({ error: e.message });

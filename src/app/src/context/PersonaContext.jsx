@@ -196,15 +196,20 @@ export function PersonaProvider({ children }) {
 
   const approveRequest = async (reqRef) => {
     if (apiAvailable) {
+      let res
       try {
-        await fetch(`/api/portal/requests/${reqRef}/approve`, {
+        res = await fetch(`/api/portal/requests/${reqRef}/approve`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ adminEmail: persona.email })
         })
-        await loadRequests()
-        return
       } catch (e) { console.warn('approveRequest API failed', e) }
+      if (res) {
+        const body = await res.json().catch(() => ({}))
+        await loadRequests()
+        if (!res.ok) throw new Error(body.error || `Approval failed (${res.status})`)
+        return body
+      }
     }
     setRequests(prev => prev.map(r =>
       (r.request_ref === reqRef || r.id === reqRef)

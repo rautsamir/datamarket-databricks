@@ -61,8 +61,17 @@ export async function executeUcStatement(sql) {
       wait_timeout: '10s'
     });
     const status = result.data?.status?.state || 'UNKNOWN';
-    console.log(`[UC] Executed: ${sql.substring(0, 80)}... → ${status}`);
-    return { executed: true, status, result: result.data };
+    const error = result.data?.status?.error?.message || result.data?.message || null;
+    console.log(`[UC] ${sql.substring(0, 80)}... → ${status}${error ? ` (${error})` : ''}`);
+    // The API can reject the call (e.g. no CAN_USE on the warehouse) or accept it
+    // and fail the GRANT (e.g. unknown principal). PENDING means the warehouse
+    // is starting and the statement will still run.
+    return {
+      executed: status === 'SUCCEEDED',
+      pending: status === 'PENDING' || status === 'RUNNING',
+      status,
+      reason: error,
+    };
   } catch (e) {
     console.warn('[UC] Statement execution failed (non-fatal):', e.message);
     return { executed: false, reason: e.message };
