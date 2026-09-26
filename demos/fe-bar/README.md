@@ -1,11 +1,12 @@
 # SharePoint policy documents → DataMarket
 
-A reference build that puts DataMarket on top of a full Databricks data journey.
-County policy PDFs live in SharePoint, where nobody can find them and nobody
-governs who reads them. This bundle ingests them with Lakeflow Connect, turns
-them into governed Unity Catalog tables, makes them searchable through Vector
-Search and Genie, and publishes them in DataMarket as data products that
-people discover and request access to.
+DataMarket catalogs data products that already exist. This reference build
+shows the other half: how a new one gets made on Databricks and lands in the
+marketplace. Policy PDFs sit in SharePoint, where nobody can find them and
+nobody governs who reads them. This bundle ingests them with Lakeflow Connect,
+turns them into governed Unity Catalog tables, makes them searchable through
+Vector Search and Genie, and publishes them in DataMarket as data products
+that people discover and request access to.
 
 ```
 SharePoint library (policy PDFs)
@@ -30,13 +31,13 @@ Spark Declarative Pipeline  ── datamarket-sharepoint-to-rag ─────�
 
 | Resource | Name | Purpose |
 |---|---|---|
-| Schema | `demo.sled_datamarket_docs` | Home for every table below |
+| Schema | `<catalog>.datamarket_docs` | Home for every table below |
 | Pipeline | `datamarket-sharepoint-to-rag` | Serverless SDP: ingest → parse → chunk → classify |
 | Job | `datamarket-sharepoint-refresh` | Pipeline, then Vector Search sync and Genie publish (daily schedule, paused) |
 | Vector index | `rag_docs_chunks_index` | Semantic search over chunks, created on first run |
 | Genie space | `DataMarket — County Policy Documents` | Natural-language questions over the catalog and chunks, updated in place on re-runs |
 
-Development mode prefixes names per user (`dev_<user>_sled_datamarket_docs`,
+Development mode prefixes names per user (`dev_<user>_datamarket_docs`,
 `[dev <user>] …`), so several people can deploy into one workspace.
 
 ## Prerequisites
@@ -53,14 +54,19 @@ Development mode prefixes names per user (`dev_<user>_sled_datamarket_docs`,
 ```bash
 cd demos/fe-bar
 
-# Override any default in databricks.yml with --var
 databricks bundle deploy -t dev --profile <profile> \
+  --var catalog=<catalog> \
   --var sharepoint_connection=<connection> \
   --var sharepoint_url='<library URL>' \
   --var warehouse_id=<warehouse id>
 
 databricks bundle run refresh -t dev --profile <profile>
 ```
+
+To avoid repeating `--var` flags, put the same keys in
+`.databricks/bundle/dev/variable-overrides.json` (git-ignored). If the library
+holds files beyond the demo set, set `file_glob` (for example `POL-*.pdf`) so
+only those are ingested.
 
 If deploy fails with `openpgp: key expired` while downloading Terraform, use the
 direct engine: `DATABRICKS_BUNDLE_ENGINE=direct databricks bundle deploy …`.

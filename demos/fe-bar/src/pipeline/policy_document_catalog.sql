@@ -24,7 +24,7 @@ WITH docs AS (
 )
 SELECT
   source_file,
-  -- "SLED-008-GIS-Data-Standards.pdf" -> "GIS Data Standards"
+  -- "POL-008-GIS-Data-Standards.pdf" -> "GIS Data Standards"
   TRIM(REGEXP_REPLACE(
     REGEXP_REPLACE(
       URL_DECODE(REGEXP_EXTRACT(source_file, '([^/]+)\\.pdf$', 1)),

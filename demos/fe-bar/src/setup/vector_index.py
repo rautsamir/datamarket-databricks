@@ -7,9 +7,9 @@
 
 # COMMAND ----------
 
-dbutils.widgets.text("catalog", "demo")
-dbutils.widgets.text("schema", "sled_datamarket_docs")
-dbutils.widgets.text("vs_endpoint", "sled_sharepoint_vs")
+dbutils.widgets.text("catalog", "main")
+dbutils.widgets.text("schema", "datamarket_docs")
+dbutils.widgets.text("vs_endpoint", "datamarket_vs")
 dbutils.widgets.text("embedding_endpoint", "databricks-gte-large-en")
 
 catalog = dbutils.widgets.get("catalog")

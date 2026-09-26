@@ -5,7 +5,7 @@
 ### databricks.yml
 - Must contain ONLY one target: `dev` with `host: ${DATABRICKS_HOST}`
 - Do NOT add additional targets (sled, fevm, west, etc.) with real workspace URLs
-- Do NOT use `lac-dna-portal` or any customer-specific app names
+- Do NOT use customer-specific app names
 - App name must be `datamarket`
 
 ### app.yaml
@@ -32,13 +32,14 @@
 - `src/app/src/pages/VendorAnalyticsPage.jsx`
 
 These pages were removed because they were orphaned (not routed in App.jsx) and contained
-hardcoded LA County department names that are not appropriate for a published accelerator.
+hardcoded customer-specific department names that are not appropriate for a published accelerator.
 
 ### app.js
 - `/api/kpis` endpoint was removed — do not re-add it
 - `DATABRICKS_USER` must throw an error if not set, not fall back to a placeholder email
 
 ### Content guidelines
-- Keep seed data and sample content industry-generic (not LA County specific)
+- Keep seed data and sample content industry-generic (never tied to a real customer)
+- Never name a customer anywhere in the repo — code, docs, commit messages, or images
 - Department names should be generic (e.g., "Finance", "Operations", "IT") not government-specific (e.g., "Sheriff", "Probation")
 - `schema/seed.sql` is the authoritative schema definition — keep it in sync with app.js migrations

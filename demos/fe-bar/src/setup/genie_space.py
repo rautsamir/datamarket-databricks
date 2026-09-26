@@ -8,8 +8,8 @@
 
 # COMMAND ----------
 
-dbutils.widgets.text("catalog", "demo")
-dbutils.widgets.text("schema", "sled_datamarket_docs")
+dbutils.widgets.text("catalog", "main")
+dbutils.widgets.text("schema", "datamarket_docs")
 dbutils.widgets.text("warehouse_id", "")
 dbutils.widgets.text("genie_title", "DataMarket — County Policy Documents")
 

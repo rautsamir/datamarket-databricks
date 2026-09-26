@@ -3,8 +3,12 @@
 # Lakeflow Connect (SharePoint) → Spark Declarative Pipeline (parse, chunk,
 # classify) → Unity Catalog → Vector Search + Genie → registered in DataMarket.
 #
-#   databricks bundle deploy -t dev --profile <profile>
+#   databricks bundle deploy -t dev --profile <profile> \
+#     --var sharepoint_connection=<conn> --var sharepoint_url=<url> --var warehouse_id=<id>
 #   databricks bundle run refresh -t dev --profile <profile>
+#
+# Workspace-specific values can also live in the git-ignored file
+# .databricks/bundle/dev/variable-overrides.json.
 
 bundle:
   name: datamarket-sharepoint
@@ -12,25 +16,22 @@ bundle:
 variables:
   catalog:
     description: Catalog that holds the document tables
-    default: demo
+    default: main
   schema:
     description: Schema created by this bundle for the document tables
-    default: sled_datamarket_docs
+    default: datamarket_docs
   sharepoint_connection:
     description: Unity Catalog connection of type SHAREPOINT
-    default: sled-sharepoint-connect-app
   sharepoint_url:
     description: SharePoint document library that holds the policy PDFs
-    default: https://databricks977.sharepoint.com/sites/SLEDDemoSharePoint/Library%20with%20pdf/Forms/AllItems.aspx
   file_glob:
     description: Only files matching this pattern are ingested from the library
-    default: SLED-*.pdf
+    default: "*.pdf"
   warehouse_id:
     description: SQL warehouse used by the Genie space
-    default: a94a22f8652d85c1
   vs_endpoint:
     description: Vector Search endpoint (created if missing)
-    default: sled_sharepoint_vs
+    default: datamarket_vs
   embedding_endpoint:
     description: Embedding model serving endpoint
     default: databricks-gte-large-en
