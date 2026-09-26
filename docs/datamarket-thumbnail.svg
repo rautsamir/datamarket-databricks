@@ -1,20 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-label="DataMarket replaces $500K–$1M proprietary data portals with a self-service marketplace on Databricks">
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-label="DataMarket puts Power BI reports and Unity Catalog data products in one place, with governed access in minutes instead of weeks">
   <defs>
     <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
       <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#ffffff" stroke-width="0.6"/>
     </pattern>
-    <linearGradient id="fadeL" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0%" stop-color="#0a2338" stop-opacity="0.35"/>
-      <stop offset="100%" stop-color="#0a2338" stop-opacity="0"/>
-    </linearGradient>
-    <linearGradient id="panel" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.08"/>
-      <stop offset="100%" stop-color="#ffffff" stop-opacity="0.03"/>
-    </linearGradient>
   </defs>
 
-  <!-- Background -->
   <rect width="1200" height="630" fill="#003865"/>
   <rect width="1200" height="630" fill="url(#grid)" opacity="0.055"/>
 
@@ -31,72 +22,78 @@
   </g>
 
   <!-- Headline -->
-  <text x="48" y="130" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="34" font-weight="700" fill="#ffffff">Stop buying a portal. Ship one on the lakehouse.</text>
-  <text x="48" y="168" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="16" fill="#cbd5e1">Replace proprietary data catalogs costing $500K–$1M+ with governed discovery, access, and AI — natively on Databricks.</text>
+  <text x="48" y="130" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="36" font-weight="700" fill="#ffffff">Every data product in one place.</text>
+  <text x="48" y="172" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="36" font-weight="700" fill="#FF8A73">Access in minutes, not weeks.</text>
 
-  <!-- LEFT: Problem panel -->
+  <!-- LEFT: Problem -->
   <g transform="translate(48, 210)">
-    <rect width="480" height="280" rx="16" fill="url(#panel)" stroke="#64748b" stroke-width="1.5" stroke-dasharray="6 5"/>
+    <rect width="480" height="280" rx="16" fill="#ffffff" fill-opacity="0.06" stroke="#64748b" stroke-width="1.5" stroke-dasharray="6 5"/>
     <text x="28" y="40" font-family="system-ui, sans-serif" font-size="12" font-weight="700" letter-spacing="1.5" fill="#f87171">THE PROBLEM</text>
-    <text x="28" y="78" font-family="system-ui, sans-serif" font-size="22" font-weight="700" fill="#e2e8f0">Proprietary data portals</text>
+    <text x="28" y="76" font-family="system-ui, sans-serif" font-size="22" font-weight="700" fill="#e2e8f0">Two worlds, no map</text>
 
-    <!-- Cost callout -->
-    <rect x="28" y="100" width="200" height="52" rx="10" fill="#7f1d1d" opacity="0.45"/>
-    <text x="48" y="132" font-family="system-ui, sans-serif" font-size="22" font-weight="700" fill="#fecaca">$500K – $1M+</text>
+    <!-- Two scattered islands -->
+    <g font-family="system-ui, sans-serif">
+      <rect x="28" y="96" width="200" height="64" rx="10" fill="#F2C811" fill-opacity="0.16" stroke="#F2C811" stroke-opacity="0.5"/>
+      <text x="44" y="122" font-size="15" font-weight="700" fill="#fde68a">Power BI reports</text>
+      <text x="44" y="144" font-size="12" fill="#cbd5e1">Invisible to the catalog</text>
 
-    <!-- Pain bullets -->
+      <rect x="252" y="96" width="200" height="64" rx="10" fill="#60a5fa" fill-opacity="0.14" stroke="#60a5fa" stroke-opacity="0.5"/>
+      <text x="268" y="122" font-size="15" font-weight="700" fill="#bfdbfe">Gold data products</text>
+      <text x="268" y="144" font-size="12" fill="#cbd5e1">Known only to their teams</text>
+    </g>
+
     <g font-family="system-ui, sans-serif" font-size="15" fill="#94a3b8">
-      <circle cx="36" cy="188" r="4" fill="#f87171"/>
-      <text x="52" y="193">Vendor lock-in &amp; long implementations</text>
-      <circle cx="36" cy="222" r="4" fill="#f87171"/>
-      <text x="52" y="227">Shadow IT copies of “the real catalog”</text>
-      <circle cx="36" cy="256" r="4" fill="#f87171"/>
-      <text x="52" y="261">Governance bolted on after the fact</text>
+      <circle cx="36" cy="196" r="4" fill="#f87171"/>
+      <text x="52" y="201">No single view of what exists or who owns it</text>
+      <circle cx="36" cy="228" r="4" fill="#f87171"/>
+      <text x="52" y="233">Access requests by email, weeks of waiting</text>
+      <circle cx="36" cy="260" r="4" fill="#f87171"/>
+      <text x="52" y="265">Reports rebuilt because nobody knew they existed</text>
     </g>
   </g>
 
   <!-- Arrow -->
-  <g transform="translate(560, 330)">
+  <g transform="translate(560, 310)">
     <circle cx="40" cy="40" r="36" fill="#FF3621"/>
     <path d="M24 40 H48 M42 28 L56 40 L42 52" fill="none" stroke="#ffffff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
   </g>
 
-  <!-- RIGHT: Solution panel -->
+  <!-- RIGHT: Solution -->
   <g transform="translate(672, 210)">
     <rect width="480" height="280" rx="16" fill="#ffffff" opacity="0.97"/>
-    <text x="28" y="40" font-family="system-ui, sans-serif" font-size="12" font-weight="700" letter-spacing="1.5" fill="#FF3621">THE SHIFT</text>
-    <text x="28" y="78" font-family="system-ui, sans-serif" font-size="22" font-weight="700" fill="#0f172a">DataMarket on Databricks</text>
+    <text x="28" y="40" font-family="system-ui, sans-serif" font-size="12" font-weight="700" letter-spacing="1.5" fill="#FF3621">WITH DATAMARKET</text>
+    <text x="28" y="76" font-family="system-ui, sans-serif" font-size="22" font-weight="700" fill="#0f172a">One marketplace, governed access</text>
 
-    <!-- Outcome rows -->
     <g font-family="system-ui, sans-serif">
-      <rect x="28" y="100" width="424" height="44" rx="10" fill="#f1f5f9"/>
-      <text x="48" y="128" font-size="15" font-weight="600" fill="#0f172a">Discover products with Ask AI</text>
+      <rect x="28" y="96" width="424" height="48" rx="10" fill="#f1f5f9"/>
+      <text x="46" y="119" font-size="15" font-weight="700" fill="#0f172a">Discover</text>
+      <text x="46" y="136" font-size="12" fill="#475569">Power BI + Unity Catalog products side by side · Ask AI</text>
 
-      <rect x="28" y="154" width="424" height="44" rx="10" fill="#f1f5f9"/>
-      <text x="48" y="182" font-size="15" font-weight="600" fill="#0f172a">Request → approve → real UC GRANT</text>
+      <rect x="28" y="152" width="424" height="48" rx="10" fill="#f1f5f9"/>
+      <text x="46" y="175" font-size="15" font-weight="700" fill="#0f172a">Request → approve</text>
+      <text x="46" y="192" font-size="12" fill="#475569">Steward approval runs a real Unity Catalog GRANT</text>
 
-      <rect x="28" y="208" width="424" height="44" rx="10" fill="#f1f5f9"/>
-      <text x="48" y="236" font-size="15" font-weight="600" fill="#0f172a">RBAC / ABAC enforced in Unity Catalog</text>
+      <rect x="28" y="208" width="424" height="48" rx="10" fill="#f1f5f9"/>
+      <text x="46" y="231" font-size="15" font-weight="700" fill="#0f172a">Audit everything</text>
+      <text x="46" y="248" font-size="12" fill="#475569">Every request and decision recorded in Lakebase</text>
     </g>
   </g>
 
   <!-- Bottom chips -->
-  <g transform="translate(48, 520)" font-family="system-ui, sans-serif" font-size="13" font-weight="600" fill="#ffffff">
-    <rect x="0" y="0" width="168" height="36" rx="18" fill="none" stroke="#ffffff" stroke-opacity="0.35" stroke-width="1.5"/>
-    <text x="84" y="23" text-anchor="middle">Replace $1M portals</text>
-
-    <rect x="184" y="0" width="130" height="36" rx="18" fill="none" stroke="#ffffff" stroke-opacity="0.35" stroke-width="1.5"/>
-    <text x="249" y="23" text-anchor="middle">Native RBAC</text>
-
-    <rect x="330" y="0" width="160" height="36" rx="18" fill="none" stroke="#ffffff" stroke-opacity="0.35" stroke-width="1.5"/>
-    <text x="410" y="23" text-anchor="middle">Access workflows</text>
-
-    <rect x="506" y="0" width="132" height="36" rx="18" fill="none" stroke="#ffffff" stroke-opacity="0.35" stroke-width="1.5"/>
-    <text x="572" y="23" text-anchor="middle">AI discovery</text>
+  <g transform="translate(48, 522)" font-family="system-ui, sans-serif" font-size="13" font-weight="600" fill="#ffffff">
+    <rect x="0" y="0" width="120" height="36" rx="18" fill="none" stroke="#ffffff" stroke-opacity="0.35" stroke-width="1.5"/>
+    <text x="60" y="23" text-anchor="middle">Lakeflow</text>
+    <rect x="136" y="0" width="140" height="36" rx="18" fill="none" stroke="#ffffff" stroke-opacity="0.35" stroke-width="1.5"/>
+    <text x="206" y="23" text-anchor="middle">Unity Catalog</text>
+    <rect x="292" y="0" width="112" height="36" rx="18" fill="none" stroke="#ffffff" stroke-opacity="0.35" stroke-width="1.5"/>
+    <text x="348" y="23" text-anchor="middle">Lakebase</text>
+    <rect x="420" y="0" width="140" height="36" rx="18" fill="none" stroke="#ffffff" stroke-opacity="0.35" stroke-width="1.5"/>
+    <text x="490" y="23" text-anchor="middle">Genie + Ask AI</text>
+    <rect x="576" y="0" width="160" height="36" rx="18" fill="none" stroke="#ffffff" stroke-opacity="0.35" stroke-width="1.5"/>
+    <text x="656" y="23" text-anchor="middle">Databricks Apps</text>
   </g>
 
-  <!-- Built on Databricks badge -->
-  <g transform="translate(980, 528)">
+  <g transform="translate(980, 522)">
     <rect width="172" height="36" rx="8" fill="#ffffff" opacity="0.1"/>
     <polygon points="18,10 28,28 8,28" fill="#FF3621"/>
     <text x="40" y="24" font-family="system-ui, sans-serif" font-size="12" font-weight="600" fill="#e2e8f0">Built on Databricks</text>

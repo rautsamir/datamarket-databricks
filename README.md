@@ -1,16 +1,25 @@
 # DataMarket — Self-Service Data Product Marketplace on Databricks
 
-![DataMarket — replace $500K–$1M proprietary portals with a governed marketplace on Databricks](docs/datamarket-thumbnail.png)
+![DataMarket — every data product in one place, with access in minutes instead of weeks](docs/datamarket-thumbnail.png)
 
-A production-ready data product marketplace built **entirely on Databricks**. Designed to show enterprise and public sector customers that a modern data portal — with AI-powered discovery, real RBAC/ABAC enforcement, and persistent access workflows — can be delivered natively on Databricks, without third-party vendor tooling.
+A data product marketplace built **entirely on Databricks**: one place to find every report and dataset an organization has, and a governed, audited way to get access to it.
 
-> **The problem we solve:** Proprietary data portals routinely run **$500K–$1M+** and still sit beside the lakehouse. DataMarket is the POC that proves you can replace that spend with governed discovery, access requests, and AI — on Databricks itself. Reusable across any industry vertical.
+## The Problem
+
+DataMarket started with a large state and local government customer whose analytics lived in two worlds:
+
+- **Hundreds of Power BI reports** that can't be documented or discovered inside Databricks, because Unity Catalog doesn't govern them.
+- **Purpose-built gold data products** in Unity Catalog, known mainly to the teams that built them.
+
+Nobody could see the whole universe of data products, who owned each one, or whether it could be trusted. Getting access was worse: an email to someone who might know the owner, then a wait measured in weeks. Commercial data portals that solve this run **$500K–$1M+** and sit outside the lakehouse, so governance gets duplicated.
+
+So we built a prototype on Databricks alone. DataMarket catalogs Power BI reports and Unity Catalog products side by side, lets anyone search them or ask in plain English, and turns an access request into a steward approval that runs a real Unity Catalog `GRANT`, with every step audited. Nothing in it is specific to that customer; it deploys into any workspace.
 
 ---
 
 ## What It Does
 
-- **Data Catalog** — Browse and search data products (datasets, dashboards, Genie Spaces, ML models) with domain filters, classification tags, and per-user access status
+- **Data Catalog** — One searchable catalog for Unity Catalog datasets, AI/BI dashboards, Genie spaces, ML models, and external BI (Power BI, Tableau), with domain filters, classification tags, and per-user access status
 - **Access Request Workflow** — Business users request access with a justification; requests persist to Lakebase Postgres and trigger optional RFA notifications
 - **Admin Approval Queue** — Data stewards approve/deny requests; each approval executes a real Unity Catalog `GRANT SELECT` via the SQL Statement Execution API
 - **UC Import** — Browse Unity Catalog (catalog → schema → table) in-app and bulk-register tables as data products in seconds
