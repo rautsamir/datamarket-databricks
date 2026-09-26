@@ -1,0 +1,107 @@
+# DataMarket — SharePoint-to-marketplace reference build
+#
+# Lakeflow Connect (SharePoint) → Spark Declarative Pipeline (parse, chunk,
+# classify) → Unity Catalog → Vector Search + Genie → registered in DataMarket.
+#
+#   databricks bundle deploy -t dev --profile <profile>
+#   databricks bundle run refresh -t dev --profile <profile>
+
+bundle:
+  name: datamarket-sharepoint
+
+variables:
+  catalog:
+    description: Catalog that holds the document tables
+    default: demo
+  schema:
+    description: Schema created by this bundle for the document tables
+    default: sled_datamarket_docs
+  sharepoint_connection:
+    description: Unity Catalog connection of type SHAREPOINT
+    default: sled-sharepoint-connect-app
+  sharepoint_url:
+    description: SharePoint document library that holds the policy PDFs
+    default: https://databricks977.sharepoint.com/sites/SLEDDemoSharePoint/Library%20with%20pdf/Forms/AllItems.aspx
+  file_glob:
+    description: Only files matching this pattern are ingested from the library
+    default: SLED-*.pdf
+  warehouse_id:
+    description: SQL warehouse used by the Genie space
+    default: a94a22f8652d85c1
+  vs_endpoint:
+    description: Vector Search endpoint (created if missing)
+    default: sled_sharepoint_vs
+  embedding_endpoint:
+    description: Embedding model serving endpoint
+    default: databricks-gte-large-en
+  genie_title:
+    description: Title of the Genie space (used to find and update it on re-runs)
+    default: DataMarket — County Policy Documents
+
+resources:
+  schemas:
+    docs:
+      catalog_name: ${var.catalog}
+      name: ${var.schema}
+      comment: Policy documents ingested from SharePoint for DataMarket (managed by the datamarket-sharepoint bundle)
+
+  pipelines:
+    sharepoint_to_rag:
+      name: datamarket-sharepoint-to-rag
+      catalog: ${var.catalog}
+      schema: ${resources.schemas.docs.name}
+      serverless: true
+      photon: true
+      continuous: false
+      # The SharePoint connector and AI functions inside pipelines need PREVIEW.
+      channel: PREVIEW
+      configuration:
+        datamarket.sharepoint_connection: ${var.sharepoint_connection}
+        datamarket.sharepoint_url: ${var.sharepoint_url}
+        datamarket.file_glob: ${var.file_glob}
+      libraries:
+        - file:
+            path: ./src/pipeline/sharepoint_to_rag.py
+        - file:
+            path: ./src/pipeline/policy_document_catalog.sql
+
+  jobs:
+    refresh:
+      name: datamarket-sharepoint-refresh
+      schedule:
+        quartz_cron_expression: "0 0 6 * * ?"
+        timezone_id: America/Los_Angeles
+        pause_status: PAUSED
+      parameters:
+        - name: catalog
+          default: ${var.catalog}
+        # Resolved schema name: development mode prefixes it per user.
+        - name: schema
+          default: ${resources.schemas.docs.name}
+      tasks:
+        - task_key: ingest_parse_classify
+          pipeline_task:
+            pipeline_id: ${resources.pipelines.sharepoint_to_rag.id}
+
+        - task_key: sync_vector_index
+          depends_on:
+            - task_key: ingest_parse_classify
+          notebook_task:
+            notebook_path: ./src/setup/vector_index.py
+            base_parameters:
+              vs_endpoint: ${var.vs_endpoint}
+              embedding_endpoint: ${var.embedding_endpoint}
+
+        - task_key: publish_genie_space
+          depends_on:
+            - task_key: ingest_parse_classify
+          notebook_task:
+            notebook_path: ./src/setup/genie_space.py
+            base_parameters:
+              warehouse_id: ${var.warehouse_id}
+              genie_title: ${var.genie_title}
+
+targets:
+  dev:
+    mode: development
+    default: true

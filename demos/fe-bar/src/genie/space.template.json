@@ -1,0 +1,58 @@
+{
+  "description": "Ask questions about county policy documents ingested from SharePoint: which policies exist, what area they cover, and what they say.",
+  "sample_questions": [
+    "Which documents cover procurement or purchasing?",
+    "How many policy documents are there in each policy domain?",
+    "What does the IT disaster recovery plan say about recovery time objectives?",
+    "Summarize the public records request policy"
+  ],
+  "tables": [
+    {
+      "identifier": "{{catalog}}.{{schema}}.policy_document_catalog",
+      "columns": {
+        "document_title": "Readable document title derived from the PDF file name. Use this when listing documents.",
+        "policy_domain": "Policy area assigned by AI (for example Procurement, Human Resources, Emergency Management). Use for grouping and filtering by topic.",
+        "summary": "Short AI-generated summary of the document. Use to answer 'what is this document about'.",
+        "source_file": "SharePoint URL of the original PDF. Join key to rag_docs_chunks.source_file.",
+        "chunk_count": "Number of text chunks the document was split into.",
+        "char_count": "Total characters of extracted text in the document."
+      }
+    },
+    {
+      "identifier": "{{catalog}}.{{schema}}.rag_docs_chunks",
+      "columns": {
+        "chunk": "Text content extracted from the PDF, about 2,000 characters per row. Search with LOWER(chunk) LIKE '%term%' to find passages on a topic.",
+        "source_file": "SharePoint URL of the PDF this chunk came from. Join key to policy_document_catalog.source_file.",
+        "path": "Full SharePoint path of the source PDF (URL-encoded).",
+        "chunk_id": "Unique hash of the chunk. Not meaningful to users."
+      }
+    }
+  ],
+  "instructions": [
+    "### Purpose",
+    "This space answers questions about county government policy documents ingested from SharePoint through Lakeflow Connect. Documents include policies such as emergency operations, public records, information security, budget procedures, the employee handbook, procurement, fleet management, GIS data standards, IT disaster recovery, community engagement, water quality, and infrastructure inspection.",
+    "",
+    "### Which table to use",
+    "Use `policy_document_catalog` (one row per document) for questions about which documents exist, how many there are, and what topic or area they cover. Use `rag_docs_chunks` (one row per text passage) for questions about what a policy actually says.",
+    "",
+    "### Searching content",
+    "To find what a policy says, filter `rag_docs_chunks` with LOWER(chunk) LIKE '%keyword%', combining several keywords with AND when the question is specific. Join to `policy_document_catalog` on `source_file` to show the document title.",
+    "",
+    "### Attribution",
+    "Always return `document_title` (or `source_file` when the title is unavailable) alongside any passage so users can trace the answer to its source document."
+  ],
+  "example_sqls": [
+    {
+      "question": "How many policy documents are there in each policy domain?",
+      "sql": "SELECT policy_domain, COUNT(*) AS documents FROM {{catalog}}.{{schema}}.policy_document_catalog GROUP BY policy_domain ORDER BY documents DESC"
+    },
+    {
+      "question": "List all policy documents with their summary",
+      "sql": "SELECT document_title, policy_domain, summary FROM {{catalog}}.{{schema}}.policy_document_catalog ORDER BY document_title"
+    },
+    {
+      "question": "What do the policies say about emergency operations?",
+      "sql": "SELECT d.document_title, c.chunk FROM {{catalog}}.{{schema}}.rag_docs_chunks c JOIN {{catalog}}.{{schema}}.policy_document_catalog d ON c.source_file = d.source_file WHERE LOWER(c.chunk) LIKE '%emergency%' ORDER BY d.document_title"
+    }
+  ]
+}
