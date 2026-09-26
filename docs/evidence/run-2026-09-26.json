@@ -1,0 +1,365 @@
+{
+ "job_run": {
+  "run_id": 798790042350279,
+  "result": "SUCCESS",
+  "start": 1790407795682,
+  "end": 1790407885260,
+  "tasks": [
+   {
+    "task": "sync_vector_index",
+    "result": "SUCCESS",
+    "seconds": 24
+   },
+   {
+    "task": "ingest_parse_classify",
+    "result": "SUCCESS",
+    "seconds": 65
+   },
+   {
+    "task": "publish_genie_space",
+    "result": "SUCCESS",
+    "seconds": 22
+   }
+  ],
+  "task_outputs": {
+   "sync_vector_index": "demo.dev_samir_raut_sled_datamarket_docs.rag_docs_chunks_index",
+   "publish_genie_space": "https://<workspace-host>/genie/rooms/01f1b97b7e6c195bb70fd6311e02757e"
+  }
+ },
+ "pipeline_events": [
+  "2026-09-26T07:30:49 update_progress: Update 89eb8e is COMPLETED.",
+  "2026-09-26T07:30:49 flow_progress: Flow 'demo.dev_samir_raut_sled_datamarket_docs.policy_document_catalog' has COMPLETED.",
+  "2026-09-26T07:30:30 flow_progress: Flow 'demo.dev_samir_raut_sled_datamarket_docs.rag_docs_chunks' has COMPLETED.",
+  "2026-09-26T07:30:26 flow_progress: Flow 'demo.dev_samir_raut_sled_datamarket_docs.rag_docs_parsed' has COMPLETED.",
+  "2026-09-26T07:30:23 flow_progress: Flow 'demo.dev_samir_raut_sled_datamarket_docs.rag_docs_bronze' has COMPLETED.",
+  "2026-09-26T07:30:15 update_progress: Update 89eb8e is RUNNING.",
+  "2026-09-26T07:30:15 update_progress: Update 89eb8e is SETTING_UP_TABLES.",
+  "2026-09-26T07:30:02 update_progress: Update 89eb8e is INITIALIZING.",
+  "2026-09-26T07:29:22 update_progress: Update 446489 is COMPLETED.",
+  "2026-09-26T07:29:22 flow_progress: Flow 'demo.dev_samir_raut_sled_datamarket_docs.policy_document_catalog' has COMPLETED.",
+  "2026-09-26T07:29:08 flow_progress: Flow 'demo.dev_samir_raut_sled_datamarket_docs.rag_docs_chunks' has COMPLETED.",
+  "2026-09-26T07:28:52 flow_progress: Flow 'demo.dev_samir_raut_sled_datamarket_docs.rag_docs_parsed' has COMPLETED.",
+  "2026-09-26T07:28:33 flow_progress: Flow 'demo.dev_samir_raut_sled_datamarket_docs.rag_docs_bronze' has COMPLETED.",
+  "2026-09-26T07:28:20 update_progress: Update 446489 is RUNNING.",
+  "2026-09-26T07:28:11 update_progress: Update 446489 is SETTING_UP_TABLES.",
+  "2026-09-26T07:28:11 dataset_life_cycle: MATERIALIZED_VIEW demo.dev_samir_raut_sled_datamarket_docs.policy_document_catalog has been successfully reset.",
+  "2026-09-26T07:28:11 dataset_life_cycle: STREAMING_TABLE demo.dev_samir_raut_sled_datamarket_docs.rag_docs_chunks has been successfully reset.",
+  "2026-09-26T07:28:11 dataset_life_cycle: STREAMING_TABLE demo.dev_samir_raut_sled_datamarket_docs.rag_docs_parsed has been successfully reset.",
+  "2026-09-26T07:28:11 dataset_life_cycle: STREAMING_TABLE demo.dev_samir_raut_sled_datamarket_docs.rag_docs_bronze has been successfully reset.",
+  "2026-09-26T07:28:10 update_progress: Update 446489 is RESETTING."
+ ],
+ "row_counts": {
+  "statement": "SELECT 'rag_docs_bronze' t, count(*) n FROM demo.dev_samir_raut_sled_datamarket_docs.rag_docs_bronze UNION ALL\n  SELECT 'rag_docs_parsed', count(*) FROM demo.dev_samir_raut_sled_datamarket_docs.rag_docs_parsed UNION ALL\n  SELECT 'rag_docs_chunks', count(*) FROM demo.dev_samir_raut_sled_datamarket_docs.rag_docs_chunks UNION ALL\n  SELECT 'policy_document_catalog', count(*) FROM demo.dev_samir_raut_sled_datamarket_docs.policy_document_catalog",
+  "columns": [
+   "t",
+   "n"
+  ],
+  "rows": [
+   [
+    "rag_docs_bronze",
+    "12"
+   ],
+   [
+    "rag_docs_parsed",
+    "12"
+   ],
+   [
+    "rag_docs_chunks",
+    "12"
+   ],
+   [
+    "policy_document_catalog",
+    "12"
+   ]
+  ]
+ },
+ "document_catalog": {
+  "statement": "SELECT document_title, policy_domain, chunk_count, summary FROM demo.dev_samir_raut_sled_datamarket_docs.policy_document_catalog ORDER BY policy_domain, document_title",
+  "columns": [
+   "document_title",
+   "policy_domain",
+   "chunk_count",
+   "summary"
+  ],
+  "rows": [
+   [
+    "Community Engagement Framework",
+    "Community Engagement",
+    "1",
+    "Community Engagement Framework outlines 5 levels of engagement and requires equity, accessibility, and digital inclusion in all activities, with annual reporting on engagement efforts and outcomes."
+   ],
+   [
+    "Emergency Operations Plan",
+    "Emergency Management",
+    "1",
+    "County Emergency Operations Plan outlines framework for emergency response, including activation levels, EOC structure, and communication protocols."
+   ],
+   [
+    "Annual Budget Procedures",
+    "Finance and Budget",
+    "1",
+    "Annual budget development involves department requests, hearings, and board approvals, with a final budget adopted by June and implemented July 1."
+   ],
+   [
+    "Fleet Management Policy",
+    "Fleet and Operations",
+    "1",
+    "County fleet policy outlines vehicle assignment, maintenance, electric transition, and accident reporting guidelines for employees and fleet management."
+   ],
+   [
+    "GIS Data Standards",
+    "GIS and Infrastructure",
+    "1",
+    "County GIS data standards require California State Plane Coordinate System, specific data layers, and FGDC-compliant metadata, with data published on an open portal."
+   ],
+   [
+    "Infrastructure Inspection Standards",
+    "GIS and Infrastructure",
+    "1",
+    "Public infrastructure inspection standards cover bridges, roads, storm drains, and traffic signals with regular inspections and maintenance schedules."
+   ],
+   [
+    "Employee Handbook Summary",
+    "Human Resources",
+    "1",
+    "County employee handbook outlines employment standards, leave policies, code of conduct, and telework policy for employees."
+   ],
+   [
+    "IT Disaster Recovery Plan",
+    "Information Technology and Security",
+    "1",
+    "IT disaster recovery plan outlines objectives, backup strategies, and failover procedures for critical systems, ensuring timely recovery and minimal data loss."
+   ],
+   [
+    "Information Security Policy",
+    "Information Technology and Security",
+    "1",
+    "County's information security policy outlines access controls, data classification, and incident response for employees, contractors, and third-party providers."
+   ],
+   [
+    "Procurement Policy",
+    "Procurement",
+    "1",
+    "County procurement policy outlines thresholds, vendor selection criteria, contract types, and protest procedures for purchases over $10,000."
+   ],
+   [
+    "Water Quality Monitoring",
+    "Public Health and Environment",
+    "1",
+    "Water quality monitoring program includes sampling surface, ground, storm, beach, and drinking water, testing for various parameters, and responding to exceedances with re-sampling and public notification."
+   ],
+   [
+    "Public Records Request Policy",
+    "Public Records",
+    "1",
+    "Policy governs public records requests under CPRA and FOIA, outlining response timelines, exempt records, and fee schedules for processing requests."
+   ]
+  ]
+ },
+ "vector_search": {
+  "query": "purchasing thresholds that require competitive bids",
+  "results": [
+   [
+    "SLED-006_Procurement_Policy.pdf",
+    "County Procurement and Contracting Policy  1. Procurement Thresholds  • Micro-purchase (under $10,000): Direct purchase, no competitive bidding required • Small purchase ($10,000-$100,000): Minimum 3 written quotes • Formal bid ($100,000-$1,000,000): Sealed co",
+    0.626
+   ],
+   [
+    "SLED-012_Infrastructure_Inspection_Standards.pdf",
+    "Public Infrastructure Inspection and Maintenance Standards  1. Bridge Inspections  • Routine: Every 24 months per FHWA National Bridge Inspection Standards • Fracture critical: Every 24 months with hands-on inspection • Underwater: Every 60 months for bridges ",
+    0.494
+   ],
+   [
+    "SLED-002_Public_Records_Request_Policy.pdf",
+    "Public Records Request Processing Policy  1. Overview  This policy governs the processing of public records requests under the California Public Records Act (CPRA) and the Freedom of Information Act (FOIA). All county departments must comply with statutory res",
+    0.492
+   ]
+  ]
+ },
+ "genie": {
+  "question": "What does the IT disaster recovery plan say about recovery time objectives?",
+  "status": "COMPLETED",
+  "sql": "SELECT d.`document_title`, c.`chunk`\nFROM `demo`.`dev_samir_raut_sled_datamarket_docs`.`rag_docs_chunks` c\nJOIN `demo`.`dev_samir_raut_sled_datamarket_docs`.`policy_document_catalog` d\n  ON c.`source_file` = d.`source_file`\nWHERE d.`document_title` IS NOT NULL\n  AND c.`chunk` IS NOT NULL\n  AND d.`document_title` ILIKE '%IT disaster recovery%'\n  AND (\n    LOWER(c.`chunk`) LIKE '%recovery time objective%'\n    OR LOWER(c.`chunk`) LIKE '%recovery time objectives%'\n    OR LOWER(c.`chunk`) LIKE '%rto%'\n  )\nORDER BY d.`document_title`",
+  "result_rows": [
+   [
+    "IT Disaster Recovery Plan",
+    "Information Technology Disaster Recovery Plan\n\n1. Recovery Objectives\n\n• Tier 1 (Critical): RTO 4 hours, RPO 1 hour (911, financial systems, email)\n• Tier 2 (Es"
+   ]
+  ],
+  "answer": "The **IT Disaster Recovery Plan** sets these recovery time objectives: **Tier 1 (Critical) = 4 hours**, **Tier 2 (Essential) = 24 hours**, **Tier 3 (Standard) = 72 hours**, and **Tier 4 (Non-critical) = 1 week**. The plan shows that recovery targets become longer as system criticality decreases."
+ },
+ "app_identity": {
+  "mode": "sso",
+  "user": {
+   "user_id": "67407259-ce83-460b-9318-2dc824b573c4",
+   "email": "samir.raut@databricks.com",
+   "display_name": "Samir Raut",
+   "role": "admin",
+   "department": "General"
+  }
+ },
+ "app_catalog": [
+  [
+   "DP-023",
+   "County Policy Documents — Ask Genie",
+   "Genie Space",
+   "demo.dev_samir_raut_sled_datamarket_docs.policy_document_catalog"
+  ],
+  [
+   "DP-024",
+   "Expenditure Monitoring Dashboard",
+   "Power BI",
+   ""
+  ],
+  [
+   "DP-026",
+   "Payroll and Overtime Trends",
+   "Power BI",
+   ""
+  ],
+  [
+   "DP-022",
+   "Policy Document Catalog",
+   "Dataset",
+   "demo.dev_samir_raut_sled_datamarket_docs.policy_document_catalog"
+  ],
+  [
+   "DP-025",
+   "Vendor Payment Aging Report",
+   "Power BI",
+   ""
+  ]
+ ],
+ "roundtrip": {
+  "1_blocked_no_warehouse_permission": {
+   "request": "REQ-007",
+   "approve": [
+    502,
+    {
+     "error": "Unity Catalog rejected the grant: You do not have permission to use the SQL Warehouse. Please contact your administrator.. The request is still pending.",
+     "uc_grant_sql": "GRANT SELECT ON demo.dev_samir_raut_sled_datamarket_docs.policy_document_catalog TO `data_engineers_demo_group`;"
+    }
+   ],
+   "still_pending": true
+  },
+  "2_grant_can_use": {
+   "command": "databricks permissions update sql/warehouses <warehouse> --json '{\"access_control_list\":[{\"service_principal_name\":\"<app-sp>\",\"permission_level\":\"CAN_USE\"}]}'",
+   "ok": true
+  },
+  "3_blocked_invalid_principal": {
+   "request": "REQ-008",
+   "approve": [
+    502,
+    {
+     "error": "Unity Catalog rejected the grant: [RequestId=8fb3156d-1dc4-487b-a920-7b3a48290291 ErrorClass=PRINCIPAL_DOES_NOT_EXIST.PRINCIPAL_DOES_NOT_EXIST] Could not find principal with name fs_analysts.. The request is still pending.",
+     "uc_grant_sql": "GRANT SELECT ON demo.dev_samir_raut_sled_datamarket_docs.policy_document_catalog TO `fs_analysts`;"
+    }
+   ]
+  },
+  "4_grants_before": {
+   "statement": "SHOW GRANTS `data_engineers_demo_group` ON TABLE demo.dev_samir_raut_sled_datamarket_docs.policy_document_catalog",
+   "state": "SUCCEEDED",
+   "rows": []
+  },
+  "4_approve": [
+   200,
+   {
+    "status": "Approved",
+    "uc_grant_sql": "GRANT SELECT ON demo.dev_samir_raut_sled_datamarket_docs.policy_document_catalog TO `data_engineers_demo_group`;",
+    "uc_executed": true,
+    "uc_status": "SUCCEEDED",
+    "uc_error": null
+   }
+  ],
+  "4_grants_after": {
+   "statement": "SHOW GRANTS `data_engineers_demo_group` ON TABLE demo.dev_samir_raut_sled_datamarket_docs.policy_document_catalog",
+   "state": "SUCCEEDED",
+   "rows": [
+    [
+     "data_engineers_demo_group",
+     "SELECT",
+     "TABLE",
+     "demo.dev_samir_raut_sled_datamarket_docs.policy_document_catalog"
+    ]
+   ]
+  },
+  "5_revoke": [
+   200,
+   {
+    "status": "Revoked",
+    "revoke_sql": "REVOKE SELECT ON demo.dev_samir_raut_sled_datamarket_docs.policy_document_catalog FROM `data_engineers_demo_group`;",
+    "uc_executed": true,
+    "uc_status": "SUCCEEDED",
+    "uc_error": null
+   }
+  ],
+  "5_grants_after_revoke": {
+   "statement": "SHOW GRANTS `data_engineers_demo_group` ON TABLE demo.dev_samir_raut_sled_datamarket_docs.policy_document_catalog",
+   "state": "SUCCEEDED",
+   "rows": []
+  },
+  "audit_log": [
+   [
+    "2026-09-26T23:48:16",
+    "ACCESS_REVOKED",
+    "samir.raut@databricks.com",
+    "REQ-007",
+    "{\"reason\": \"Audit fieldwork complete\", \"uc_error\": null, \"revokeSql\": \"REVOKE SELECT ON demo.dev_samir_raut_sled_datamarket_docs.policy_document_catalog FROM `data_engine"
+   ],
+   [
+    "2026-09-26T23:48:14",
+    "REQUEST_APPROVED",
+    "samir.raut@databricks.com",
+    "REQ-007",
+    "{\"uc_error\": null, \"uc_status\": \"SUCCEEDED\", \"ucGrantSql\": \"GRANT SELECT ON demo.dev_samir_raut_sled_datamarket_docs.policy_document_catalog TO `data_engineers_demo_group"
+   ],
+   [
+    "2026-09-26T23:48:12",
+    "REQUEST_DENIED",
+    "samir.raut@databricks.com",
+    "REQ-008",
+    "{\"reason\": \"Not a Unity Catalog group\"}"
+   ],
+   [
+    "2026-09-26T23:48:11",
+    "GRANT_FAILED",
+    "samir.raut@databricks.com",
+    "REQ-008",
+    "{\"error\": \"[RequestId=8fb3156d-1dc4-487b-a920-7b3a48290291 ErrorClass=PRINCIPAL_DOES_NOT_EXIST.PRINCIPAL_DOES_NOT_EXIST] Could not find principal with name fs_analysts.\","
+   ],
+   [
+    "2026-09-26T23:48:09",
+    "REQUEST_SUBMITTED",
+    "fs_analysts",
+    "REQ-008",
+    "{\"reason\": \"Invalid-principal check\", \"productRef\": \"DP-022\"}"
+   ],
+   [
+    "2026-09-26T23:48:02",
+    "GRANT_FAILED",
+    "samir.raut@databricks.com",
+    "REQ-007",
+    "{\"error\": \"You do not have permission to use the SQL Warehouse. Please contact your administrator.\", \"ucGrantSql\": \"GRANT SELECT ON demo.dev_samir_raut_sled_datamarket_do"
+   ],
+   [
+    "2026-09-26T23:48:02",
+    "REQUEST_SUBMITTED",
+    "data_engineers_demo_group",
+    "REQ-007",
+    "{\"reason\": \"Audit analysts need the policy catalog to scope procurement testing in the annual audit plan\", \"productRef\": \"DP-022\"}"
+   ]
+  ],
+  "0_self_approval_blocked": {
+   "request": "REQ-003",
+   "requester": "samir.raut@databricks.com",
+   "approver": "samir.raut@databricks.com",
+   "approve": [
+    403,
+    {
+     "error": "You cannot approve your own access request."
+    }
+   ],
+   "then": "denied: Separation-of-duties test"
+  }
+ }
+}

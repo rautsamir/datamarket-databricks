@@ -133,9 +133,13 @@ export function DataMarketAdminPage({ embedded = false }) {
     Denied:   normalizedReqs.filter(r => r.status === 'Denied').length,
   }
 
-  const handleApprove = (reqId) => {
-    approveRequest(reqId)
-    setJustActed(prev => ({ ...prev, [reqId]: 'approved' }))
+  const handleApprove = async (reqId) => {
+    try {
+      await approveRequest(reqId)
+      setJustActed(prev => ({ ...prev, [reqId]: 'approved' }))
+    } catch (e) {
+      window.alert(e.message)
+    }
   }
 
   const handleDeny = () => {

@@ -71,6 +71,8 @@ SharePoint PDFs ──Lakeflow Connect──▶ Spark Declarative Pipeline
 
 One `databricks bundle deploy` plus `bundle run refresh` rebuilds it from the SharePoint library. See the [demo README](demos/fe-bar/README.md) for prerequisites and how to publish the results in DataMarket.
 
+**[Execution evidence →](docs/execution-evidence.md)** Outputs from a live run: the job run, catalog query results, a Vector Search hit, a Genie answer with its SQL, and an access request that became a verified Unity Catalog `GRANT`.
+
 ---
 
 ## Tech Stack
