@@ -361,5 +361,28 @@
    ],
    "then": "denied: Separation-of-duties test"
   }
+ },
+ "expiry_2026-09-27": {
+  "request": "REQ-009",
+  "approve": {
+   "status": "Approved",
+   "uc_grant_sql": "GRANT SELECT ON demo.dev_samir_raut_sled_datamarket_docs.policy_document_catalog TO `data_engineers_demo_group`;",
+   "uc_executed": true,
+   "uc_status": "SUCCEEDED",
+   "uc_error": null
+  },
+  "grants_after_approve": [
+   [
+    "data_engineers_demo_group",
+    "SELECT",
+    "TABLE",
+    "demo.dev_samir_raut_sled_datamarket_docs.policy_document_catalog"
+   ]
+  ],
+  "sweep": {
+   "status": "Expired",
+   "audit": "ACCESS_EXPIRED by system; REVOKE SELECT ON demo.dev_samir_raut_sled_datamarket_docs.policy_document_catalog FROM `data_engineers_demo_group`; uc_status SUCCEEDED"
+  },
+  "grants_after_sweep": []
  }
 }

@@ -164,6 +164,19 @@ The request stayed `Pending`. Before this run, the app marked requests *Approved
 
 **Revoked.** `PUT …/REQ-007/revoke` → `REVOKE SELECT … FROM \`data_engineers_demo_group\`;`, `uc_status: SUCCEEDED`.
 
+### 90-day expiry, enforced in Unity Catalog
+
+Approved access expires after 90 days. An hourly sweep in the app revokes expired grants in Unity Catalog; it doesn't just hide them in the UI. Captured September 27, 2026 with `REQ-009`. The request was approved, its `expires_at` was moved into the past in Lakebase, and the app was restarted so the sweep ran on startup:
+
+| Step | Result |
+|---|---|
+| Approve | `GRANT SELECT … TO \`data_engineers_demo_group\`` → `SUCCEEDED` |
+| `SHOW GRANTS` before sweep | `data_engineers_demo_group · SELECT · TABLE · …policy_document_catalog` |
+| Sweep | status → `Expired`; audit `ACCESS_EXPIRED` by `system`, `REVOKE … FROM \`data_engineers_demo_group\`` → `SUCCEEDED` |
+| `SHOW GRANTS` after sweep | *(no rows)* |
+
+The first sweep run exposed another bug. Right after a restart, the warehouse ID hadn't been loaded from settings yet, so the revoke was skipped, and the same gap could have let an approval skip its grant. Both paths now load settings on demand. The sweep also leaves a request Approved and retries on the next run if Unity Catalog doesn't confirm the revoke, so a live grant is never marked as expired.
+
 ### Audit trail (Lakebase `audit_log`, newest first)
 
 | Time (UTC) | Event | Actor | Request | Detail |
