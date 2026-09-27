@@ -53,7 +53,10 @@ export async function rfaNotify(ucFullName, requesterEmail, comment) {
 
 // ─── UC: Execute GRANT/REVOKE via SQL Statement Execution API ────────────────
 export async function executeUcStatement(sql) {
-  if (DEMO_MODE || !getWarehouseId()) return { executed: false, reason: DEMO_MODE ? 'demo_mode' : 'no_warehouse' };
+  if (DEMO_MODE) return { executed: false, reason: 'demo_mode' };
+  // The warehouse usually comes from Admin → Settings, whose cache is empty right after a restart.
+  if (!getWarehouseId()) await loadSettings();
+  if (!getWarehouseId()) return { executed: false, reason: 'no_warehouse' };
   try {
     const result = await databricksApi('POST', '/api/2.0/sql/statements', {
       warehouse_id: getWarehouseId(),

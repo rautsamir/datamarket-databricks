@@ -2,6 +2,29 @@ import { query } from '../db.js';
 import { rfaNotify, executeUcStatement } from '../databricks.js';
 import { actor } from '../lib/authz.js';
 
+/** Revokes approved grants past expires_at so the 90-day window is enforced in UC, not just hidden in the UI. */
+export async function expireAccess() {
+  const { rows } = await query(`
+    SELECT request_id, request_ref, uc_grant_sql FROM access_requests
+    WHERE status = 'Approved' AND expires_at IS NOT NULL AND expires_at < NOW()`);
+  for (const r of rows) {
+    const revokeSql = r.uc_grant_sql?.startsWith('GRANT')
+      ? r.uc_grant_sql.replace(/^GRANT/, 'REVOKE').replace(/ TO /, ' FROM ')
+      : null;
+    const result = revokeSql ? await executeUcStatement(revokeSql) : { executed: false, reason: 'no_uc_table' };
+    // Leave it Approved if UC refused, so the next sweep retries instead of hiding a live grant.
+    if (revokeSql && !result.executed && result.reason !== 'demo_mode') continue;
+    await query(`UPDATE access_requests SET status = 'Expired', uc_grant_sql = COALESCE($1, uc_grant_sql), updated_at = NOW()
+      WHERE request_id = $2`, [revokeSql, r.request_id]);
+    try {
+      await query(`INSERT INTO audit_log (event_type, actor_email, target_type, target_id, target_name, metadata)
+        VALUES ('ACCESS_EXPIRED', 'system', 'access_request', $1, $2, $3)`,
+        [r.request_id, r.request_ref, JSON.stringify({ revokeSql, uc_executed: result.executed, uc_status: result.status || null })]);
+    } catch (_) {}
+  }
+  if (rows.length) console.log(`[expiry] processed ${rows.length} expired grant(s)`);
+}
+
 export function registerRoutes(app) {
   // ─── Access Requests ──────────────────────────────────────────────────────────
   app.get('/api/portal/requests', async (req, res) => {

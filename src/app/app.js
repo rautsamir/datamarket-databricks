@@ -10,7 +10,7 @@ import { getPool, runMigrations, bootstrapSchema, getDbHealth, closePool, LAKEBA
 import { attachUser, enforcePolicy } from './lib/authz.js';
 import { registerRoutes as registerConfig }          from './routes/config.js';
 import { registerRoutes as registerProducts, maybeAutoDiscover } from './routes/products.js';
-import { registerRoutes as registerRequests }        from './routes/requests.js';
+import { registerRoutes as registerRequests, expireAccess } from './routes/requests.js';
 import { registerRoutes as registerUsers }           from './routes/users.js';
 import { registerRoutes as registerFeatureRequests } from './routes/feature-requests.js';
 import { registerRoutes as registerAskCatalog }      from './routes/ask-catalog.js';
@@ -111,6 +111,9 @@ const server = app.listen(PORT, '0.0.0.0', () => {
           await runMigrations();
           // Run auto-discover once the database has settled (non-blocking)
           setTimeout(() => maybeAutoDiscover(), 15000);
+          const sweep = () => expireAccess().catch(e => console.warn('[expiry]', e.message));
+          sweep();
+          setInterval(sweep, 60 * 60 * 1000);
         })
         .catch(e => {
           if (attempt < 5) {
