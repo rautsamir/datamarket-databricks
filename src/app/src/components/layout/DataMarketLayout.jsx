@@ -32,7 +32,8 @@ export function DataMarketLayout({ currentPage, onNavigate, children }) {
   const [userMenuOpen, setUserMenuOpen] = useState(false)
   const [personaMenuOpen, setPersonaMenuOpen] = useState(false)
   const [notifOpen, setNotifOpen] = useState(false)
-  const { persona, currentPersona, setCurrentPersona, pendingRequests, notifications, unreadNotificationCount, isAdmin, demoMode, identityLoading } = usePersona()
+  const { persona, currentPersona, setCurrentPersona, pendingRequests, notifications, unreadNotificationCount, isAdmin, demoMode, identityLoading,
+    canPreviewAnalyst, previewing, previewRequester, setPreviewAsAnalyst } = usePersona()
   const { appName, appSubtitle, appLogoUrl, navLinks, askAiEnabled, insightsEnabled, featureRequestsEnabled } = useAppConfig()
 
   const personaColor = isAdmin ? '#7C3AED' : currentPersona === 'james' ? '#059669' : '#3B82F6'
@@ -66,6 +67,16 @@ export function DataMarketLayout({ currentPage, onNavigate, children }) {
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
+      {previewing && (
+        <div className="text-center py-1.5 text-xs text-white font-medium bg-blue-600">
+          <ShieldCheck className="inline h-3 w-3 mr-1.5 mb-0.5" />
+          Previewing the analyst experience{previewRequester ? <> · requests are filed as <strong>{previewRequester}</strong></> : ''}
+          <button onClick={() => { setPreviewAsAnalyst(false); onNavigate('my-access') }} className="underline ml-2">
+            Return to steward view →
+          </button>
+        </div>
+      )}
+
       {/* Demo Banner — only shown in demo mode */}
       {demoMode && (
         <div className="text-center py-1.5 text-xs text-white font-medium"
@@ -236,6 +247,17 @@ export function DataMarketLayout({ currentPage, onNavigate, children }) {
                         </button>
                       )}
                     </div>
+
+                    {canPreviewAnalyst && (
+                      <div className="py-1 border-b border-gray-100">
+                        <button
+                          onClick={() => { setPreviewAsAnalyst(!previewing); setUserMenuOpen(false); onNavigate(previewing ? 'my-access' : 'home') }}
+                          className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                        >
+                          {previewing ? 'Return to steward view' : 'Preview as analyst'}
+                        </button>
+                      </div>
+                    )}
 
                     {/* Persona switcher — demo mode only */}
                     {demoMode && (

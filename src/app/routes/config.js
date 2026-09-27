@@ -25,12 +25,13 @@ export function registerRoutes(app) {
       dbStatus = `error: ${e.message}`;
     }
     const health = getDbHealth();
+    if (dbStatus === 'connected') await loadSettings();
     res.json({
       status: health.status === 'ok' ? 'healthy' : 'degraded',
       timestamp: new Date().toISOString(), service: 'datamarket',
       lakebase: dbStatus, db_health: health,
       demo_mode: DEMO_MODE, rfa_enabled: RFA_ENABLED,
-      uc_grants_enabled: !DEMO_MODE && !!SQL_WAREHOUSE_ID
+      uc_grants_enabled: !DEMO_MODE && !!getSetting('sql_warehouse_id', SQL_WAREHOUSE_ID)
     });
   });
 
@@ -44,6 +45,8 @@ export function registerRoutes(app) {
       appLogoUrl: getSetting('app_logo_url', APP_LOGO_URL),
       demoMode:   DEMO_MODE,
       sqlWarehouseId:   getSetting('sql_warehouse_id', SQL_WAREHOUSE_ID),
+      // UC principal (user or account group) that admin "Preview as analyst" requests are filed under
+      previewRequester: getSetting('preview_requester', process.env.PREVIEW_REQUESTER || ''),
       askAiEnabled:            getSetting('ask_ai_enabled',            'true') !== 'false',
       askAiEndpoint:           askAiEndpoint(),
       insightsEnabled:         getSetting('insights_enabled',         'true') !== 'false',
