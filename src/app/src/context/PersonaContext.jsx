@@ -60,12 +60,33 @@ export function PersonaProvider({ children }) {
   const [ssoUser, setSsoUser] = useState(null)
   const [rfaEnabled, setRfaEnabled] = useState(false)
   const [ucGrantsEnabled, setUcGrantsEnabled] = useState(false)
+  const [previewRequester, setPreviewRequester] = useState('')
+  const [previewAsAnalyst, setPreviewAsAnalystState] = useState(() => localStorage.getItem('dm_preview_analyst') === '1')
 
   const identityLoading = demoMode === null
 
   const ssoIsAdmin = ssoUser && !demoMode && isAdminRole(ssoUser.role)
+  const previewing = !!(ssoIsAdmin && previewAsAnalyst)
 
-  const persona = ssoUser && !demoMode ? {
+  const setPreviewAsAnalyst = (on) => {
+    localStorage.setItem('dm_preview_analyst', on ? '1' : '0')
+    setPreviewAsAnalystState(on)
+  }
+
+  // Admins can walk through the analyst experience without a second login. Requests
+  // are filed under previewRequester so the steward view can approve them (self-approval is blocked).
+  const persona = previewing ? {
+    id: 'preview',
+    name: 'Audit Analyst',
+    fullName: 'Audit Analyst (preview)',
+    email: previewRequester || ssoUser.email,
+    role: 'Data Analyst',
+    department: 'Audit',
+    avatar: 'AA',
+    color: '#3B82F6',
+    approvedProductRefs: [],
+    description: 'Previewing the analyst experience'
+  } : ssoUser && !demoMode ? {
     id: ssoIsAdmin ? 'admin' : 'sso',
     name: ssoUser.display_name?.split(' ')[0] || 'User',
     fullName: ssoUser.display_name || ssoUser.email,
@@ -78,7 +99,7 @@ export function PersonaProvider({ children }) {
     description: ssoIsAdmin ? 'Data Steward — authenticated via SSO' : 'Data Analyst — authenticated via SSO'
   } : personas[currentPersona]
 
-  const isAdmin = persona.id === 'admin' || ssoIsAdmin
+  const isAdmin = persona.id === 'admin' || (ssoIsAdmin && !previewing)
 
   // ── Check API availability and identity mode ───────────────────────────────
   useEffect(() => {
@@ -93,6 +114,10 @@ export function PersonaProvider({ children }) {
         if (!lakebaseOk) console.info('[PersonaContext] Lakebase not connected, using demo data')
 
         if (data.demo_mode === false) {
+          fetch('/api/portal/config')
+            .then(r => r.json())
+            .then(cfg => setPreviewRequester(cfg.previewRequester || ''))
+            .catch(() => {})
           fetch('/api/portal/identity')
             .then(r => r.json())
             .then(id => {
@@ -150,10 +175,11 @@ export function PersonaProvider({ children }) {
 
   useEffect(() => {
     if (apiAvailable) {
+      loadRequests()
       loadLibrary()
       loadNotifications()
     }
-  }, [currentPersona, apiAvailable, loadLibrary, loadNotifications])
+  }, [currentPersona, previewing, apiAvailable, loadRequests, loadLibrary, loadNotifications])
 
   // ── Mutations ─────────────────────────────────────────────────────────────
   const submitRequest = async (product, form) => {
@@ -339,6 +365,10 @@ export function PersonaProvider({ children }) {
       rfaEnabled,
       ucGrantsEnabled,
       ssoUser,
+      canPreviewAnalyst: !!ssoIsAdmin,
+      previewing,
+      previewRequester,
+      setPreviewAsAnalyst,
       submitRequest,
       approveRequest,
       denyRequest,
