@@ -734,7 +734,7 @@ export function DataMarketProductDetailPage({ product, onBack, onNavigate }) {
               )}
 
               {/* Query shortcuts — show for anyone with access on UC-backed tables */}
-              {accessGranted && product.ucFullName && (() => {
+              {accessGranted && (product.ucFullName || product.uc_full_name) && (() => {
                 const parts = (product.ucFullName || product.uc_full_name || '').split('.')
                 const fullName = parts.join('.')
                 const explorerUrl = databricksHost
