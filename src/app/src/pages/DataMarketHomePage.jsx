@@ -83,6 +83,7 @@ export function DataMarketHomePage({ onNavigate, onOpenProduct }) {
             refreshFrequency: p.refresh_frequency || 'Daily',
             owner:            p.owner_email || '-',
             uc_full_name:     p.uc_full_name,
+            lastRefreshed:    p.last_refreshed || p.updated_at || null,
           }))
         setFeaturedProducts(sorted)
       })
@@ -274,6 +275,7 @@ export function DataMarketHomePage({ onNavigate, onOpenProduct }) {
                           source: p.source_system, tags: parseTags(p.tags),
                           refreshFrequency: p.refresh_frequency, owner: p.owner_email,
                           classification: p.classification, uc_full_name: p.uc_full_name, ucFullName: p.uc_full_name,
+                          lastRefreshed: p.last_refreshed || p.updated_at || null,
                         })
                         return
                       }
