@@ -141,7 +141,7 @@ After deploy, an onboarding wizard opens in the app. The SQL Warehouse ID is aut
 
 **Want to switch from Demo to Production mode** — redeploy without the flag: `./deploy.sh --profile my-profile` (default is `--demo-mode false`).
 
-**Sample Data Preview shows "SQL Warehouse required"** — Either the Warehouse ID isn't saved in **Manage → Settings**, or the app's service principal doesn't have "Can use" permission on the warehouse.
+**Sensitivity labels all say "inferred"** — The app reads UC column tags through the SQL warehouse. Either the Warehouse ID isn't saved in **Manage → Settings**, the app's service principal lacks "Can use" on the warehouse, or the columns have no `sensitivity` tag.
 
 ---
 

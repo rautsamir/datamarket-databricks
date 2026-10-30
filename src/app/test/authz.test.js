@@ -76,7 +76,6 @@ test('discovery and self-service stay open to signed-in analysts', () => {
     ['GET', '/api/portal/products'],
     ['POST', '/api/portal/products'],
     ['GET', '/api/portal/products/DP-001/schema'],
-    ['GET', '/api/portal/products/DP-001/preview'],
     ['POST', '/api/portal/requests'],
     ['POST', '/api/portal/ask-catalog'],
     ['GET', '/api/portal/library'],

@@ -2,8 +2,6 @@ import React, { useState } from 'react'
 import { Search, Menu, X, ChevronDown, ShieldCheck, Bell, CheckCircle, XCircle, Clock, AlertTriangle } from 'lucide-react'
 import { usePersona, personas } from '../../context/PersonaContext'
 import { useAppConfig } from '../../context/AppConfigContext'
-import { DataMarketAssistant } from '../DataMarketAssistant'
-
 const DataMarket_BLUE = '#003865'
 
 const personaBadgeColors = {
@@ -341,8 +339,6 @@ export function DataMarketLayout({ currentPage, onNavigate, children }) {
       {(userMenuOpen || personaMenuOpen || mobileOpen || notifOpen) && (
         <div className="fixed inset-0 z-40" onClick={() => { setUserMenuOpen(false); setPersonaMenuOpen(false); setMobileOpen(false); setNotifOpen(false) }} />
       )}
-
-      <DataMarketAssistant onNavigate={onNavigate} />
     </div>
   )
 }

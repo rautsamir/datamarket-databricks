@@ -128,7 +128,7 @@ export function AIExplorerPage({ initialQuestion = '', onNavigate, onOpenProduct
           classification: p.classification, uc_full_name: p.uc_full_name, ucFullName: p.uc_full_name,
           lastUpdated: p.last_refreshed
             ? new Date(p.last_refreshed).toLocaleDateString()
-            : (p.updated_at ? new Date(p.updated_at).toLocaleDateString() : '—'),
+            : '—',
           lastRefreshed: p.last_refreshed || null,
         })
         return

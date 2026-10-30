@@ -39,93 +39,6 @@ const typeOpenLabel = {
   Source:            'View Source',
 }
 
-// ── Column-level sensitivity schemas per domain ───────────────────────────────
-// Sensitivity levels: PUBLIC | INTERNAL | CONFIDENTIAL | PII
-// masked: true       = hidden before access granted (standard ABAC column mask)
-// elevatedPII: true  = stays masked even after standard approval (requires elevated grant)
-const schemaByDomain = {
-  Budget: [
-    { name: 'department',        type: 'STRING',    sensitivity: 'PUBLIC',       masked: false,                   description: 'Department name' },
-    { name: 'fiscal_year',       type: 'INTEGER',   sensitivity: 'PUBLIC',       masked: false,                   description: 'Fiscal year' },
-    { name: 'budget_allocated',  type: 'DECIMAL',   sensitivity: 'INTERNAL',     masked: false,                   description: 'Total budget allocation' },
-    { name: 'ytd_spent',         type: 'DECIMAL',   sensitivity: 'INTERNAL',     masked: false,                   description: 'Year-to-date expenditure' },
-    { name: 'variance',          type: 'DECIMAL',   sensitivity: 'INTERNAL',     masked: false,                   description: 'Budget vs. actual variance' },
-    { name: 'cost_center_code',  type: 'STRING',    sensitivity: 'CONFIDENTIAL', masked: true,                    description: 'Internal cost center identifier' },
-    { name: 'approver_id',       type: 'STRING',    sensitivity: 'CONFIDENTIAL', masked: true,                    description: 'Budget approver employee ID' },
-  ],
-  HRIS: [
-    { name: 'department',        type: 'STRING',    sensitivity: 'PUBLIC',       masked: false,                   description: 'Department name' },
-    { name: 'job_title',         type: 'STRING',    sensitivity: 'INTERNAL',     masked: false,                   description: 'Employee job title' },
-    { name: 'headcount',         type: 'INTEGER',   sensitivity: 'INTERNAL',     masked: false,                   description: 'Total headcount' },
-    { name: 'turnover_rate',     type: 'DECIMAL',   sensitivity: 'INTERNAL',     masked: false,                   description: 'Annual turnover rate (%)' },
-    { name: 'avg_salary',        type: 'DECIMAL',   sensitivity: 'CONFIDENTIAL', masked: true,                    description: 'Average salary by role' },
-    { name: 'employee_id',       type: 'STRING',    sensitivity: 'PII',          masked: true,                    description: 'Unique employee identifier' },
-    { name: 'ssn_last4',         type: 'STRING',    sensitivity: 'PII',          masked: true,  elevatedPII: true, description: 'Last 4 digits of SSN' },
-    { name: 'date_of_birth',     type: 'DATE',      sensitivity: 'PII',          masked: true,  elevatedPII: true, description: 'Employee date of birth' },
-  ],
-  Payroll: [
-    { name: 'pay_period',        type: 'DATE',      sensitivity: 'INTERNAL',     masked: false,                   description: 'Pay period end date' },
-    { name: 'department',        type: 'STRING',    sensitivity: 'PUBLIC',       masked: false,                   description: 'Department name' },
-    { name: 'gross_pay',         type: 'DECIMAL',   sensitivity: 'CONFIDENTIAL', masked: true,                    description: 'Gross payroll amount' },
-    { name: 'net_pay',           type: 'DECIMAL',   sensitivity: 'CONFIDENTIAL', masked: true,                    description: 'Net payroll after deductions' },
-    { name: 'overtime_hours',    type: 'DECIMAL',   sensitivity: 'INTERNAL',     masked: false,                   description: 'Total overtime hours' },
-    { name: 'employee_id',       type: 'STRING',    sensitivity: 'PII',          masked: true,                    description: 'Employee identifier' },
-    { name: 'bank_account_last4',type: 'STRING',    sensitivity: 'PII',          masked: true,  elevatedPII: true, description: 'Last 4 digits of bank account' },
-  ],
-  'Property Tax': [
-    { name: 'parcel_id',         type: 'STRING',    sensitivity: 'PUBLIC',       masked: false,                   description: 'Property parcel identifier' },
-    { name: 'district',          type: 'STRING',    sensitivity: 'PUBLIC',       masked: false,                   description: 'Tax district' },
-    { name: 'assessed_value',    type: 'DECIMAL',   sensitivity: 'PUBLIC',       masked: false,                   description: 'Assessed property value' },
-    { name: 'tax_levied',        type: 'DECIMAL',   sensitivity: 'PUBLIC',       masked: false,                   description: 'Tax amount levied' },
-    { name: 'collection_status', type: 'STRING',    sensitivity: 'INTERNAL',     masked: false,                   description: 'Payment collection status' },
-    { name: 'owner_name',        type: 'STRING',    sensitivity: 'PII',          masked: true,  elevatedPII: true, description: 'Property owner full name' },
-    { name: 'owner_address',     type: 'STRING',    sensitivity: 'PII',          masked: true,  elevatedPII: true, description: 'Property owner mailing address' },
-  ],
-  Demographics: [
-    { name: 'census_tract',      type: 'STRING',    sensitivity: 'PUBLIC',       masked: false,                   description: 'Census tract identifier' },
-    { name: 'age_group',         type: 'STRING',    sensitivity: 'PUBLIC',       masked: false,                   description: 'Age bracket' },
-    { name: 'population',        type: 'INTEGER',   sensitivity: 'PUBLIC',       masked: false,                   description: 'Population count' },
-    { name: 'median_income',     type: 'DECIMAL',   sensitivity: 'INTERNAL',     masked: false,                   description: 'Median household income' },
-    { name: 'household_size',    type: 'DECIMAL',   sensitivity: 'INTERNAL',     masked: false,                   description: 'Average household size' },
-  ],
-  'Public Safety': [
-    { name: 'incident_id',      type: 'STRING',    sensitivity: 'PUBLIC',       masked: false,                   description: 'Unique incident identifier' },
-    { name: 'incident_type',    type: 'STRING',    sensitivity: 'PUBLIC',       masked: false,                   description: 'Category of incident (fire, medical, crime)' },
-    { name: 'response_time_min',type: 'DECIMAL',   sensitivity: 'INTERNAL',     masked: false,                   description: 'Response time in minutes' },
-    { name: 'district',         type: 'STRING',    sensitivity: 'PUBLIC',       masked: false,                   description: 'Service district' },
-    { name: 'latitude',         type: 'DECIMAL',   sensitivity: 'INTERNAL',     masked: false,                   description: 'Incident latitude' },
-    { name: 'longitude',        type: 'DECIMAL',   sensitivity: 'INTERNAL',     masked: false,                   description: 'Incident longitude' },
-    { name: 'officer_badge',    type: 'STRING',    sensitivity: 'CONFIDENTIAL', masked: true,                    description: 'Responding officer badge number' },
-    { name: 'victim_name',      type: 'STRING',    sensitivity: 'PII',          masked: true,  elevatedPII: true, description: 'Victim full name' },
-  ],
-}
-
-const defaultSchema = [
-  { name: 'id',          type: 'STRING',  sensitivity: 'INTERNAL', masked: false, description: 'Record identifier' },
-  { name: 'name',        type: 'STRING',  sensitivity: 'PUBLIC',   masked: false, description: 'Record name' },
-  { name: 'category',    type: 'STRING',  sensitivity: 'PUBLIC',   masked: false, description: 'Category classification' },
-  { name: 'value',       type: 'DECIMAL', sensitivity: 'INTERNAL', masked: false, description: 'Numeric value' },
-  { name: 'updated_at',  type: 'DATE',    sensitivity: 'PUBLIC',   masked: false, description: 'Last update timestamp' },
-]
-
-function getSchema(product) {
-  const domain = (product.category || product.domain || '').toLowerCase()
-  if (domain.includes('hris') || domain.includes('ehr') || domain.includes('human resource') || domain.includes(' hr')) return schemaByDomain['HRIS']
-  if (domain.includes('payroll')) return schemaByDomain['Payroll']
-  if (domain.includes('budget') || domain.includes('financ') || domain.includes('account') || domain.includes('erp')) return schemaByDomain['Budget']
-  if (domain.includes('property tax') || domain.includes('tax')) return schemaByDomain['Property Tax']
-  if (domain.includes('demograph') || domain.includes('census') || domain.includes('population')) return schemaByDomain['Demographics']
-  if (domain.includes('public safety') || domain.includes('incident') || domain.includes('safety')) return schemaByDomain['Public Safety']
-  // Also match by product name keywords
-  const name = (product.name || '').toLowerCase()
-  if (name.includes('employee') || name.includes('headcount') || name.includes('workforce')) return schemaByDomain['HRIS']
-  if (name.includes('payroll') || name.includes('compensation')) return schemaByDomain['Payroll']
-  if (name.includes('budget') || name.includes('expenditure') || name.includes('finance')) return schemaByDomain['Budget']
-  if (name.includes('property tax')) return schemaByDomain['Property Tax']
-  if (name.includes('census') || name.includes('population') || name.includes('demographic')) return schemaByDomain['Demographics']
-  return defaultSchema
-}
-
 const sensitivityConfig = {
   PUBLIC:       { label: 'Public',       color: 'bg-emerald-100 text-emerald-700 border-emerald-200', icon: ShieldCheck },
   INTERNAL:     { label: 'Internal',     color: 'bg-blue-100 text-blue-700 border-blue-200',           icon: Shield },
@@ -147,20 +60,19 @@ function DataSchemaPanel({ product, accessGranted, onRequestAccess, onTableComme
       .then(data => {
         setSchemaSource(data.source)
         if (data.table_comment && onTableComment) onTableComment(data.table_comment)
-        if ((data.source === 'unity_catalog' || data.source === 'unity_catalog_rest') && data.columns?.length) {
-          setSchema(data.columns)
-        } else {
-          setSchema(getSchema(product))
-        }
+        setSchema((data.source === 'unity_catalog' || data.source === 'unity_catalog_rest') && data.columns?.length
+          ? data.columns
+          : [])
       })
-      .catch(() => setSchema(getSchema(product)))
+      .catch(() => setSchema([]))
       .finally(() => setLoading(false))
   }, [product?.product_ref])
 
   const cols = schema || []
   const piiCount    = cols.filter(c => c.sensitivity === 'PII').length
   const confCount   = cols.filter(c => c.sensitivity === 'CONFIDENTIAL').length
-  const restrictedCount = cols.filter(c => c.masked).length
+  const sensitiveCount = piiCount + confCount
+  const anyInferred = cols.some(c => c.sensitivity_source !== 'tag')
 
   return (
     <div className="bg-white rounded-2xl border border-gray-200 p-6 mt-6">
@@ -199,7 +111,11 @@ function DataSchemaPanel({ product, accessGranted, onRequestAccess, onTableComme
               <RefreshCw className="h-3.5 w-3.5 animate-spin" /> Loading schema from Unity Catalog…
             </div>
           ) : cols.length === 0 ? (
-            <p className="text-xs text-gray-400 py-4">No schema available — link a UC table to this product in Admin settings.</p>
+            <p className="text-xs text-gray-400 py-4">
+              {product?.uc_full_name || product?.ucFullName
+                ? 'Could not read the columns for this table from Unity Catalog.'
+                : `Column details are shown for Unity Catalog tables. This ${(product?.type || 'product').toLowerCase()} isn't linked to one.`}
+            </p>
           ) : (
             <div className="overflow-auto rounded-lg border border-gray-100">
               <table className="w-full text-xs">
@@ -225,6 +141,9 @@ function DataSchemaPanel({ product, accessGranted, onRequestAccess, onTableComme
                             <SIcon className="h-2.5 w-2.5" />
                             {cfg.label}
                           </span>
+                          {col.sensitivity_source !== 'tag' && (
+                            <span className="ml-1.5 text-[10px] text-gray-400" title="Guessed from the column name, not set by a Unity Catalog tag">inferred</span>
+                          )}
                         </td>
                       </tr>
                     )
@@ -234,6 +153,12 @@ function DataSchemaPanel({ product, accessGranted, onRequestAccess, onTableComme
             </div>
           )}
 
+          {!loading && cols.length > 0 && anyInferred && (
+            <p className="mt-2 text-[10px] text-gray-400">
+              "Inferred" labels are guessed from column names. Add a <code>sensitivity</code> tag to a column in Unity Catalog to set it explicitly.
+            </p>
+          )}
+
           {/* Access CTA — below table, only when no access */}
           {!loading && cols.length > 0 && !accessGranted && (
             <div className="mt-4 flex items-center justify-between gap-4 bg-gray-50 border border-gray-200 rounded-xl px-4 py-3">
@@ -241,7 +166,7 @@ function DataSchemaPanel({ product, accessGranted, onRequestAccess, onTableComme
                 <p className="text-xs font-medium text-gray-800">Want to query this dataset?</p>
                 <p className="text-xs text-gray-500 mt-0.5">
                   Request access to run SQL, use Genie, or connect via Excel and BI tools.
-                  {restrictedCount > 0 && ` ${restrictedCount} sensitive column${restrictedCount !== 1 ? 's are' : ' is'} governed by Unity Catalog policy.`}
+                  {sensitiveCount > 0 && ` ${sensitiveCount} column${sensitiveCount !== 1 ? 's are' : ' is'} marked sensitive.`}
                 </p>
               </div>
               <button onClick={onRequestAccess}
@@ -262,243 +187,6 @@ function DataSchemaPanel({ product, accessGranted, onRequestAccess, onTableComme
             </div>
           )}
         </>
-      )}
-    </div>
-  )
-}
-
-function SampleDataPreview({ product, accessGranted, onRequestAccess }) {
-  const [expanded, setExpanded] = useState(false)
-  const [liveData, setLiveData] = useState(null)
-  const [loading, setLoading] = useState(true)
-  const [previewSource, setPreviewSource] = useState(null)
-
-  useEffect(() => {
-    if (!product?.product_ref) return
-    setLoading(true)
-    fetch(`/api/portal/products/${product.product_ref}/preview`)
-      .then(r => r.json())
-      .then(data => {
-        setPreviewSource(data.source)
-        if (data.source === 'unity_catalog' && data.columns?.length) {
-          setLiveData({ columns: data.columns, rows: data.rows })
-        } else {
-          setLiveData(null)
-        }
-      })
-      .catch(() => setLiveData(null))
-      .finally(() => setLoading(false))
-  }, [product?.product_ref])
-
-  // Live UC data path
-  if (!loading && liveData) {
-    const { columns, rows } = liveData
-    return (
-      <div className="bg-white rounded-2xl border border-gray-200 p-6 mt-6">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
-            <Database className="h-4 w-4 text-gray-400" />
-            <h3 className="font-semibold text-gray-900 text-sm">Sample Data Preview</h3>
-            {!accessGranted && (
-              <span className="flex items-center gap-1 text-[10px] text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">
-                <Lock className="h-2.5 w-2.5" /> Restricted
-              </span>
-            )}
-            <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-blue-50 text-blue-700 border border-blue-200">Live from UC</span>
-          </div>
-          <button
-            onClick={() => setExpanded(v => !v)}
-            className="text-xs text-gray-400 hover:text-gray-700 flex items-center gap-1"
-          >
-            {expanded ? <><EyeOff className="h-3.5 w-3.5" /> Hide</> : <><Eye className="h-3.5 w-3.5" /> Preview</>}
-          </button>
-        </div>
-
-        {expanded ? (
-          <div className="relative overflow-auto rounded-lg border border-gray-100">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="bg-gray-50 border-b border-gray-100">
-                  {columns.map(col => (
-                    <th key={col} className="text-left px-3 py-2 font-medium text-gray-500 whitespace-nowrap">{col}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((row, ri) => (
-                  <tr key={ri} className={`border-b border-gray-50 last:border-0 ${!accessGranted ? 'select-none' : ''}`}>
-                  {row.map((cell, ci) => (
-                    <td key={ci} className={`px-3 py-2 text-gray-700 ${!accessGranted ? 'blur-[5px]' : ''}`}>
-                      <span title={String(cell ?? '')} className="block max-w-[200px] truncate">
-                        {cell ?? '—'}
-                      </span>
-                    </td>
-                  ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {!accessGranted && (
-              <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/60 backdrop-blur-[1px] rounded-lg">
-                <Lock className="h-6 w-6 text-gray-400 mb-2" />
-                <p className="text-sm font-medium text-gray-700 mb-3">Request access to view full data</p>
-                <button
-                  onClick={onRequestAccess}
-                  className="px-4 py-2 rounded-lg text-xs font-medium text-white flex items-center gap-1.5"
-                  style={{ backgroundColor: DataMarket_BLUE }}
-                >
-                  <Lock className="h-3 w-3" /> Request Access
-                </button>
-              </div>
-            )}
-          </div>
-        ) : (
-          <p className="text-xs text-gray-400">
-            {accessGranted
-              ? `${rows.length} live rows from Unity Catalog — click Preview to explore`
-              : 'Preview is blurred. Request access to unlock full dataset.'}
-          </p>
-        )}
-      </div>
-    )
-  }
-
-  // No warehouse configured — show a clear actionable message
-  if (!loading && previewSource === 'no_warehouse') {
-    return (
-      <div className="bg-white rounded-2xl border border-gray-200 p-6 mt-6">
-        <div className="flex items-center gap-2 mb-3">
-          <Database className="h-4 w-4 text-gray-400" />
-          <h3 className="font-semibold text-gray-900 text-sm">Sample Data Preview</h3>
-        </div>
-        <div className="flex items-center gap-3 bg-gray-50 border border-gray-200 rounded-lg px-4 py-4">
-          <Database className="h-4 w-4 text-gray-400 shrink-0" />
-          <div>
-            <p className="text-xs font-medium text-gray-700">SQL Warehouse required for live preview</p>
-            <p className="text-xs text-gray-500 mt-0.5">
-              Go to <strong>Manage → Settings</strong> and set your SQL Warehouse ID to enable live sample data.
-            </p>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
-  // No UC table linked — no preview possible
-  if (!loading && (previewSource === 'synthetic' || (!liveData && !product?.uc_full_name))) {
-    return null
-  }
-
-  // Error state — warehouse is set but query failed
-  if (!loading && !liveData && product?.uc_full_name) {
-    return (
-      <div className="bg-white rounded-2xl border border-gray-200 p-6 mt-6">
-        <div className="flex items-center gap-2 mb-3">
-          <Database className="h-4 w-4 text-gray-400" />
-          <h3 className="font-semibold text-gray-900 text-sm">Sample Data Preview</h3>
-        </div>
-        <div className="flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-lg px-4 py-4">
-          <Database className="h-4 w-4 text-amber-500 shrink-0" />
-          <div>
-            <p className="text-xs font-medium text-amber-800">Could not load preview</p>
-            <p className="text-xs text-amber-700 mt-0.5">Check that the app's service principal has <strong>Can use</strong> permission on the SQL Warehouse.</p>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
-  // Fallback: synthetic rows (product has no uc_full_name at all)
-  const { columns: synthCols, rows: synthRows, grantedRows } = getSampleData(product)
-  const schema = getSchema(product)
-  const elevatedIndices = new Set(
-    synthCols.map((col, i) => {
-      const key = col.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '')
-      const match = schema.find(s => s.name.toLowerCase() === key || col.toLowerCase().includes(s.name.toLowerCase()))
-      return match?.elevatedPII ? i : null
-    }).filter(i => i !== null)
-  )
-  const displayRows = accessGranted ? grantedRows : synthRows
-
-  return (
-    <div className="bg-white rounded-2xl border border-gray-200 p-6 mt-6">
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-2">
-          <Database className="h-4 w-4 text-gray-400" />
-          <h3 className="font-semibold text-gray-900 text-sm">Sample Data Preview</h3>
-          {!accessGranted && (
-            <span className="flex items-center gap-1 text-[10px] text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">
-              <Lock className="h-2.5 w-2.5" /> Restricted
-            </span>
-          )}
-          {accessGranted && elevatedIndices.size > 0 && (
-            <span className="flex items-center gap-1 text-[10px] text-red-700 bg-red-50 border border-red-200 px-2 py-0.5 rounded-full">
-              <ShieldAlert className="h-2.5 w-2.5" /> {elevatedIndices.size} col{elevatedIndices.size !== 1 ? 's' : ''} elevated PII
-            </span>
-          )}
-        </div>
-        <button
-          onClick={() => setExpanded(v => !v)}
-          className="text-xs text-gray-400 hover:text-gray-700 flex items-center gap-1"
-        >
-          {expanded ? <><EyeOff className="h-3.5 w-3.5" /> Hide</> : <><Eye className="h-3.5 w-3.5" /> Preview</>}
-        </button>
-      </div>
-
-      {expanded && !loading && (
-        <div className="relative overflow-auto rounded-lg border border-gray-100">
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="bg-gray-50 border-b border-gray-100">
-                {synthCols.map((col, i) => (
-                  <th key={col} className={`text-left px-3 py-2 font-medium whitespace-nowrap ${accessGranted && elevatedIndices.has(i) ? 'text-red-400' : 'text-gray-500'}`}>
-                    {col}
-                    {accessGranted && elevatedIndices.has(i) && <ShieldAlert className="inline h-2.5 w-2.5 ml-1 text-red-400" />}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {displayRows.map((row, ri) => (
-                <tr key={ri} className={`border-b border-gray-50 last:border-0 ${!accessGranted ? 'select-none' : ''}`}>
-                  {row.map((cell, ci) => (
-                    <td key={ci} className={`px-3 py-2 ${!accessGranted ? 'blur-[5px] text-gray-700' : elevatedIndices.has(ci) ? 'text-red-400 font-mono' : 'text-gray-700'}`}>
-                      {cell}
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-
-          {!accessGranted && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/60 backdrop-blur-[1px] rounded-lg">
-              <Lock className="h-6 w-6 text-gray-400 mb-2" />
-              <p className="text-sm font-medium text-gray-700 mb-3">Request access to view full data</p>
-              <button
-                onClick={onRequestAccess}
-                className="px-4 py-2 rounded-lg text-xs font-medium text-white flex items-center gap-1.5"
-                style={{ backgroundColor: DataMarket_BLUE }}
-              >
-                <Lock className="h-3 w-3" /> Request Access
-              </button>
-            </div>
-          )}
-        </div>
-      )}
-
-      {loading && expanded && (
-        <div className="flex items-center gap-2 py-6 text-gray-400 text-xs justify-center">
-          <RefreshCw className="h-3.5 w-3.5 animate-spin" /> Fetching preview rows…
-        </div>
-      )}
-
-      {!expanded && (
-        <p className="text-xs text-gray-400">
-          {accessGranted
-            ? `${displayRows.length} sample rows available — click Preview to explore`
-            : 'Preview is blurred. Request access to unlock full dataset.'}
-        </p>
       )}
     </div>
   )

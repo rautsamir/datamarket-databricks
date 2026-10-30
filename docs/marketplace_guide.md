@@ -106,7 +106,7 @@ DataMarket declares the following resources at install time:
 
 DataMarket uses the **app service principal** (auto-provisioned by Databricks Apps) for all Lakebase operations. No PATs are stored or required.
 
-For Unity Catalog operations (browse, grant/revoke), the app uses the **OBO (On-Behalf-Of) user token** forwarded by Databricks Apps — ensuring UC row filters, column masks, and table ACLs are enforced per user.
+Unity Catalog operations (browse, schema lookup, grant/revoke) also run as the app service principal, so it needs `USE`/`SELECT`/`MANAGE` on the catalogs it publishes. User identity comes from the headers Databricks Apps forwards and decides what each user may do in the app; when a user later queries a granted table, Unity Catalog enforces their own permissions, row filters, and column masks.
 
 ---
 

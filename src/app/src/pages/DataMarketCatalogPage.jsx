@@ -40,10 +40,10 @@ function normalizeProduct(p) {
     description: p.description,
     refreshFrequency: p.refresh_frequency || p.refreshFrequency || 'Daily',
     owner: p.owner_email || p.owner || '-',
-    // Prefer UC/table freshness (last_refreshed) over the Lakebase row's updated_at —
-    // updated_at moves whenever we edit portal metadata and is not "when the data changed".
-    lastUpdated: (p.last_refreshed || p.updated_at)
-      ? new Date(p.last_refreshed || p.updated_at).toLocaleDateString()
+    // Only data freshness. updated_at moves whenever portal metadata is edited and
+    // is not "when the data changed".
+    lastUpdated: p.last_refreshed
+      ? new Date(p.last_refreshed).toLocaleDateString()
       : (p.lastUpdated || '—'),
     lastRefreshed: p.last_refreshed ? new Date(p.last_refreshed) : null,
     ucFullName: p.uc_full_name || p.ucFullName || null,

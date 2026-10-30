@@ -23,12 +23,12 @@ So we built a prototype on Databricks alone. DataMarket catalogs Power BI report
 - **Access Request Workflow** — Business users request access with a justification; requests persist to Lakebase Postgres and trigger optional RFA notifications
 - **Admin Approval Queue** — Data stewards approve/deny requests; each approval executes a real Unity Catalog `GRANT SELECT` via the SQL Statement Execution API
 - **UC Import** — Browse Unity Catalog (catalog → schema → table) in-app and bulk-register tables as data products in seconds
-- **Data Schema & Sensitivity** — Live column schema pulled from `information_schema`, with PII/Confidential sensitivity auto-detected from column names and UC tags
+- **Data Schema & Sensitivity** — Live column schema from Unity Catalog. Sensitivity comes from a column's `sensitivity` tag when set, otherwise it's inferred from the column name and labeled as inferred
 - **Ask AI** — Natural language data discovery backed by any Databricks serving endpoint (defaults to FMAPI Llama 3.3-70B; point it at a Mosaic AI Gateway endpoint in Settings for central governance)
 - **Insights** — Curated gallery of AI/BI dashboards with access-gated "Open" buttons
-- **My Data** — Personal shelf of approved and pinned data products per user
+- **My Data** — Each user's approved data products and request history, with expiry dates and Explore / Copy SQL shortcuts
 - **Audit Trail** — Every action (request, approve, deny, revoke) logged persistently to Lakebase
-- **ABAC Column Masking** — Sensitive columns stay masked post-approval; UC row filters and column masks enforce at the query engine layer
+- **Works with UC row filters and column masks** — DataMarket grants table access; any row filters and column masks you define in Unity Catalog still apply when the user queries
 
 ---
 
@@ -124,7 +124,7 @@ The app launches a **4-step setup wizard** on first login that walks you through
 |---|---|---|
 | Identity | Persona switcher (Analyst / Manager / Admin) | SSO via Databricks Apps headers |
 | UC GRANT/REVOKE | Generated, not executed | Executed via SQL Statement Execution API |
-| Column schemas | Synthetic (hardcoded per domain) | Live from UC `information_schema` + tags |
+| Column schemas | Live from UC for linked tables | Live from UC for linked tables |
 | Audit trail | Lakebase | Lakebase |
 | RFA notifications | Optional | Optional |
 

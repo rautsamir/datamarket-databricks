@@ -12,7 +12,7 @@ import { DataMarket_BLUE } from './admin/adminConstants'
 
 // ─── Main Library Page ─────────────────────────────────────────────────────────
 export function DataMarketLibraryPage({ onNavigate, onOpenProduct, initialTab }) {
-  const { myRequests, persona, pendingRequests, isAdmin, apiAvailable } = usePersona()
+  const { myRequests, persona, pendingRequests, isAdmin, apiAvailable, products: catalogProducts } = usePersona()
   const { demoMode, databricksHost } = useAppConfig()
   const isSteward = isAdmin
   const [search, setSearch] = useState('')
@@ -57,30 +57,29 @@ export function DataMarketLibraryPage({ onNavigate, onOpenProduct, initialTab })
     (p.product_ref || '').toLowerCase().includes(search.toLowerCase())
   )
 
-  // Analyst view data
-  const myItems = [
-    { id: 1, product_ref: 'DP-001', name: 'Budget Expenditure Report', tags: ['Budget', 'ERP'], type: 'Dashboard', source: 'ERP', refreshFrequency: 'Daily', owner: 'james.park', lastUpdated: '02/11/2025', status: 'Approved' },
-    { id: 2, product_ref: 'DP-002', name: 'Employee Metrics Dashboard', tags: ['HRIS'], type: 'Dashboard', source: 'HRIS', refreshFrequency: 'Weekly', owner: 'sarah.kim', lastUpdated: '02/11/2025', status: 'Approved' },
-    { id: 7, product_ref: 'DP-007', name: 'Payroll Dashboard', tags: ['Payroll', 'HRIS'], type: 'Dashboard', source: 'HRIS', refreshFrequency: 'Daily', owner: 'james.park', lastUpdated: '02/11/2025', status: 'Approved' },
-  ]
-
-  const fromRequests = myRequests.map(r => {
+  // Analyst view: one row per request, enriched from the live catalog
+  const productByRef = new Map((catalogProducts || []).map(p => [p.product_ref, p]))
+  const analystItems = myRequests.map(r => {
     const ref = r.product_ref || r.productRef || ''
+    const p = productByRef.get(ref) || {}
+    const tags = Array.isArray(p.tags) ? p.tags
+      : typeof p.tags === 'string' ? p.tags.replace(/[{}"]/g, '').split(',').map(t => t.trim()).filter(Boolean)
+      : []
     return {
-      id: ref, product_ref: ref,
-      name: r.product_name || r.productName || ref,
-      tags: [], type: r.product_type || 'Dashboard', source: r.domain || '-',
-      refreshFrequency: '-', owner: '-',
-      lastUpdated: r.requested_at ? new Date(r.requested_at).toLocaleDateString() : '-',
-      status: r.status, requestId: r.id, expiresAt: r.expires_at || r.expiresAt
+      id: ref, product_ref: ref, ref,
+      name: p.display_name || r.product_name || r.productName || ref,
+      description: p.description, tags,
+      type: p.type || r.product_type || 'Dataset',
+      source: p.source_system || r.domain || '-',
+      refreshFrequency: p.refresh_frequency || '-',
+      owner: p.owner_email || '-',
+      uc_full_name: p.uc_full_name || null, ucFullName: p.uc_full_name || null,
+      classification: p.classification,
+      lastRefreshed: p.last_refreshed || null,
+      status: r.status, requestId: r.id, expiresAt: r.expires_at || r.expiresAt,
+      reason: r.business_reason || r.reason
     }
   })
-
-  const requestRefs = new Set(fromRequests.map(r => r.product_ref))
-  const analystItems = [
-    ...myItems.filter(i => !requestRefs.has(i.product_ref)),
-    ...fromRequests
-  ]
 
   const filteredAnalyst = analystItems.filter(item =>
     !search || item.name.toLowerCase().includes(search.toLowerCase())
@@ -90,7 +89,7 @@ export function DataMarketLibraryPage({ onNavigate, onOpenProduct, initialTab })
 
   const tabCounts = isSteward
     ? { 'Data Products': allProducts.length, 'Manage Approvals': pendingApprovalCount || null, 'Users': null, 'Settings': null }
-    : { 'Data Product': analystItems.filter(i => i.status === 'Approved').length, 'Request': fromRequests.length }
+    : { 'Data Product': analystItems.filter(i => i.status === 'Approved').length, 'Request': analystItems.length }
 
   const tabConfig = isSteward
     ? [
@@ -207,7 +206,7 @@ export function DataMarketLibraryPage({ onNavigate, onOpenProduct, initialTab })
           search={search}
           setSearch={setSearch}
           onNavigate={onNavigate}
-          fromRequests={fromRequests}
+          fromRequests={analystItems}
           persona={persona}
           activeTab={activeTab}
         />

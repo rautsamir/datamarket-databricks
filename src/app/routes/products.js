@@ -7,12 +7,13 @@ import {
 } from '../db.js';
 import {
   fetchUcSchema,
+  fetchLastDataChange,
   ucApiRequest,
   getUcAuth,
   databricksApi,
 } from '../databricks.js';
 
-// ─── Simple TTL cache for schema + preview (avoids hammering UC on every page load) ──
+// ─── Simple TTL cache for schema (avoids hammering UC on every page load) ──
 const _cache = new Map();
 function cacheGet(key) {
   const entry = _cache.get(key);
@@ -55,7 +56,7 @@ export async function maybeAutoDiscover() {
       const displayName = t.name.replace(/_/g, ' ').replace(/\bgold\b/i, '').trim().replace(/\b\w/g, c => c.toUpperCase());
       await query(
         `INSERT INTO data_products (product_ref, display_name, description, type, domain, tags, source_system, refresh_frequency, owner_email, classification, uc_full_name, is_active, status, last_refreshed)
-         VALUES ($1,$2,$3,'Dataset','Other','{}','Unity Catalog','Daily','','Internal',$4,FALSE,'Draft',NOW())
+         VALUES ($1,$2,$3,'Dataset','Other','{}','Unity Catalog','Daily','','Internal',$4,FALSE,'Draft',NULL)
          ON CONFLICT (product_ref) DO NOTHING`,
         [ref, displayName, `Auto-discovered from Unity Catalog: ${fullName}`, fullName]);
     }
@@ -236,7 +237,7 @@ export function registerRoutes(app) {
     }
   });
 
-  // ─── UC Schema — live column metadata with synthetic fallback ────────────────
+  // ─── UC Schema — live column metadata ─────────────────────────────────────────
   app.get('/api/portal/products/:ref/schema', async (req, res) => {
     try {
       const { ref } = req.params;
@@ -271,9 +272,7 @@ export function registerRoutes(app) {
             let sensitivity = 'INTERNAL';
             if (piiPatterns.test(name)) sensitivity = 'PII';
             else if (confPatterns.test(name)) sensitivity = 'CONFIDENTIAL';
-            const masked = sensitivity === 'PII' || sensitivity === 'CONFIDENTIAL';
-            const elevatedPII = sensitivity === 'PII' && /ssn|dob|date_of_birth|birth|bank|credit_card/i.test(name);
-            return { name, type, description, sensitivity, masked, elevatedPII };
+            return { name, type, description, sensitivity, sensitivity_source: 'inferred' };
           });
 
           // ── Step 2: Optionally enrich with UC column tags if warehouse is ready ─
@@ -299,51 +298,10 @@ export function registerRoutes(app) {
           return res.json(payload);
         }
       }
-      // Fall back to signal that frontend should use its synthetic schemas
-      res.json({ source: 'synthetic', domain: product.domain, uc_full_name: product.uc_full_name || null });
+      res.json({ source: 'none', uc_full_name: product.uc_full_name || null, columns: [] });
     } catch (e) {
       console.error('[/api/portal/products/:ref/schema]', e.message);
       res.status(500).json({ error: e.message });
-    }
-  });
-
-  // ─── UC Sample Data — live row preview ────────────────────────────────────────
-  app.get('/api/portal/products/:ref/preview', async (req, res) => {
-    try {
-      const { ref } = req.params;
-
-      // Serve from cache if available (10 min TTL)
-      const cacheKey = `preview:${ref}`;
-      const cached = cacheGet(cacheKey);
-      if (cached) return res.json(cached);
-
-      // Reload settings so a newly configured warehouse ID is picked up without restart
-      await loadSettings();
-      const warehouseId = getSetting('sql_warehouse_id', process.env.SQL_WAREHOUSE_ID || '');
-      const { rows: [product] } = await query('SELECT uc_full_name FROM data_products WHERE product_ref = $1', [ref]);
-      if (!product) return res.status(404).json({ error: 'Product not found' });
-      if (!product.uc_full_name) return res.json({ source: 'synthetic', rows: [], columns: [] });
-      if (!warehouseId) return res.json({ source: 'no_warehouse', rows: [], columns: [] });
-
-      const result = await databricksApi('POST', '/api/2.0/sql/statements', {
-        warehouse_id: warehouseId,
-        statement: `SELECT * FROM ${product.uc_full_name} LIMIT 5`,
-        wait_timeout: '15s'
-      });
-
-      if (result.data?.status?.state !== 'SUCCEEDED') {
-        return res.json({ source: 'error', rows: [], columns: [], error: result.data?.status?.error?.message });
-      }
-
-      const schema = result.data.manifest?.schema?.columns || [];
-      const columns = schema.map(c => c.name);
-      const rows = result.data.result?.data_array || [];
-      const payload = { source: 'unity_catalog', columns, rows };
-      cacheSet(cacheKey, payload, 10 * 60 * 1000);
-      res.json(payload);
-    } catch (e) {
-      console.error('[/api/portal/products/:ref/preview]', e.message);
-      res.status(500).json({ source: 'error', rows: [], columns: [], error: e.message });
     }
   });
 
@@ -358,7 +316,6 @@ export function registerRoutes(app) {
         `DELETE FROM data_products WHERE product_ref = $1 RETURNING product_ref, display_name`, [ref]);
       if (!deleted) return res.status(404).json({ error: 'Product not found' });
       cacheClear(`schema:${ref}`);
-      cacheClear(`preview:${ref}`);
       res.json({ deleted: true, ref: deleted.product_ref, name: deleted.display_name });
     } catch (e) {
       console.error('[DELETE /api/portal/products/:ref]', e.message);
@@ -604,15 +561,8 @@ export function registerRoutes(app) {
         if (schema) return res.json({ source: 'unity_catalog', tables: schema.filter(t => !registered.has(t.full_name)) });
       }
 
-      // No warehouse configured — return generic placeholder tables so the UI isn't empty
-      const demoTables = [
-        { full_name: 'your_catalog.your_schema.sales_transactions',    table_name: 'sales_transactions',    schema_name: 'your_schema', catalog_name: 'your_catalog' },
-        { full_name: 'your_catalog.your_schema.customer_profiles',     table_name: 'customer_profiles',     schema_name: 'your_schema', catalog_name: 'your_catalog' },
-        { full_name: 'your_catalog.your_schema.product_inventory',     table_name: 'product_inventory',     schema_name: 'your_schema', catalog_name: 'your_catalog' },
-        { full_name: 'your_catalog.your_schema.employee_records',      table_name: 'employee_records',      schema_name: 'your_schema', catalog_name: 'your_catalog' },
-        { full_name: 'your_catalog.your_schema.financial_ledger',      table_name: 'financial_ledger',      schema_name: 'your_schema', catalog_name: 'your_catalog' },
-      ];
-      res.json({ source: 'demo_placeholder', tables: demoTables.filter(t => !registered.has(t.full_name)), registered: existing.map(r => r.uc_full_name) });
+      res.json({ source: 'no_warehouse', tables: [], registered: existing.map(r => r.uc_full_name),
+        hint: 'Set a SQL warehouse in Manage → Settings to browse Unity Catalog.' });
     } catch (e) {
       res.status(500).json({ error: e.message });
     }
@@ -711,11 +661,11 @@ export function registerRoutes(app) {
               refresh_frequency, owner_email, classification, uc_full_name, is_active, status,
               last_refreshed)
            VALUES ($1, $2, $3, 'Dataset', $4, $5, 'Unity Catalog', 'Daily',
-                   $6, 'Internal', $7, TRUE, 'Published', COALESCE($8, NOW()))
+                   $6, 'Internal', $7, TRUE, 'Published', $8)
            ON CONFLICT (product_ref) DO NOTHING RETURNING *`,
           [ref, t.display_name || displayName, description,
            domain, finalTags,
-           ownerEmail, t.full_name, ucUpdatedAt]);
+           ownerEmail, t.full_name, (await fetchLastDataChange(t.full_name)) || ucUpdatedAt]);
         if (product) imported.push(product);
       }
       res.json({ imported: imported.length, products: imported });
@@ -749,9 +699,8 @@ export function registerRoutes(app) {
             unavailable++;
           } else {
             // updated_at from UC is epoch ms
-            const updatedAt = ucMeta?.updated_at
-              ? new Date(ucMeta.updated_at).toISOString()
-              : new Date().toISOString();
+            const updatedAt = (await fetchLastDataChange(p.uc_full_name))
+              || (ucMeta?.updated_at ? new Date(ucMeta.updated_at).toISOString() : null);
             await query(
               `UPDATE data_products SET last_refreshed = $1, updated_at = NOW() WHERE product_id = $2`,
               [updatedAt, p.product_id]);
@@ -816,7 +765,7 @@ export function registerRoutes(app) {
              (product_ref, display_name, description, type, domain, tags, source_system,
               refresh_frequency, owner_email, classification, uc_full_name, is_active, status, last_refreshed)
            VALUES ($1, $2, $3, 'Dataset', 'Other', '{}', 'Unity Catalog', 'Daily',
-                   '', 'Internal', $4, FALSE, 'Draft', NOW())
+                   '', 'Internal', $4, FALSE, 'Draft', NULL)
            ON CONFLICT (product_ref) DO NOTHING RETURNING *`,
           [ref, displayName,
            `Auto-discovered from Unity Catalog: ${fullName}`, fullName]);

@@ -400,15 +400,6 @@ export async function runMigrations() {
 
     // Mark all existing rows as Published so they stay visible
     await query(`UPDATE data_products SET status = 'Published' WHERE status IS NULL`);
-    // Seed last_refreshed with plausible values based on refresh_frequency
-    await query(`UPDATE data_products SET last_refreshed =
-      CASE refresh_frequency
-        WHEN 'Daily'   THEN NOW() - (RANDOM() * INTERVAL '1 day')
-        WHEN 'Weekly'  THEN NOW() - (RANDOM() * INTERVAL '7 days')
-        WHEN 'Monthly' THEN NOW() - (RANDOM() * INTERVAL '30 days')
-        ELSE                NOW() - (RANDOM() * INTERVAL '365 days')
-      END
-      WHERE last_refreshed IS NULL AND refresh_frequency IS NOT NULL`);
     await query(`UPDATE data_products SET source_system = 'Databricks' WHERE source_system IS NULL`);
     // Seed the demo personas' backing rows — demo mode only. In production these
     // would show up in the customer's Users list as @example.org accounts they

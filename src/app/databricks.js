@@ -124,14 +124,13 @@ export async function fetchUcSchema(ucFullName) {
     return columns.map(col => {
       const tags = tagMap[col.name] || {};
       let sensitivity = (tags.sensitivity_level || tags.sensitivity || '').toUpperCase();
+      const sensitivity_source = sensitivity ? 'tag' : 'inferred';
       if (!sensitivity) {
         if (piiPatterns.test(col.name)) sensitivity = 'PII';
         else if (confPatterns.test(col.name)) sensitivity = 'CONFIDENTIAL';
         else sensitivity = 'INTERNAL';
       }
-      const masked = sensitivity === 'PII' || sensitivity === 'CONFIDENTIAL';
-      const elevatedPII = sensitivity === 'PII' && piiPatterns.test(col.name) && /ssn|dob|date_of_birth|birth|bank|credit_card/i.test(col.name);
-      return { ...col, sensitivity, masked, elevatedPII };
+      return { ...col, sensitivity, sensitivity_source };
     });
   } catch (e) {
     console.warn(`[UC] Schema fetch failed for ${ucFullName}:`, e.message);
@@ -140,6 +139,34 @@ export async function fetchUcSchema(ucFullName) {
 }
 
 // ─── UC Catalog Browser (lazy, no SQL warehouse needed) ──────────────────────
+// ─── UC: When the table's data last changed ─────────────────────────────────
+// Delta history, not UC's updated_at, which also moves on comment, tag, and
+// permission edits. Returns null for views, non-Delta tables, or no warehouse.
+const DATA_CHANGING_OPS = /^(WRITE|MERGE|UPDATE|DELETE|TRUNCATE|RESTORE|COPY INTO|STREAMING UPDATE|CREATE TABLE AS SELECT|REPLACE TABLE AS SELECT|CREATE OR REPLACE TABLE AS SELECT)/;
+
+export async function fetchLastDataChange(ucFullName) {
+  if (!getWarehouseId()) await loadSettings();
+  const warehouseId = getWarehouseId();
+  if (!warehouseId || !ucFullName || ucFullName.split('.').length !== 3) return null;
+  const quoted = ucFullName.split('.').map(p => `\`${p.replace(/`/g, '')}\``).join('.');
+  try {
+    const result = await databricksApi('POST', '/api/2.0/sql/statements', {
+      warehouse_id: warehouseId,
+      statement: `DESCRIBE HISTORY ${quoted} LIMIT 50`,
+      wait_timeout: '20s',
+    });
+    if (result.data?.status?.state !== 'SUCCEEDED') return null;
+    const cols = (result.data.manifest?.schema?.columns || []).map(c => c.name);
+    const tsIdx = cols.indexOf('timestamp');
+    const opIdx = cols.indexOf('operation');
+    if (tsIdx < 0 || opIdx < 0) return null;
+    const row = (result.data.result?.data_array || []).find(r => DATA_CHANGING_OPS.test(r[opIdx] || ''));
+    return row ? new Date(row[tsIdx]).toISOString() : null;
+  } catch (_) {
+    return null;
+  }
+}
+
 export function ucApiRequest(host, token, path) {
   return new Promise((resolve, reject) => {
     const req = https.request({

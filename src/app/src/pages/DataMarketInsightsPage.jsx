@@ -42,39 +42,6 @@ const typeOpenLabel = {
   Source:            'View Source',
 }
 
-// Derive chart hint from product type
-function chartHintFromType(type) {
-  if (['Dashboard', 'AI/BI Dashboard'].includes(type)) return 'bar'
-  if (['Genie Space', 'ML Model'].includes(type)) return 'line'
-  return 'bar'
-}
-
-// Mini sparkline SVG for visual decoration (not real data, just demo polish)
-function MiniChart({ type, color = '#3B82F6' }) {
-  if (type === 'bar') {
-    const bars = [40, 65, 50, 80, 55, 75, 90]
-    return (
-      <svg viewBox="0 0 56 28" className="w-14 h-7 opacity-60">
-        {bars.map((h, i) => (
-          <rect key={i} x={i * 8} y={28 - h * 0.28} width={5} height={h * 0.28} rx={1} fill={color} />
-        ))}
-      </svg>
-    )
-  }
-  if (type === 'line') {
-    return (
-      <svg viewBox="0 0 56 28" className="w-14 h-7 opacity-60">
-        <polyline points="0,22 8,18 16,20 24,12 32,14 40,8 48,10 56,4" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
-    )
-  }
-  return (
-    <svg viewBox="0 0 28 28" className="w-7 h-7 opacity-60">
-      <circle cx="14" cy="14" r="12" fill="none" stroke={color} strokeWidth="3" strokeDasharray="25 50" />
-      <circle cx="14" cy="14" r="12" fill="none" stroke={color} strokeWidth="3" strokeDasharray="15 60" strokeDashoffset="-25" opacity="0.5" />
-    </svg>
-  )
-}
 
 export function DataMarketInsightsPage({ onNavigate, onOpenProduct }) {
   const { persona, hasAccess } = usePersona()
@@ -215,7 +182,6 @@ export function DataMarketInsightsPage({ onNavigate, onOpenProduct }) {
             {visibleAccessible.map(product => {
               const colors = domainColors[product.domain] || domainColors.Other
               const Icon = typeIcons[product.type] || Database
-              const chartType = chartHintFromType(product.type)
               // Use real tags as KPI chips; fall back to UC table name if no tags
               const chips = product.tags.length > 0
                 ? product.tags.slice(0, 4)
@@ -238,7 +204,11 @@ export function DataMarketInsightsPage({ onNavigate, onOpenProduct }) {
                           <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${colors.badge}`}>{product.domain}</span>
                         </div>
                       </div>
-                      <MiniChart type={chartType} color={colors.icon.includes('blue') ? '#3B82F6' : colors.icon.includes('indigo') ? '#6366F1' : colors.icon.includes('orange') ? '#F97316' : colors.icon.includes('amber') ? '#D97706' : colors.icon.includes('rose') ? '#F43F5E' : '#6B7280'} />
+                      {product.lastRefreshed && (
+                        <span className="text-[10px] text-gray-400 whitespace-nowrap shrink-0">
+                          Updated {new Date(product.lastRefreshed).toLocaleDateString()}
+                        </span>
+                      )}
                     </div>
                     {product.description && (
                       <p className="text-xs text-gray-500 mt-2 italic line-clamp-2">"{product.description}"</p>
