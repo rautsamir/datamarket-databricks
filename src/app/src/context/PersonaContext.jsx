@@ -185,23 +185,23 @@ export function PersonaProvider({ children }) {
   const submitRequest = async (product, form) => {
     const productRef = product.product_ref || `DP-${String(product.id).padStart(3, '0')}`
     if (apiAvailable) {
-      try {
-        const r = await fetch('/api/portal/requests', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            productRef,
-            requesterEmail: persona.email,
-            team: form.team || persona.department,
-            reason: form.reason,
-            accessLevel: 'Read Only'
-          })
+      const r = await fetch('/api/portal/requests', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          productRef,
+          requesterEmail: persona.email,
+          team: form.team || persona.department,
+          reason: form.reason,
+          accessLevel: 'Read Only'
         })
-        if (r.ok) {
-          await loadRequests()
-          return await r.json()
-        }
-      } catch (e) { console.warn('submitRequest API failed, falling back', e) }
+      })
+      if (!r.ok) {
+        const body = await r.json().catch(() => ({}))
+        throw new Error(body.error || `Request failed (${r.status})`)
+      }
+      await loadRequests()
+      return await r.json()
     }
     const newReq = {
       request_ref: `REQ-${String(requests.length + 1).padStart(3, '0')}`,

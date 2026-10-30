@@ -195,7 +195,23 @@ function DataSchemaPanel({ product, accessGranted, onRequestAccess, onTableComme
 function AccessRequestModal({ product, onClose }) {
   const { submitRequest, persona, myRequests } = usePersona()
   const [submitted, setSubmitted] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState('')
   const [form, setForm] = useState({ name: persona.name, team: persona.department, reason: '', agreed: false })
+
+  const handleSubmit = async () => {
+    if (!form.name || !form.team || !form.reason || !form.agreed) return
+    setSubmitting(true)
+    setSubmitError('')
+    try {
+      await submitRequest(product, form)
+      setSubmitted(true)
+    } catch (e) {
+      setSubmitError(e.message || 'Could not submit the request.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
 
   const existingRequest = myRequests.find(r => r.productId === product.id)
 
@@ -269,16 +285,21 @@ function AccessRequestModal({ product, onClose }) {
               By submitting, you acknowledge that access to this data is governed by the Your Organization Data Governance Policy and will be used only for authorized purposes.
             </span>
           </label>
+          {submitError && (
+            <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-xs text-red-700">
+              Your request wasn't saved: {submitError}
+            </div>
+          )}
         </div>
         <div className="px-6 pb-6 flex gap-3">
           <button onClick={onClose} className="flex-1 py-2.5 border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
           <button
-            onClick={() => { if (form.name && form.team && form.reason && form.agreed) { submitRequest(product, form); setSubmitted(true) } }}
-            disabled={!form.name || !form.team || !form.reason || !form.agreed}
+            onClick={handleSubmit}
+            disabled={submitting || !form.name || !form.team || !form.reason || !form.agreed}
             className="flex-1 py-2.5 rounded-lg text-sm font-medium text-white disabled:opacity-50"
             style={{ backgroundColor: DataMarket_BLUE }}
           >
-            Submit
+            {submitting ? 'Submitting…' : 'Submit'}
           </button>
         </div>
       </div>

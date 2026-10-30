@@ -89,8 +89,10 @@ export function registerRoutes(app) {
         [requesterEmail, requesterEmail.split('@')[0].replace('.', ' ').replace(/\b\w/g, c => c.toUpperCase())]
       );
 
-      const { rows: [{ count }] } = await query('SELECT COUNT(*) FROM access_requests', []);
-      const ref = `REQ-${String(parseInt(count) + 1).padStart(3, '0')}`;
+      // Rows can be deleted (demo resets), so number from the highest ref, not the row count.
+      const { rows: [{ next }] } = await query(
+        `SELECT COALESCE(MAX(substring(request_ref from '[0-9]+$')::int), 0) + 1 AS next FROM access_requests`, []);
+      const ref = `REQ-${String(next).padStart(3, '0')}`;
 
       // Default 90-day expiry from approval date (set on approve, not submit)
       const { rows: [newReq] } = await query(`
