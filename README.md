@@ -53,28 +53,6 @@ Databricks App (Serverless Node.js / Express)
 
 ---
 
-## Reference Build: document library Policy Documents → DataMarket
-
-[`demos/fe-bar/`](demos/fe-bar/) is a Databricks Asset Bundle that shows the whole data journey behind the marketplace, not just the portal:
-
-```
-document library PDFs ──Lakeflow Connect──▶ Spark Declarative Pipeline
-                                        bronze → ai_parse_document → chunks
-                                        → policy_document_catalog (ai_classify, ai_summarize)
-                                              │
-                                              ▼  Unity Catalog
-                       Vector Search index ◀──┼──▶ Genie space
-                                              ▼
-                                   DataMarket (Lakebase + App)
-                          discover · request · approve → UC GRANT · Ask AI
-```
-
-One `databricks bundle deploy` plus `bundle run refresh` rebuilds it from the document library library. See the [demo README](demos/fe-bar/README.md) for prerequisites and how to publish the results in DataMarket.
-
-**[Execution evidence →](docs/execution-evidence.md)** Outputs from a live run: the job run, catalog query results, a Vector Search hit, a Genie answer with its SQL, and an access request that became a verified Unity Catalog `GRANT`.
-
----
-
 ## Tech Stack
 
 | Layer | Technology |
@@ -191,10 +169,6 @@ src/app/
             ├── AdminProductsTab.jsx
             ├── AdminSettingsPanel.jsx
             └── AdminUsersTab.jsx
-
-demos/fe-bar/                # Bundle: document library → Lakeflow → UC → Vector Search + Genie
-├── databricks.yml
-└── src/                     # pipeline, setup notebooks, Genie template
 
 docs/
 ├── deploy_guide.md          # Full deployment reference
