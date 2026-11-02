@@ -213,7 +213,11 @@ function AccessRequestModal({ product, onClose }) {
     }
   }
 
-  const existingRequest = myRequests.find(r => r.productId === product.id)
+  // Revoked, denied and expired requests don't block asking again.
+  const existingRequest = myRequests.find(r =>
+    r.productId === product.id &&
+    (r.status === 'Pending' ||
+      (r.status === 'Approved' && !(r.expires_at && new Date(r.expires_at) < new Date()))))
 
   if (existingRequest && !submitted) {
     return (
