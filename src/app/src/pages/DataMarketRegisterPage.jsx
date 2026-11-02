@@ -79,7 +79,7 @@ export function DataMarketRegisterPage({ onNavigate, editProduct = null }) {
     source: 'ERP',
     tags: ['Budget', 'Financial', 'ERP'],
     refreshFrequency: 'Weekly',
-    productUrl: 'https://adb-3438839487639471.11.azuredatabricks.net/dashboardsv3/demo-q2-finance',
+    productUrl: 'https://your-workspace.cloud.databricks.com/dashboardsv3/demo-q2-finance',
     usageDescription: 'Used by Finance and department heads for quarterly budget reviews and variance analysis.',
     useCases: 'Q2 Board reporting, departmental cost reviews, headcount reconciliation.',
     sla: '99.5% uptime, refreshed every Monday 6am.',
