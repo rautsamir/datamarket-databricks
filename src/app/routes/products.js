@@ -533,7 +533,19 @@ export function registerRoutes(app) {
       let sqlEditorUrl = '';
       if (tables.length === 0) {
         const spId = process.env.DATABRICKS_CLIENT_ID || '';
+        // An empty result looks the same whether the schema is empty or the app can't see into it,
+        // so only ask for a grant when the app's effective privileges are actually missing.
+        let canRead = null;
         if (spId) {
+          try {
+            const { host, token } = await getUcAuth();
+            const eff = await ucApiRequest(host, token,
+              `/api/2.1/unity-catalog/effective-permissions/schema/${encodeURIComponent(`${catalog}.${schema}`)}?principal=${encodeURIComponent(spId)}`);
+            const privs = new Set((eff.privilege_assignments || []).flatMap(a => (a.privileges || []).map(p => p.privilege)));
+            canRead = privs.has('ALL_PRIVILEGES') || (privs.has('SELECT') && privs.has('USE_SCHEMA'));
+          } catch (_) {}
+        }
+        if (spId && canRead !== true) {
           needsGrant = true;
           const databricksHost = (process.env.DATABRICKS_HOST || '').replace(/\/$/, '');
           grantSql = `GRANT USE CATALOG ON CATALOG \`${catalog}\` TO \`${spId}\`;\nGRANT USE SCHEMA ON CATALOG \`${catalog}\` TO \`${spId}\`;\nGRANT SELECT ON CATALOG \`${catalog}\` TO \`${spId}\`;`;

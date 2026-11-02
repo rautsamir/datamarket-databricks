@@ -135,7 +135,7 @@ After deploy, an onboarding wizard opens in the app. The SQL Warehouse ID is aut
 
 **Approvals don't issue UC grants** — Warehouse missing or SP lacks `CAN USE`. Re-run; Step 8 re-applies automatically.
 
-**UC Import shows no catalogs or schemas** — SP lacks UC permissions. Re-run; Step 9 re-applies `USE CATALOG + BROWSE + SELECT ON SCHEMA`. If a new schema was created after deploy, use **Manage → Settings → Re-open setup wizard → Catalog Access** to generate the exact `GRANT SELECT ON SCHEMA` SQL and run it in the SQL editor.
+**UC Import shows no catalogs or schemas** — SP lacks UC permissions. Re-run; Step 9 re-applies `USE CATALOG + USE SCHEMA + SELECT ON CATALOG`, which also covers schemas created later. Catalogs the deploying user can't grant on are skipped; for those, use **Manage → Settings → Re-open setup wizard → Catalog Access** to copy the exact SQL and have the catalog owner run it in the SQL editor. A schema that is simply empty shows "No tables", not a grant prompt.
 
 **Lakebase custom tags** — The Lakebase API doesn't expose tags via CLI yet. Set them manually: Compute → Lakebase → your project → Settings → Custom tags → add `app = datamarket`.
 
