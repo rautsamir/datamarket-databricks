@@ -99,7 +99,7 @@ The script handles everything automatically: workspace URL detection, Lakebase c
   --demo-mode      false           # default — real SSO + UC grants
   --lakebase-project datamarket    # default Lakebase project name
   --app-name       datamarket      # default app name / workspace folder
-  --ask-ai-gateway main.datamarket # optional — create a governed AI Gateway model service for Ask AI
+  --ask-ai-gateway auto            # default — Ask AI gets its own AI Gateway model service in <catalog>.datamarket_ops; or catalog.schema, or off
 ```
 
 Run `./deploy.sh --help` for all flags.

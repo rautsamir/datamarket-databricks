@@ -14,9 +14,13 @@
 #   --demo-mode      true|false     Enable persona switcher (default: false)
 #   --seed           true|false     Apply schema/seed.sql after schema init — loads demo data products,
 #                                   users, and requests (default: true when --demo-mode true, else false)
-#   --ask-ai-gateway CATALOG.SCHEMA Create an AI Gateway model service for Ask AI in this schema
+#   --ask-ai-gateway CATALOG.SCHEMA|auto|off
+#                                   Give Ask AI its own AI Gateway model service, CATALOG.SCHEMA.ask_ai
 #                                   (payload logging to ask_ai_payload, 60 requests/minute), grant the
-#                                   app EXECUTE on it, and point Ask AI at it (default: off)
+#                                   app EXECUTE on it, and point Ask AI at it. The schema is created if
+#                                   missing; catalogs never are. auto (default) uses datamarket.datamarket_ops
+#                                   if a datamarket catalog exists, else <workspace default catalog>.datamarket_ops,
+#                                   and leaves an endpoint already chosen in Settings alone. off = shared endpoint
 #   --ask-ai-model   MODEL          Foundation model behind that service
 #                                   (default: system.ai.llama_v3_3_70b_instruct)
 #   --use-bundle     true|false     Use Databricks Asset Bundle (DAB) for Lakebase+app deploy (default: false)
@@ -40,12 +44,13 @@ PROFILE="DEFAULT"
 ADMIN_EMAIL=""
 LAKEBASE_PROJECT="datamarket"
 LAKEBASE_DB_NAME="databricks_postgres"   # the database inside the Lakebase project
+LAKEBASE_SCHEMA="datamarket"             # fixed: schema/schema.sql and seed.sql set this search_path themselves
 APP_NAME="datamarket"
 DEMO_MODE="false"
 SEED_DATA=""          # empty = auto (true when demo-mode, false otherwise)
 WAREHOUSE_ID=""
 GRANT_CATALOGS="true"
-ASK_AI_GATEWAY=""
+ASK_AI_GATEWAY="auto"
 ASK_AI_MODEL="system.ai.llama_v3_3_70b_instruct"
 USE_BUNDLE="false"
 BUNDLE_TARGET="prod"
@@ -477,7 +482,7 @@ env:
   - name: LAKEBASE_DB
     value: "${LAKEBASE_DB_NAME}"
   - name: LAKEBASE_SCHEMA
-    value: "${APP_NAME}"
+    value: "${LAKEBASE_SCHEMA}"
   - name: LAKEBASE_ENDPOINT
     value: "${LAKEBASE_ENDPOINT}"
   - name: SQL_WAREHOUSE_ID
@@ -680,7 +685,7 @@ env:
   - name: LAKEBASE_DB
     value: "${LAKEBASE_DB_NAME}"
   - name: LAKEBASE_SCHEMA
-    value: "${APP_NAME}"
+    value: "${LAKEBASE_SCHEMA}"
   - name: LAKEBASE_ENDPOINT
     value: "${LAKEBASE_ENDPOINT}"
 
@@ -973,7 +978,7 @@ else
     if [[ -f "$SCHEMA_SQL" ]]; then
       SQL_OUT=$(PGPASSWORD="$PG_TOKEN" psql "$PG_CONN" \
         -v ON_ERROR_STOP=0 \
-        -c "SET search_path TO ${APP_NAME};" \
+        -c "SET search_path TO ${LAKEBASE_SCHEMA};" \
         -f "$SCHEMA_SQL" \
         2>&1 || true)
       if echo "$SQL_OUT" | grep -qi "FATAL\|error:"; then
@@ -998,7 +1003,7 @@ else
         info "Applying seed data (schema/seed.sql)..."
         PGPASSWORD="$PG_TOKEN" psql "$PG_CONN" \
           -v ON_ERROR_STOP=0 \
-          -c "SET search_path TO ${APP_NAME};" \
+          -c "SET search_path TO ${LAKEBASE_SCHEMA};" \
           -f "$SEED_SQL" \
           2>&1 | grep -v "^$" | grep -v "^NOTICE" | grep -v "already exists" || true
         ok "Seed data applied — demo products + users loaded"
@@ -1260,15 +1265,73 @@ step 11 "Setting up Ask AI"
 # the model, and a model service queries its destination with its owner's
 # privileges, so the owner should be a person or admin group, not the app.
 # Guardrail policies are left to the customer's governance team.
+#
+# Catalogs are never created: that usually needs metastore admin and, on older
+# metastores, a managed storage location. The schema is, since it only needs
+# CREATE SCHEMA on a catalog the deployer already uses.
+if [[ "$ASK_AI_GATEWAY" == "off" ]]; then
+  ASK_AI_GATEWAY=""
+  info "Ask AI model service skipped (--ask-ai-gateway off)."
+elif [[ "$ASK_AI_GATEWAY" == "auto" ]]; then
+  ASK_AI_GATEWAY=""
+  EXISTING_ASK_AI=""
+  if [[ -n "${PG_CONN:-}" && -n "${PG_TOKEN:-}" && -n "$PSQL_BIN" ]]; then
+    EXISTING_ASK_AI=$(PGPASSWORD="$PG_TOKEN" psql "$PG_CONN" -tAX -c \
+      "SELECT value FROM \"${LAKEBASE_SCHEMA}\".settings WHERE key = 'ask_ai_endpoint'" 2>/dev/null || true)
+  fi
+  if [[ -n "$EXISTING_ASK_AI" ]]; then
+    info "Ask AI is already set to '${EXISTING_ASK_AI}' in app Settings — leaving it as is."
+  else
+    ASK_AI_CATALOG=""
+    if databricks catalogs get datamarket --profile "$PROFILE" >/dev/null 2>&1; then
+      ASK_AI_CATALOG="datamarket"
+    else
+      ASK_AI_CATALOG=$(databricks api get /api/2.0/settings/types/default_namespace_ws/names/default \
+        --profile "$PROFILE" 2>/dev/null \
+        | python3 -c "import sys,json; print(json.load(sys.stdin).get('namespace',{}).get('value',''))" 2>/dev/null || true)
+      if [[ -z "$ASK_AI_CATALOG" || "$ASK_AI_CATALOG" == "hive_metastore" ]]; then
+        ASK_AI_CATALOG=""
+        for c in workspace main; do
+          if databricks catalogs get "$c" --profile "$PROFILE" >/dev/null 2>&1; then ASK_AI_CATALOG="$c"; break; fi
+        done
+      fi
+    fi
+    if [[ -n "$ASK_AI_CATALOG" ]]; then
+      ASK_AI_GATEWAY="${ASK_AI_CATALOG}.datamarket_ops"
+    else
+      warn "No Unity Catalog catalog found for Ask AI's model service — Ask AI uses the shared endpoint."
+      info "  Choose one with --ask-ai-gateway CATALOG.SCHEMA, or silence this with --ask-ai-gateway off."
+    fi
+  fi
+fi
+
 if [[ -n "$ASK_AI_GATEWAY" ]]; then
   if [[ ! "$ASK_AI_GATEWAY" =~ ^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$ ]]; then
-    warn "--ask-ai-gateway expects CATALOG.SCHEMA (got '${ASK_AI_GATEWAY}') — skipping model service setup."
+    warn "--ask-ai-gateway expects CATALOG.SCHEMA, auto or off (got '${ASK_AI_GATEWAY}') — skipping model service setup."
   else
     ASK_AI_SERVICE="${ASK_AI_GATEWAY}.ask_ai"
+    ASK_AI_SCHEMA_CREATED=0
     if databricks api get "/api/2.1/unity-catalog/model-services/${ASK_AI_SERVICE}" \
          --profile "$PROFILE" >/dev/null 2>&1; then
       ok "Model service ${ASK_AI_SERVICE} already exists — keeping its current configuration"
+      ASK_AI_NEEDS_CREATE=0
     else
+      ASK_AI_NEEDS_CREATE=1
+      if ! databricks schemas get "$ASK_AI_GATEWAY" --profile "$PROFILE" >/dev/null 2>&1; then
+        if databricks schemas create "${ASK_AI_GATEWAY#*.}" "${ASK_AI_GATEWAY%%.*}" --profile "$PROFILE" \
+             --comment "DataMarket operational objects: Ask AI model service and its payload logs" >/dev/null 2>&1; then
+          ASK_AI_SCHEMA_CREATED=1
+          ok "Created schema ${ASK_AI_GATEWAY}"
+        else
+          warn "Could not create schema ${ASK_AI_GATEWAY} (needs USE CATALOG and CREATE SCHEMA on ${ASK_AI_GATEWAY%%.*})."
+          info "  Ask AI uses the shared endpoint. Choose another schema with --ask-ai-gateway CATALOG.SCHEMA."
+          ASK_AI_SERVICE=""
+          ASK_AI_NEEDS_CREATE=0
+        fi
+      fi
+    fi
+
+    if [[ $ASK_AI_NEEDS_CREATE -eq 1 ]]; then
       info "Creating AI Gateway model service ${ASK_AI_SERVICE} → ${ASK_AI_MODEL}"
       MS_BODY=$(cat <<JSON
 {
@@ -1290,11 +1353,19 @@ JSON
            "/api/2.1/unity-catalog/model-services?parent=schemas/${ASK_AI_GATEWAY}&model_service_id=ask_ai" \
            --profile "$PROFILE" --json "$MS_BODY" 2>&1); then
         ok "Created ${ASK_AI_SERVICE} (payload logging → ${ASK_AI_GATEWAY}.ask_ai_payload, 60 requests/minute)"
+        info "  You own it, and a model service calls the model with its owner's privileges."
+        info "  Transfer it to an admin group so Ask AI keeps working if your access changes:"
+        info "  Catalog Explorer → ${ASK_AI_SERVICE} → Owner → edit."
       else
-        warn "Could not create the model service. Ask AI keeps its current endpoint."
+        warn "Could not create the model service. Ask AI uses the shared endpoint."
         echo "$MS_OUT" | tail -3 | sed 's/^/    /'
         info "  Needs USE CATALOG, USE SCHEMA, CREATE SERVICE and CREATE TABLE on ${ASK_AI_GATEWAY},"
-        info "  and EXECUTE on ${ASK_AI_MODEL}."
+        info "  and EXECUTE on ${ASK_AI_MODEL}. Model services may also not be available in this workspace."
+        info "  Use --ask-ai-gateway off to skip this on future deploys."
+        if [[ $ASK_AI_SCHEMA_CREATED -eq 1 ]]; then
+          databricks schemas delete "$ASK_AI_GATEWAY" --profile "$PROFILE" >/dev/null 2>&1 \
+            && info "  Removed the empty schema ${ASK_AI_GATEWAY} created for it."
+        fi
         ASK_AI_SERVICE=""
       fi
     fi
@@ -1314,7 +1385,7 @@ JSON
     if [[ -n "$ASK_AI_SERVICE" ]]; then
       if [[ -n "${PG_CONN:-}" && -n "${PG_TOKEN:-}" && -n "$PSQL_BIN" ]] && \
          PGPASSWORD="$PG_TOKEN" psql "$PG_CONN" -qtAX -c \
-           "INSERT INTO \"${APP_NAME}\".settings (key, value, updated_at) VALUES ('ask_ai_endpoint', '${ASK_AI_SERVICE}', NOW())
+           "INSERT INTO \"${LAKEBASE_SCHEMA}\".settings (key, value, updated_at) VALUES ('ask_ai_endpoint', '${ASK_AI_SERVICE}', NOW())
             ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()" >/dev/null 2>&1; then
         ok "Ask AI now points at ${ASK_AI_SERVICE}"
       else
@@ -1337,7 +1408,7 @@ fi
 ASK_AI_TARGET=""
 if [[ -n "${PG_CONN:-}" && -n "${PG_TOKEN:-}" && -n "$PSQL_BIN" ]]; then
   ASK_AI_TARGET=$(PGPASSWORD="$PG_TOKEN" psql "$PG_CONN" -tAX -c \
-    "SELECT value FROM \"${APP_NAME}\".settings WHERE key = 'ask_ai_endpoint'" 2>/dev/null \
+    "SELECT value FROM \"${LAKEBASE_SCHEMA}\".settings WHERE key = 'ask_ai_endpoint'" 2>/dev/null \
     | tr -d '[:space:]' || true)
   [[ -n "$ASK_AI_TARGET" ]] && info "Using endpoint configured in app Settings: ${ASK_AI_TARGET}"
 fi
@@ -1541,11 +1612,9 @@ echo -e "  ${BOLD}Admin:${NC} $ADMIN_EMAIL"
 echo ""
 echo -e "  ${YELLOW}Next steps in the app (2 minutes):${NC}"
 echo -e "  1. Open the URL and log in"
-echo -e "  2. Click Manage → Data Products → Import from UC"
+echo -e "  2. Follow the setup wizard: warehouse, catalog access, import data, Ask AI check"
 if [[ -z "$WAREHOUSE_ID" ]]; then
-  echo -e "  3. Click Manage → Settings → set your SQL Warehouse ID"
-  echo -e "     Then: SQL Warehouses → your warehouse → Permissions → add app SP with 'Can use'"
-else
-  echo -e "  3. Warehouse permission already granted ✓"
+  echo -e "     No warehouse was detected — after setting one in the wizard:"
+  echo -e "     SQL Warehouses → your warehouse → Permissions → add the app SP with 'Can use'"
 fi
 echo ""

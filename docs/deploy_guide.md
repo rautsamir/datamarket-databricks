@@ -70,7 +70,7 @@ That's it. Everything else is automatic.
 | `--app-name` | `datamarket` | Databricks App name |
 | `--warehouse-id` | auto-detected | SQL Warehouse ID — script picks the best running one |
 | `--grant-catalogs` | `true` | Grant SP `USE CATALOG + USE SCHEMA` on all UC catalogs |
-| `--ask-ai-gateway` | off | `catalog.schema` — create an AI Gateway model service for Ask AI there (see [Governed Ask AI](#governed-ask-ai-optional)) |
+| `--ask-ai-gateway` | `auto` | Where Ask AI's AI Gateway model service lives: `catalog.schema`, `auto`, or `off` for the shared endpoint (see [Governed Ask AI](#governed-ask-ai)) |
 | `--ask-ai-model` | `system.ai.llama_v3_3_70b_instruct` | Foundation model behind that service |
 | `--demo-mode` | `false` | `true` = persona switcher for demos; `false` = real SSO + UC grants |
 | `--seed` | auto | Load demo products/users/requests. Defaults `true` when `--demo-mode true` |
@@ -105,7 +105,7 @@ The script runs 11 steps end-to-end with no manual input:
 | 8 | Auto-detects a running SQL Warehouse, grants SP `CAN USE` |
 | 9 | Grants SP `USE CATALOG + BROWSE + SELECT` on all Unity Catalog catalogs and schemas |
 | 10 | Tags the App and SQL Warehouse (`app=datamarket`) for spend observability in `system.billing.usage` |
-| 11 | With `--ask-ai-gateway`, creates Ask AI's model service and points the app at it. Then verifies whatever Ask AI uses (model service or serving endpoint) and reports payload logging, rate limits and guardrails. Warns only — never fails the deploy |
+| 11 | Creates Ask AI's AI Gateway model service (unless `--ask-ai-gateway off`) and points the app at it. Then verifies whatever Ask AI uses (model service or serving endpoint) and reports payload logging, rate limits and guardrails. Warns only — never fails the deploy |
 
 After deploy, an onboarding wizard opens in the app. The SQL Warehouse ID is auto-filled from what the script detected — just verify and continue. Its Ask AI step sends a test question and shows what governs Ask AI traffic.
 
@@ -122,27 +122,31 @@ After deploy, an onboarding wizard opens in the app. The SQL Warehouse ID is aut
 | Unity Catalog | App SP | `USE CATALOG + BROWSE + SELECT` on all catalogs/schemas | 9 |
 | Databricks App + Warehouse | — | Tagged `app=datamarket` for cost attribution | 10 |
 | Unity Catalog | End users | `SELECT` on approved tables | via approval flow |
-| Ask AI model service | App SP | `EXECUTE` on the service, `USE SCHEMA` / `USE CATALOG` on its parent | 11, with `--ask-ai-gateway` |
+| Ask AI model service | App SP | `EXECUTE` on the service, `USE SCHEMA` / `USE CATALOG` on its parent | 11 |
 
 ---
 
-## Governed Ask AI (optional)
+## Governed Ask AI
 
-By default Ask AI calls the shared pay-per-token foundation model endpoint, so its traffic is mixed in with everyone else's. To give it its own governed endpoint, deploy with:
+Every deploy gives Ask AI its own AI Gateway model service, `<catalog>.datamarket_ops.ask_ai`, instead of sharing the workspace's pay-per-token foundation model endpoint with everyone else. It's still pay-per-token, with no idle cost, and comes with:
 
-```bash
-./deploy.sh --profile my-profile --ask-ai-gateway main.datamarket
-```
-
-The script creates the AI Gateway model service `main.datamarket.ask_ai` (still pay-per-token, no idle cost) with:
-
-- **Payload logging** to `main.datamarket.ask_ai_payload` — every prompt and response Ask AI sends
+- **Payload logging** to `<catalog>.datamarket_ops.ask_ai_payload` — every prompt and response Ask AI sends
 - **A rate limit** of 60 requests per minute for the service
 - **Usage** in `system.serving.endpoint_usage` and on the service's Metrics tab, separate from other workloads
 
-It grants the app `EXECUTE` on the service and sets **Manage → Settings → Ask AI serving endpoint** to it. Re-running is safe: an existing service keeps its configuration.
+The script grants the app `EXECUTE` on the service and sets **Manage → Settings → Ask AI serving endpoint** to it.
 
-**Who runs it:** the person deploying needs `USE CATALOG`, `USE SCHEMA`, `CREATE SERVICE` and `CREATE TABLE` on the schema, and `EXECUTE` on the model. They become the service owner — a model service queries the model with its owner's privileges, so the owner should be a person or admin group, not the app.
+**Where it goes.** By default (`--ask-ai-gateway auto`) the script uses a `datamarket` catalog if one exists, otherwise the workspace's default catalog, and creates the `datamarket_ops` schema there if it's missing. It never creates a catalog — that usually needs a metastore admin, and on older metastores a managed storage location. If you want a dedicated catalog, have your admin create `datamarket` once and the script will use it. To pick the location yourself:
+
+```bash
+./deploy.sh --profile my-profile --ask-ai-gateway main.datamarket_ops
+```
+
+**Re-deploys are safe.** An existing service keeps its configuration, and with `auto` an endpoint an admin has already chosen in Settings is left alone. An explicit `--ask-ai-gateway catalog.schema` does switch Ask AI to that service.
+
+**If it can't be created** — no permission, or model services aren't available in the workspace — the script warns, removes any schema it created for the service, and Ask AI uses the shared endpoint. The deploy never fails over this. Use `--ask-ai-gateway off` to skip it entirely.
+
+**Who runs it:** the person deploying needs `USE CATALOG` and `CREATE SCHEMA` on the catalog (or `USE SCHEMA`, `CREATE SERVICE` and `CREATE TABLE` on an existing schema), and `EXECUTE` on the model. They become the service owner. A model service queries the model with its owner's privileges, so transfer ownership to an admin group afterwards (Catalog Explorer → the service → Owner); the script reminds you.
 
 **Guardrails are not created by the script.** Which sensitive data to detect, and whether to block or mask it, is a policy decision for your governance team: Catalog Explorer → the service → **Policies**. When a policy blocks a question, Ask AI tells the user which policy blocked it and why.
 

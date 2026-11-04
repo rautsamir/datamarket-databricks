@@ -553,8 +553,8 @@ export function FirstRunWizard({ onDismiss }) {
 
                     {askAiCheck.kind !== 'model_service' && (
                       <div className="bg-gray-50 rounded-xl p-4 text-xs text-gray-600 space-y-1.5">
-                        <p className="font-medium text-gray-800">Want Ask AI governed on its own?</p>
-                        <p>Create an AI Gateway model service (Catalog Explorer → a schema → Create → Service → Model service), add payload logging, a rate limit and any guardrail policies, grant this app <code className="bg-white px-1 rounded">EXECUTE</code>, then set it in Manage → Settings as <code className="bg-white px-1 rounded">catalog.schema.service</code>. Or re-run the deploy with <code className="bg-white px-1 rounded">--ask-ai-gateway catalog.schema</code>.</p>
+                        <p className="font-medium text-gray-800">Give Ask AI its own governed endpoint?</p>
+                        <p>Ask AI is sharing this workspace's model endpoint with everyone else, so its prompts aren't logged on their own and it has no rate limit or guardrails of its own. Re-running the deploy creates a dedicated AI Gateway model service for it by default. Or create one yourself (Catalog Explorer → a schema → Create → Service → Model service), grant this app <code className="bg-white px-1 rounded">EXECUTE</code>, and set it in Manage → Settings as <code className="bg-white px-1 rounded">catalog.schema.service</code>.</p>
                       </div>
                     )}
                   </div>
