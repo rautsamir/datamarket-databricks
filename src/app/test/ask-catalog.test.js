@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { sanitizeEndpointName, askAiEndpoint, askAiRequest, DEFAULT_ASK_AI_ENDPOINT } from '../routes/ask-catalog.js';
+import { sanitizeEndpointName, askAiEndpoint, askAiRequest, summarizeGovernance, DEFAULT_ASK_AI_ENDPOINT } from '../routes/ask-catalog.js';
 
 test('accepts real Databricks serving endpoint names', () => {
   for (const name of [
@@ -62,6 +62,33 @@ test('catalog.schema.service names go through AI Gateway with the name as the mo
   const { path, body } = askAiRequest('main.ops.ask_ai', { messages: [], max_tokens: 1 });
   assert.equal(path, '/ai-gateway/mlflow/v1/chat/completions');
   assert.deepEqual(body, { model: 'main.ops.ask_ai', messages: [], max_tokens: 1 });
+});
+
+test('summarizes a model service: payload table, rate limit, live policies', () => {
+  const g = summarizeGovernance('model_service', {
+    config: {
+      rate_limits: [{ key: 'RATE_LIMIT_KEY_SERVICE', renewal_period: 'RATE_LIMIT_RENEWAL_PERIOD_MINUTE', requests: '60' }],
+      service_policies: [{ name: 'pii-block', is_deleted: false }, { name: 'old', is_deleted: true }],
+      inference_table: { table: 'tables/main.ops.ask_ai_payload', disabled: false },
+    },
+  });
+  assert.deepEqual(g, { payloadTable: 'main.ops.ask_ai_payload', rateLimits: ['60/minute'], policies: ['pii-block'] });
+});
+
+test('a model service with nothing configured reports nothing', () => {
+  assert.deepEqual(summarizeGovernance('model_service', { config: {} }),
+    { payloadTable: null, rateLimits: [], policies: [] });
+});
+
+test('summarizes AI Gateway on a serving endpoint', () => {
+  const g = summarizeGovernance('serving_endpoint', {
+    ai_gateway: {
+      inference_table_config: { enabled: true, catalog_name: 'main', schema_name: 'ops', table_name_prefix: 'chat' },
+      rate_limits: [{ calls: 100, renewal_period: 'minute' }],
+      guardrails: { input: {} },
+    },
+  });
+  assert.deepEqual(g, { payloadTable: 'main.ops.chat_payload', rateLimits: ['100/minute'], policies: ['guardrails'] });
 });
 
 test('the built-in default is itself a valid endpoint name', () => {

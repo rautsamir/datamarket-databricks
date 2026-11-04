@@ -113,6 +113,7 @@ const STEPS = [
   { id: 'warehouse',  short: 'SQL Warehouse',    icon: Warehouse    },
   { id: 'catalogs',   short: 'Catalog access',   icon: ShieldCheck  },
   { id: 'import',     short: 'Import data',      icon: Package      },
+  { id: 'askai',      short: 'Ask AI',           icon: Sparkles     },
   { id: 'done',       short: 'You\'re live',     icon: CheckCircle2 },
 ]
 
@@ -136,6 +137,25 @@ export function FirstRunWizard({ onDismiss }) {
   // Step 2 — Import
   const [showImport, setShowImport] = useState(false)
   const [imported, setImported]     = useState(false)
+
+  // Step 3 — Ask AI
+  const [askAiCheck, setAskAiCheck]     = useState(null)
+  const [askAiLoading, setAskAiLoading] = useState(false)
+
+  const runAskAiCheck = useCallback(async () => {
+    setAskAiLoading(true)
+    try {
+      setAskAiCheck(await fetch('/api/portal/admin/ask-ai-check').then(r => r.json()))
+    } catch (e) {
+      setAskAiCheck({ ok: false, error: e.message })
+    } finally {
+      setAskAiLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (step === 3) runAskAiCheck()
+  }, [step, runAskAiCheck])
 
   // Pre-fill the warehouse the deploy script already found and granted access
   // to, so this step is a confirmation rather than a scavenger hunt. Config is
@@ -234,7 +254,7 @@ export function FirstRunWizard({ onDismiss }) {
                 </div>
                 <div>
                   <h2 className="font-bold text-white text-lg leading-tight">Set up {appName}</h2>
-                  <p className="text-white/70 text-xs mt-0.5">4 quick steps — takes about 2 minutes</p>
+                  <p className="text-white/70 text-xs mt-0.5">{STEPS.length} quick steps — takes about 2 minutes</p>
                 </div>
               </div>
               <button onClick={markComplete} className="text-white/50 hover:text-white/90 transition-colors mt-0.5" title="Skip setup">
@@ -476,8 +496,86 @@ export function FirstRunWizard({ onDismiss }) {
               </div>
             )}
 
-            {/* ── Step 4: Done ── */}
+            {/* ── Step 4: Ask AI ── */}
             {step === 3 && (
+              <div className="space-y-4">
+                <div className="flex items-start gap-3">
+                  <div className="w-9 h-9 rounded-lg bg-amber-50 flex items-center justify-center shrink-0">
+                    <Sparkles className="h-5 w-5 text-amber-600" />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-gray-900">Check Ask AI</p>
+                    <p className="text-sm text-gray-500 mt-0.5">Natural-language search sends catalog metadata (never table rows) to a Databricks model. This checks it answers and what governs it.</p>
+                  </div>
+                </div>
+
+                {askAiLoading && (
+                  <div className="flex items-center gap-2 text-sm text-gray-400 py-2">
+                    <RefreshCw className="h-4 w-4 animate-spin" /> Sending a test question…
+                  </div>
+                )}
+
+                {!askAiLoading && askAiCheck && (
+                  <div className="space-y-3">
+                    <div className={`flex items-start gap-2 rounded-lg px-4 py-3 border ${askAiCheck.ok ? 'bg-emerald-50 border-emerald-200' : 'bg-amber-50 border-amber-200'}`}>
+                      {askAiCheck.ok
+                        ? <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0 mt-0.5" />
+                        : <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />}
+                      <div className="text-xs min-w-0">
+                        <p className={`font-medium ${askAiCheck.ok ? 'text-emerald-800' : 'text-amber-800'}`}>
+                          {askAiCheck.ok ? `Ask AI answered in ${(askAiCheck.latencyMs / 1000).toFixed(1)}s` : 'Ask AI did not answer'}
+                        </p>
+                        <p className="text-gray-600 mt-0.5 break-all">
+                          {askAiCheck.kind === 'model_service' ? 'AI Gateway model service' : 'Serving endpoint'}: <code className="bg-white/70 px-1 rounded">{askAiCheck.endpoint}</code>
+                        </p>
+                        {!askAiCheck.ok && askAiCheck.error && <p className="text-amber-700 mt-1">{askAiCheck.error}</p>}
+                      </div>
+                    </div>
+
+                    {askAiCheck.governance ? (
+                      <div className="border border-gray-100 rounded-xl divide-y divide-gray-100 text-xs">
+                        {[
+                          ['Payload logging', askAiCheck.governance.payloadTable],
+                          ['Rate limit', askAiCheck.governance.rateLimits?.join(', ')],
+                          ['Guardrails', askAiCheck.governance.policies?.join(', ')],
+                        ].map(([label, value]) => (
+                          <div key={label} className="flex items-center justify-between gap-3 px-4 py-2">
+                            <span className="text-gray-500">{label}</span>
+                            {value
+                              ? <span className="font-mono text-gray-800 truncate">{value}</span>
+                              : <span className="text-gray-400">Not configured</span>}
+                          </div>
+                        ))}
+                      </div>
+                    ) : askAiCheck.ok && askAiCheck.kind === 'model_service' && (
+                      <p className="text-xs text-gray-400">Its payload logging, rate limits and guardrails are visible in Catalog Explorer on the service.</p>
+                    )}
+
+                    {askAiCheck.kind !== 'model_service' && (
+                      <div className="bg-gray-50 rounded-xl p-4 text-xs text-gray-600 space-y-1.5">
+                        <p className="font-medium text-gray-800">Want Ask AI governed on its own?</p>
+                        <p>Create an AI Gateway model service (Catalog Explorer → a schema → Create → Service → Model service), add payload logging, a rate limit and any guardrail policies, grant this app <code className="bg-white px-1 rounded">EXECUTE</code>, then set it in Manage → Settings as <code className="bg-white px-1 rounded">catalog.schema.service</code>. Or re-run the deploy with <code className="bg-white px-1 rounded">--ask-ai-gateway catalog.schema</code>.</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <div className="flex gap-2 pt-1">
+                  <button onClick={() => setStep(4)}
+                    className="flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium text-white"
+                    style={{ backgroundColor: BLUE }}>
+                    {askAiCheck?.ok ? 'Continue' : 'Continue anyway'} <ArrowRight className="h-4 w-4" />
+                  </button>
+                  <button onClick={runAskAiCheck} disabled={askAiLoading}
+                    className="flex items-center gap-1.5 px-4 py-2.5 rounded-lg text-sm text-gray-500 hover:text-gray-700 disabled:opacity-40">
+                    <RefreshCw className={`h-4 w-4 ${askAiLoading ? 'animate-spin' : ''}`} /> Re-check
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* ── Step 5: Done ── */}
+            {step === 4 && (
               <div className="space-y-4 text-center py-2">
                 <div className="w-16 h-16 rounded-full bg-emerald-50 flex items-center justify-center mx-auto">
                   <CheckCircle2 className="h-8 w-8 text-emerald-500" />

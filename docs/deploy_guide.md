@@ -70,6 +70,8 @@ That's it. Everything else is automatic.
 | `--app-name` | `datamarket` | Databricks App name |
 | `--warehouse-id` | auto-detected | SQL Warehouse ID — script picks the best running one |
 | `--grant-catalogs` | `true` | Grant SP `USE CATALOG + USE SCHEMA` on all UC catalogs |
+| `--ask-ai-gateway` | off | `catalog.schema` — create an AI Gateway model service for Ask AI there (see [Governed Ask AI](#governed-ask-ai-optional)) |
+| `--ask-ai-model` | `system.ai.llama_v3_3_70b_instruct` | Foundation model behind that service |
 | `--demo-mode` | `false` | `true` = persona switcher for demos; `false` = real SSO + UC grants |
 | `--seed` | auto | Load demo products/users/requests. Defaults `true` when `--demo-mode true` |
 | `--use-bundle` | `false` | Use Databricks Asset Bundle (DAB) instead of direct deploy |
@@ -103,9 +105,9 @@ The script runs 11 steps end-to-end with no manual input:
 | 8 | Auto-detects a running SQL Warehouse, grants SP `CAN USE` |
 | 9 | Grants SP `USE CATALOG + BROWSE + SELECT` on all Unity Catalog catalogs and schemas |
 | 10 | Tags the App and SQL Warehouse (`app=datamarket`) for spend observability in `system.billing.usage` |
-| 11 | Verifies the Ask AI serving endpoint exists and is reachable; reports whether AI Gateway governance is active. Warns only — never fails the deploy |
+| 11 | With `--ask-ai-gateway`, creates Ask AI's model service and points the app at it. Then verifies whatever Ask AI uses (model service or serving endpoint) and reports payload logging, rate limits and guardrails. Warns only — never fails the deploy |
 
-After deploy, an onboarding wizard opens in the app. The SQL Warehouse ID is auto-filled from what the script detected — just verify and continue.
+After deploy, an onboarding wizard opens in the app. The SQL Warehouse ID is auto-filled from what the script detected — just verify and continue. Its Ask AI step sends a test question and shows what governs Ask AI traffic.
 
 > Branding, integrations, feature toggles, and notifications are all configured in **Manage → Settings** — no redeploy needed. The only thing that requires a redeploy is changing `--demo-mode`.
 
@@ -120,6 +122,31 @@ After deploy, an onboarding wizard opens in the app. The SQL Warehouse ID is aut
 | Unity Catalog | App SP | `USE CATALOG + BROWSE + SELECT` on all catalogs/schemas | 9 |
 | Databricks App + Warehouse | — | Tagged `app=datamarket` for cost attribution | 10 |
 | Unity Catalog | End users | `SELECT` on approved tables | via approval flow |
+| Ask AI model service | App SP | `EXECUTE` on the service, `USE SCHEMA` / `USE CATALOG` on its parent | 11, with `--ask-ai-gateway` |
+
+---
+
+## Governed Ask AI (optional)
+
+By default Ask AI calls the shared pay-per-token foundation model endpoint, so its traffic is mixed in with everyone else's. To give it its own governed endpoint, deploy with:
+
+```bash
+./deploy.sh --profile my-profile --ask-ai-gateway main.datamarket
+```
+
+The script creates the AI Gateway model service `main.datamarket.ask_ai` (still pay-per-token, no idle cost) with:
+
+- **Payload logging** to `main.datamarket.ask_ai_payload` — every prompt and response Ask AI sends
+- **A rate limit** of 60 requests per minute for the service
+- **Usage** in `system.serving.endpoint_usage` and on the service's Metrics tab, separate from other workloads
+
+It grants the app `EXECUTE` on the service and sets **Manage → Settings → Ask AI serving endpoint** to it. Re-running is safe: an existing service keeps its configuration.
+
+**Who runs it:** the person deploying needs `USE CATALOG`, `USE SCHEMA`, `CREATE SERVICE` and `CREATE TABLE` on the schema, and `EXECUTE` on the model. They become the service owner — a model service queries the model with its owner's privileges, so the owner should be a person or admin group, not the app.
+
+**Guardrails are not created by the script.** Which sensitive data to detect, and whether to block or mask it, is a policy decision for your governance team: Catalog Explorer → the service → **Policies**. When a policy blocks a question, Ask AI tells the user which policy blocked it and why.
+
+**Doing it by hand instead:** Catalog Explorer → a schema → **Create → Service → Model service**, add payload logging, a rate limit and any policies, grant the app's service principal `EXECUTE` (and `USE SCHEMA` on the schema), then enter `catalog.schema.service` in Settings.
 
 ---
 

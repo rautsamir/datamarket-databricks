@@ -14,6 +14,11 @@
 #   --demo-mode      true|false     Enable persona switcher (default: false)
 #   --seed           true|false     Apply schema/seed.sql after schema init — loads demo data products,
 #                                   users, and requests (default: true when --demo-mode true, else false)
+#   --ask-ai-gateway CATALOG.SCHEMA Create an AI Gateway model service for Ask AI in this schema
+#                                   (payload logging to ask_ai_payload, 60 requests/minute), grant the
+#                                   app EXECUTE on it, and point Ask AI at it (default: off)
+#   --ask-ai-model   MODEL          Foundation model behind that service
+#                                   (default: system.ai.llama_v3_3_70b_instruct)
 #   --use-bundle     true|false     Use Databricks Asset Bundle (DAB) for Lakebase+app deploy (default: false)
 #   --bundle-target  TARGET         DAB target to deploy: dev or prod (default: prod)
 #   --help                          Show this help
@@ -40,6 +45,8 @@ DEMO_MODE="false"
 SEED_DATA=""          # empty = auto (true when demo-mode, false otherwise)
 WAREHOUSE_ID=""
 GRANT_CATALOGS="true"
+ASK_AI_GATEWAY=""
+ASK_AI_MODEL="system.ai.llama_v3_3_70b_instruct"
 USE_BUNDLE="false"
 BUNDLE_TARGET="prod"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -55,6 +62,8 @@ while [[ $# -gt 0 ]]; do
     --seed)             SEED_DATA="$2";        shift 2 ;;
     --warehouse-id)     WAREHOUSE_ID="$2";     shift 2 ;;
     --grant-catalogs)   GRANT_CATALOGS="$2";   shift 2 ;;
+    --ask-ai-gateway)   ASK_AI_GATEWAY="$2";   shift 2 ;;
+    --ask-ai-model)     ASK_AI_MODEL="$2";     shift 2 ;;
     --use-bundle)       USE_BUNDLE="$2";       shift 2 ;;
     --bundle-target)    BUNDLE_TARGET="$2";    shift 2 ;;
     --help|-h)
@@ -1242,7 +1251,79 @@ cat <<'QUERY'
 QUERY
 
 # ── Ask AI endpoint verification ──────────────────────────────────────────────
-step 11 "Verifying Ask AI serving endpoint"
+step 11 "Setting up Ask AI"
+
+# Optional: give Ask AI its own AI Gateway model service, so its traffic gets
+# usage tracking, payload logging and a rate limit separate from everyone else
+# using the shared foundation model endpoint. This runs as the deploying admin on
+# purpose: creating a service needs CREATE SERVICE, CREATE TABLE and EXECUTE on
+# the model, and a model service queries its destination with its owner's
+# privileges, so the owner should be a person or admin group, not the app.
+# Guardrail policies are left to the customer's governance team.
+if [[ -n "$ASK_AI_GATEWAY" ]]; then
+  if [[ ! "$ASK_AI_GATEWAY" =~ ^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$ ]]; then
+    warn "--ask-ai-gateway expects CATALOG.SCHEMA (got '${ASK_AI_GATEWAY}') — skipping model service setup."
+  else
+    ASK_AI_SERVICE="${ASK_AI_GATEWAY}.ask_ai"
+    if databricks api get "/api/2.1/unity-catalog/model-services/${ASK_AI_SERVICE}" \
+         --profile "$PROFILE" >/dev/null 2>&1; then
+      ok "Model service ${ASK_AI_SERVICE} already exists — keeping its current configuration"
+    else
+      info "Creating AI Gateway model service ${ASK_AI_SERVICE} → ${ASK_AI_MODEL}"
+      MS_BODY=$(cat <<JSON
+{
+  "comment": "DataMarket Ask AI: natural-language search over catalog metadata",
+  "config": {
+    "routing": {"destinations": [{
+      "name": "primary",
+      "destination_type": "DESTINATION_TYPE_PAY_PER_TOKEN_FOUNDATION_MODEL",
+      "pay_per_token_config": {"model": "models/${ASK_AI_MODEL}"},
+      "traffic_percentage": 100
+    }]},
+    "rate_limits": [{"key": "RATE_LIMIT_KEY_SERVICE", "renewal_period": "RATE_LIMIT_RENEWAL_PERIOD_MINUTE", "requests": "60"}],
+    "inference_table": {"parent": "schemas/${ASK_AI_GATEWAY}", "table_name_prefix": "ask_ai"}
+  }
+}
+JSON
+)
+      if MS_OUT=$(databricks api post \
+           "/api/2.1/unity-catalog/model-services?parent=schemas/${ASK_AI_GATEWAY}&model_service_id=ask_ai" \
+           --profile "$PROFILE" --json "$MS_BODY" 2>&1); then
+        ok "Created ${ASK_AI_SERVICE} (payload logging → ${ASK_AI_GATEWAY}.ask_ai_payload, 60 requests/minute)"
+      else
+        warn "Could not create the model service. Ask AI keeps its current endpoint."
+        echo "$MS_OUT" | tail -3 | sed 's/^/    /'
+        info "  Needs USE CATALOG, USE SCHEMA, CREATE SERVICE and CREATE TABLE on ${ASK_AI_GATEWAY},"
+        info "  and EXECUTE on ${ASK_AI_MODEL}."
+        ASK_AI_SERVICE=""
+      fi
+    fi
+
+    if [[ -n "$ASK_AI_SERVICE" && -n "$SP_UUID" ]]; then
+      GRANT_FAILED=0
+      databricks grants update catalog "${ASK_AI_GATEWAY%%.*}" --profile "$PROFILE" \
+        --json "{\"changes\":[{\"principal\":\"${SP_UUID}\",\"add\":[\"USE_CATALOG\"]}]}" >/dev/null 2>&1 || GRANT_FAILED=1
+      databricks grants update schema "$ASK_AI_GATEWAY" --profile "$PROFILE" \
+        --json "{\"changes\":[{\"principal\":\"${SP_UUID}\",\"add\":[\"USE_SCHEMA\"]}]}" >/dev/null 2>&1 || GRANT_FAILED=1
+      databricks grants update model_service "$ASK_AI_SERVICE" --profile "$PROFILE" \
+        --json "{\"changes\":[{\"principal\":\"${SP_UUID}\",\"add\":[\"EXECUTE\"]}]}" >/dev/null 2>&1 || GRANT_FAILED=1
+      [[ $GRANT_FAILED -eq 0 ]] && ok "App service principal granted EXECUTE on ${ASK_AI_SERVICE}" \
+        || warn "Some Ask AI grants failed — the check below shows what is missing."
+    fi
+
+    if [[ -n "$ASK_AI_SERVICE" ]]; then
+      if [[ -n "${PG_CONN:-}" && -n "${PG_TOKEN:-}" && -n "$PSQL_BIN" ]] && \
+         PGPASSWORD="$PG_TOKEN" psql "$PG_CONN" -qtAX -c \
+           "INSERT INTO \"${APP_NAME}\".settings (key, value, updated_at) VALUES ('ask_ai_endpoint', '${ASK_AI_SERVICE}', NOW())
+            ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()" >/dev/null 2>&1; then
+        ok "Ask AI now points at ${ASK_AI_SERVICE}"
+      else
+        warn "Could not save the endpoint to app Settings. Set it in the app:"
+        info "  Manage → Settings → Ask AI serving endpoint → ${ASK_AI_SERVICE}"
+      fi
+    fi
+  fi
+fi
 
 # Ask AI is the one app dependency the steps above do not provision. Pay-per-token
 # Foundation Model APIs are not enabled in every workspace or region, so the
@@ -1260,99 +1341,161 @@ if [[ -n "${PG_CONN:-}" && -n "${PG_TOKEN:-}" && -n "$PSQL_BIN" ]]; then
     | tr -d '[:space:]' || true)
   [[ -n "$ASK_AI_TARGET" ]] && info "Using endpoint configured in app Settings: ${ASK_AI_TARGET}"
 fi
-ASK_AI_TARGET="${ASK_AI_TARGET:-${ASK_AI_ENDPOINT:-databricks-meta-llama-3-3-70b-instruct}}"
+ASK_AI_TARGET="${ASK_AI_TARGET:-${ASK_AI_SERVICE:-${ASK_AI_ENDPOINT:-databricks-meta-llama-3-3-70b-instruct}}}"
 
-# Foundation Model API endpoints are system-managed and carry no "id" — only
-# custom endpoints (including gateway/external-model ones) do. Key off "name"
-# for existence, and treat a missing id as "no per-endpoint ACL to check".
-EP_INFO=$(databricks api get "/api/2.0/serving-endpoints/${ASK_AI_TARGET}" \
-  --profile "$PROFILE" 2>/dev/null \
-  | python3 -c "
+if [[ "$ASK_AI_TARGET" =~ ^[^.]+\.[^.]+\.[^.]+$ ]]; then
+  # catalog.schema.service is an AI Gateway model service, a Unity Catalog
+  # securable: it is read through the UC API and access is an EXECUTE grant.
+  MS_INFO=$(databricks api get "/api/2.1/unity-catalog/model-services/${ASK_AI_TARGET}" \
+    --profile "$PROFILE" 2>/dev/null \
+    | python3 -c "
 import sys, json
 try:
     d = json.load(sys.stdin)
 except Exception:
     d = {}
-gw = d.get('ai_gateway') or {}
-feats = [k.replace('_config', '').replace('_', ' ') for k, v in gw.items() if v]
-# Unit separator, not tab: tab is IFS whitespace, so bash would collapse the
-# empty 'id' field of a system endpoint and shift every field after it.
-print('\x1f'.join([
-    d.get('name') or '',
-    (d.get('state') or {}).get('ready') or '',
-    d.get('id') or '',
-    ', '.join(sorted(feats)),
-]))
+c = d.get('config') or {}
+it = c.get('inference_table') or {}
+table = (it.get('table') or '').replace('tables/', '') if not it.get('disabled') else ''
+policies = [p.get('name', '') for p in c.get('service_policies') or [] if not p.get('is_deleted')]
+limits = ', '.join(f\"{r.get('requests')}/{(r.get('renewal_period') or '').rsplit('_', 1)[-1].lower()}\" for r in c.get('rate_limits') or [])
+print('\x1f'.join([d.get('name') or '', table, limits, ', '.join(policies)]))
 " 2>/dev/null || true)
-IFS=$'\037' read -r EP_NAME EP_READY ASK_AI_EP_ID EP_GATEWAY <<< "$EP_INFO"
+  IFS=$'\037' read -r MS_NAME MS_TABLE MS_LIMITS MS_POLICIES <<< "$MS_INFO"
 
-if [[ -z "$EP_NAME" ]]; then
-  warn "Ask AI endpoint '${ASK_AI_TARGET}' was not found in this workspace."
-  warn "Ask AI will return an error until this is changed — everything else works."
-  info "  Most likely cause: pay-per-token Foundation Model APIs are not enabled"
-  info "  in this workspace or region."
-  info "  Fix in the app (no redeploy): Manage → Settings → Ask AI serving endpoint."
-  info "  Point it at a Mosaic AI Gateway, provisioned throughput, or external model"
-  info "  endpoint. To see what is available here:"
-  info "    databricks serving-endpoints list --profile ${PROFILE}"
-else
-  if [[ "$EP_READY" == "READY" ]]; then
-    ok "Ask AI endpoint '${ASK_AI_TARGET}' exists and is READY"
+  if [[ -z "$MS_NAME" ]]; then
+    warn "Ask AI model service '${ASK_AI_TARGET}' was not found, or this profile cannot read it."
+    warn "Ask AI will return an error until this is fixed — everything else works."
+    info "  Re-run with --ask-ai-gateway CATALOG.SCHEMA to create it, or change"
+    info "  Manage → Settings → Ask AI serving endpoint."
   else
-    warn "Ask AI endpoint '${ASK_AI_TARGET}' exists but is not ready (state: ${EP_READY:-unknown})."
-    warn "Ask AI may error until it finishes starting."
-  fi
+    ok "Ask AI uses AI Gateway model service '${ASK_AI_TARGET}'"
+    [[ -n "$MS_TABLE"  ]] && ok "Payload logging → ${MS_TABLE}"   || info "Payload logging is off (Catalog Explorer → ${ASK_AI_TARGET} → Inference table)."
+    [[ -n "$MS_LIMITS" ]] && ok "Rate limit: ${MS_LIMITS}"        || info "No rate limit configured."
+    if [[ -n "$MS_POLICIES" ]]; then
+      ok "Guardrail policies: ${MS_POLICIES}"
+    else
+      info "No guardrail policies yet. Your governance team can add one (for example,"
+      info "  block or mask sensitive data) in Catalog Explorer → ${ASK_AI_TARGET} → Policies."
+    fi
 
-  # Governance visibility: AI Gateway features are configured on the endpoint, so
-  # this is the only place the deploy can confirm whether Ask AI traffic is
-  # actually governed.
-  if [[ -n "$EP_GATEWAY" ]]; then
-    ok "Mosaic AI Gateway active on this endpoint: ${EP_GATEWAY}"
-  else
-    info "No AI Gateway features configured on this endpoint."
-    info "  To centrally govern Ask AI traffic (rate limits, payload logging,"
-    info "  guardrails), configure AI Gateway on the endpoint in Serving, or point"
-    info "  Ask AI at a governed endpoint in Manage → Settings."
-  fi
-
-  if [[ -z "$ASK_AI_EP_ID" ]]; then
-    # System FMAPI endpoints expose no per-endpoint ACL; access follows workspace
-    # entitlements, so there is nothing to verify or grant here.
-    info "System-managed endpoint — no per-endpoint permissions to check."
-  else
-    SP_CAN_QUERY=$(databricks api get "/api/2.0/permissions/serving-endpoints/${ASK_AI_EP_ID}" \
-      --profile "$PROFILE" 2>/dev/null \
+    SP_EXECUTE=$(databricks grants get model_service "$ASK_AI_TARGET" \
+      --profile "$PROFILE" --output json 2>/dev/null \
       | python3 -c "
 import sys, json
 sp = '''${SP_UUID}'''.strip()
 try:
-    acl = json.load(sys.stdin).get('access_control_list', [])
+    rows = json.load(sys.stdin).get('privilege_assignments', [])
 except Exception:
-    acl = []
-granted = sp and any(
-    e.get('service_principal_name') == sp
-    and any(p.get('permission_level') in ('CAN_QUERY', 'CAN_MANAGE', 'IS_OWNER')
-            for p in e.get('all_permissions', []))
-    for e in acl
-)
-print('yes' if granted else 'no')
+    rows = []
+print('yes' if sp and any(r.get('principal') == sp and 'EXECUTE' in r.get('privileges', []) for r in rows) else 'no')
 " 2>/dev/null || echo "no")
-
-    if [[ "$SP_CAN_QUERY" == "yes" ]]; then
-      ok "App service principal has query access on the endpoint"
+    if [[ "$SP_EXECUTE" == "yes" ]]; then
+      ok "App service principal has EXECUTE on the model service"
     else
-      # An inherited or group-based grant can still make this work, so report it
-      # as a note with a fix rather than an error — a false alarm on every deploy
-      # would teach people to ignore this step.
-      warn "App service principal is not listed on this endpoint's permissions."
+      warn "App service principal does not have a direct EXECUTE grant on '${ASK_AI_TARGET}'."
       warn "Ask AI will likely fail with a permission error. Grant access with:"
       cat <<GRANT
 
-  databricks api patch /api/2.0/permissions/serving-endpoints/${ASK_AI_EP_ID} \\
-    --profile ${PROFILE} \\
-    --json '{"access_control_list":[{"service_principal_name":"${SP_UUID}","permission_level":"CAN_QUERY"}]}'
+  databricks grants update model_service ${ASK_AI_TARGET} --profile ${PROFILE} \\
+    --json '{"changes":[{"principal":"${SP_UUID}","add":["EXECUTE"]}]}'
 
 GRANT
+    fi
+  fi
+else
+  # Foundation Model API endpoints are system-managed and carry no "id" — only
+  # custom endpoints (including gateway/external-model ones) do. Key off "name"
+  # for existence, and treat a missing id as "no per-endpoint ACL to check".
+  EP_INFO=$(databricks api get "/api/2.0/serving-endpoints/${ASK_AI_TARGET}" \
+    --profile "$PROFILE" 2>/dev/null \
+    | python3 -c "
+  import sys, json
+  try:
+      d = json.load(sys.stdin)
+  except Exception:
+      d = {}
+  gw = d.get('ai_gateway') or {}
+  feats = [k.replace('_config', '').replace('_', ' ') for k, v in gw.items() if v]
+  # Unit separator, not tab: tab is IFS whitespace, so bash would collapse the
+  # empty 'id' field of a system endpoint and shift every field after it.
+  print('\x1f'.join([
+      d.get('name') or '',
+      (d.get('state') or {}).get('ready') or '',
+      d.get('id') or '',
+      ', '.join(sorted(feats)),
+  ]))
+  " 2>/dev/null || true)
+  IFS=$'\037' read -r EP_NAME EP_READY ASK_AI_EP_ID EP_GATEWAY <<< "$EP_INFO"
+
+  if [[ -z "$EP_NAME" ]]; then
+    warn "Ask AI endpoint '${ASK_AI_TARGET}' was not found in this workspace."
+    warn "Ask AI will return an error until this is changed — everything else works."
+    info "  Most likely cause: pay-per-token Foundation Model APIs are not enabled"
+    info "  in this workspace or region."
+    info "  Fix in the app (no redeploy): Manage → Settings → Ask AI serving endpoint."
+    info "  Point it at a Mosaic AI Gateway, provisioned throughput, or external model"
+    info "  endpoint. To see what is available here:"
+    info "    databricks serving-endpoints list --profile ${PROFILE}"
+  else
+    if [[ "$EP_READY" == "READY" ]]; then
+      ok "Ask AI endpoint '${ASK_AI_TARGET}' exists and is READY"
+    else
+      warn "Ask AI endpoint '${ASK_AI_TARGET}' exists but is not ready (state: ${EP_READY:-unknown})."
+      warn "Ask AI may error until it finishes starting."
+    fi
+
+    # Governance visibility: AI Gateway features are configured on the endpoint, so
+    # this is the only place the deploy can confirm whether Ask AI traffic is
+    # actually governed.
+    if [[ -n "$EP_GATEWAY" ]]; then
+      ok "Mosaic AI Gateway active on this endpoint: ${EP_GATEWAY}"
+    else
+      info "No AI Gateway features configured on this endpoint."
+      info "  To centrally govern Ask AI traffic (rate limits, payload logging,"
+      info "  guardrails), configure AI Gateway on the endpoint in Serving, or point"
+      info "  Ask AI at a governed endpoint in Manage → Settings."
+    fi
+
+    if [[ -z "$ASK_AI_EP_ID" ]]; then
+      # System FMAPI endpoints expose no per-endpoint ACL; access follows workspace
+      # entitlements, so there is nothing to verify or grant here.
+      info "System-managed endpoint — no per-endpoint permissions to check."
+    else
+      SP_CAN_QUERY=$(databricks api get "/api/2.0/permissions/serving-endpoints/${ASK_AI_EP_ID}" \
+        --profile "$PROFILE" 2>/dev/null \
+        | python3 -c "
+  import sys, json
+  sp = '''${SP_UUID}'''.strip()
+  try:
+      acl = json.load(sys.stdin).get('access_control_list', [])
+  except Exception:
+      acl = []
+  granted = sp and any(
+      e.get('service_principal_name') == sp
+      and any(p.get('permission_level') in ('CAN_QUERY', 'CAN_MANAGE', 'IS_OWNER')
+              for p in e.get('all_permissions', []))
+      for e in acl
+  )
+  print('yes' if granted else 'no')
+  " 2>/dev/null || echo "no")
+
+      if [[ "$SP_CAN_QUERY" == "yes" ]]; then
+        ok "App service principal has query access on the endpoint"
+      else
+        # An inherited or group-based grant can still make this work, so report it
+        # as a note with a fix rather than an error — a false alarm on every deploy
+        # would teach people to ignore this step.
+        warn "App service principal is not listed on this endpoint's permissions."
+        warn "Ask AI will likely fail with a permission error. Grant access with:"
+        cat <<GRANT
+
+    databricks api patch /api/2.0/permissions/serving-endpoints/${ASK_AI_EP_ID} \\
+      --profile ${PROFILE} \\
+      --json '{"access_control_list":[{"service_principal_name":"${SP_UUID}","permission_level":"CAN_QUERY"}]}'
+
+GRANT
+      fi
     fi
   fi
 fi

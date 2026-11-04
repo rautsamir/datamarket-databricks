@@ -1,4 +1,4 @@
-import { query, getSetting } from '../db.js';
+import { query, getSetting, loadSettings } from '../db.js';
 import { getUcAuth } from '../databricks.js';
 import { httpsJsonRequest } from '../auth.js';
 
@@ -36,12 +36,73 @@ export function askAiRequest(endpoint, payload) {
   return { path: `/serving-endpoints/${endpoint}/invocations`, body: payload };
 }
 
+/**
+ * Normalizes what governs Ask AI traffic, from either a model service (UC API)
+ * or a serving endpoint with AI Gateway configured.
+ */
+export function summarizeGovernance(kind, data) {
+  if (kind === 'model_service') {
+    const c = data?.config || {};
+    const it = c.inference_table || {};
+    return {
+      payloadTable: !it.disabled && it.table ? it.table.replace(/^tables\//, '') : null,
+      rateLimits: (c.rate_limits || []).map(r =>
+        `${r.requests}/${String(r.renewal_period || '').split('_').pop().toLowerCase()}`),
+      policies: (c.service_policies || []).filter(p => !p.is_deleted).map(p => p.name),
+    };
+  }
+  const gw = data?.ai_gateway || {};
+  const it = gw.inference_table_config || {};
+  return {
+    payloadTable: it.enabled ? [it.catalog_name, it.schema_name, `${it.table_name_prefix || ''}_payload`].join('.') : null,
+    rateLimits: (gw.rate_limits || []).map(r => `${r.calls}/${r.renewal_period}`),
+    policies: gw.guardrails ? ['guardrails'] : [],
+  };
+}
+
 export function askAiEndpoint() {
   const configured = String(getSetting('ask_ai_endpoint', '') || '').trim();
   return configured || process.env.ASK_AI_ENDPOINT || DEFAULT_ASK_AI_ENDPOINT;
 }
 
 export function registerRoutes(app) {
+  // ─── Ask AI check — setup wizard: does it answer, and what governs it ────────
+  app.get('/api/portal/admin/ask-ai-check', async (req, res) => {
+    await loadSettings();
+    const endpoint = sanitizeEndpointName(askAiEndpoint());
+    if (!endpoint) return res.json({ endpoint: askAiEndpoint(), ok: false, error: 'Not a valid endpoint name.' });
+    const kind = /^[^.]+\.[^.]+\.[^.]+$/.test(endpoint) ? 'model_service' : 'serving_endpoint';
+    try {
+      const { host, token } = await getUcAuth();
+      const hostname = host.replace(/^https?:\/\//, '');
+      const headers = { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' };
+
+      const { path, body } = askAiRequest(endpoint, {
+        messages: [{ role: 'user', content: 'Reply with the single word OK.' }],
+        max_tokens: 5,
+      });
+      const started = Date.now();
+      const probe = await httpsJsonRequest({ hostname, path, method: 'POST', headers, body: JSON.stringify(body), timeoutMs: 25000 });
+      const latencyMs = Date.now() - started;
+      const ok = probe.status < 400;
+
+      const meta = await httpsJsonRequest({
+        hostname, headers,
+        path: kind === 'model_service'
+          ? `/api/2.1/unity-catalog/model-services/${endpoint}`
+          : `/api/2.0/serving-endpoints/${endpoint}`,
+      }).catch(() => null);
+      const governance = meta && meta.status < 400 ? summarizeGovernance(kind, meta.data) : null;
+
+      res.json({
+        endpoint, kind, ok, latencyMs, governance,
+        error: ok ? null : (probe.data?.message || probe.data?.error_code || `HTTP ${probe.status}`),
+      });
+    } catch (e) {
+      res.json({ endpoint, kind, ok: false, error: e.message });
+    }
+  });
+
   // ─── Ask Catalog — FMAPI semantic search over product metadata ───────────────
   app.post('/api/portal/ask-catalog', async (req, res) => {
     try {
