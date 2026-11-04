@@ -46,7 +46,7 @@ export const POLICY = [
   // ── Signed-in users: discovery, requesting access, own activity ───────────
   ['GET',    /^\/api\/portal\/products$/,                         ACCESS.USER],
   ['POST',   /^\/api\/portal\/products$/,                         ACCESS.USER], // self-service registration; lands as Pending
-  ['GET',    /^\/api\/portal\/products\/[^/]+\/(schema|preview|granted-access)$/, ACCESS.USER],
+  ['GET',    /^\/api\/portal\/products\/[^/]+\/(schema|granted-access)$/, ACCESS.USER],
   ['GET',    /^\/api\/portal\/requests$/,                         ACCESS.USER],
   ['POST',   /^\/api\/portal\/requests$/,                         ACCESS.USER],
   ['POST',   /^\/api\/portal\/requests\/[^/]+\/nudge$/,           ACCESS.USER],
