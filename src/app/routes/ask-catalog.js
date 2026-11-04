@@ -116,6 +116,16 @@ If nothing is relevant, return: []`;
         });
       }
 
+      // AI Gateway service policies (guardrails) answer 200 with a content_filter
+      // finish reason instead of an error, so check for that before parsing.
+      const policy = fmResp.data?.databricks_service_policy;
+      if (policy || fmResp.data?.choices?.[0]?.finish_reason === 'content_filter') {
+        return res.json({
+          matches: [],
+          blocked: { policy: policy?.name || null, reason: policy?.reason || null },
+        });
+      }
+
       const raw = fmResp.data?.choices?.[0]?.message?.content || '[]';
       const jsonMatch = raw.match(/\[[\s\S]*\]/);
       let matches = [];

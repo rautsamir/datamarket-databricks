@@ -89,7 +89,13 @@ export function AIExplorerPage({ initialQuestion = '', onNavigate, onOpenProduct
       const data = await r.json()
       if (!r.ok) throw new Error(data.error || 'API error')
 
-      if (data.matches?.length > 0) {
+      if (data.blocked) {
+        const { policy, reason } = data.blocked
+        setMessages(prev => [...prev, {
+          role: 'assistant', type: 'empty',
+          content: `Your question was blocked by ${policy ? `the "${policy}" AI Gateway policy` : 'an AI Gateway policy'}${reason ? ` — ${reason.replace(/\.$/, '')}` : ''}. Remove the sensitive details and try again.`
+        }])
+      } else if (data.matches?.length > 0) {
         setMessages(prev => [...prev, { role: 'assistant', type: 'products', matches: data.matches, question: q }])
       } else {
         setMessages(prev => [...prev, {
@@ -128,7 +134,7 @@ export function AIExplorerPage({ initialQuestion = '', onNavigate, onOpenProduct
           classification: p.classification, uc_full_name: p.uc_full_name, ucFullName: p.uc_full_name,
           lastUpdated: p.last_refreshed
             ? new Date(p.last_refreshed).toLocaleDateString()
-            : '—',
+            : (p.updated_at ? new Date(p.updated_at).toLocaleDateString() : '—'),
           lastRefreshed: p.last_refreshed || null,
         })
         return
