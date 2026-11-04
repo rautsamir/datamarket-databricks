@@ -20,11 +20,11 @@ So we built a prototype on Databricks alone. DataMarket catalogs Power BI report
 ## What It Does
 
 - **Data Catalog** — One searchable catalog for Unity Catalog datasets, AI/BI dashboards, Genie spaces, ML models, and external BI (Power BI, Tableau), with domain filters, classification tags, and per-user access status
-- **Access Request Workflow** — Business users request access with a justification; requests persist to Lakebase Postgres and trigger optional RFA notifications
+- **Access Request Workflow** — Business users request access with a justification; requests persist to Lakebase Postgres. For Unity Catalog data, approval grants access directly; for external BI such as Power BI, the request and decision are tracked and the report owner grants access in that tool
 - **Admin Approval Queue** — Data stewards approve/deny requests; each approval executes a real Unity Catalog `GRANT SELECT` via the SQL Statement Execution API
 - **UC Import** — Browse Unity Catalog (catalog → schema → table) in-app and bulk-register tables as data products in seconds
 - **Data Schema & Sensitivity** — Live column schema from Unity Catalog. Sensitivity comes from a column's `sensitivity` tag when set, otherwise it's inferred from the column name and labeled as inferred
-- **Ask AI** — Natural language data discovery backed by any Databricks serving endpoint (defaults to FMAPI Llama 3.3-70B; point it at a Mosaic AI Gateway endpoint in Settings for central governance)
+- **Ask AI** — Natural-language data discovery. Sends catalog metadata only, never table rows. Defaults to the pay-per-token Llama 3.3-70B endpoint; for governed AI, point it at an AI Gateway model service (`catalog.schema.service`) with payload logging, rate limits and guardrail policies. Questions a guardrail blocks are shown to the user with the policy's reason
 - **Insights** — Curated gallery of AI/BI dashboards with access-gated "Open" buttons
 - **My Data** — Each user's approved data products and request history, with expiry dates and Explore / Copy SQL shortcuts
 - **Audit Trail** — Every action (request, approve, deny, revoke) logged persistently to Lakebase
@@ -48,7 +48,9 @@ Databricks App (Serverless Node.js / Express)
   ─ access_requests             ─ GRANT/REVOKE enforcement
   ─ audit_log
         │
-  FMAPI (Llama 3.3-70B) · AI/BI Dashboards · Genie Space (optional)
+  Ask AI → AI Gateway model service or FMAPI endpoint (metadata only)
+  Approvals → Databricks SQL warehouse runs GRANT / REVOKE
+  AI/BI Dashboards · Genie Space (optional)
 ```
 
 ---
@@ -62,7 +64,7 @@ Databricks App (Serverless Node.js / Express)
 | Database (OLTP) | Lakebase Autoscaling (Databricks managed Postgres) |
 | Data / Governance | Unity Catalog (Delta tables, RBAC, ABAC column masking) |
 | Hosting | Databricks Apps (serverless, SSO auth baked in) |
-| AI Features | Configurable serving endpoint (default FMAPI Llama 3.3-70B; Mosaic AI Gateway supported), optional Genie Space + AI/BI Dashboards |
+| AI Features | AI Gateway model service (payload logging, rate limits, guardrails) or a serving endpoint (default FMAPI Llama 3.3-70B); optional Genie Space + AI/BI Dashboards |
 
 ---
 
@@ -72,7 +74,7 @@ Databricks App (Serverless Node.js / Express)
 
 > **Full guide:** [`docs/deploy_guide.md`](docs/deploy_guide.md)
 
-**Prerequisites:** Databricks CLI, Node.js ≥ 18, python3. (`psql` optional — only needed for manual schema inspection.)
+**Prerequisites:** Databricks CLI, Node.js ≥ 18, python3, and `psql` (`brew install postgresql@16`). Without `psql` the script skips the Lakebase setup the app needs to sign in to its database.
 
 ```bash
 # 1. Clone
@@ -97,6 +99,7 @@ The script handles everything automatically: workspace URL detection, Lakebase c
   --demo-mode      false           # default — real SSO + UC grants
   --lakebase-project datamarket    # default Lakebase project name
   --app-name       datamarket      # default app name / workspace folder
+  --ask-ai-gateway main.datamarket # optional — create a governed AI Gateway model service for Ask AI
 ```
 
 Run `./deploy.sh --help` for all flags.
@@ -105,12 +108,13 @@ Run `./deploy.sh --help` for all flags.
 
 ## After Deploying
 
-The app launches a **4-step setup wizard** on first login that walks you through:
+The app launches a **5-step setup wizard** on first login that walks you through:
 
 1. **SQL Warehouse** — paste or confirm your warehouse ID (auto-detected if possible)
 2. **Catalog access** — checks SP permissions across all UC catalogs; click "Grant access automatically" to run `USE CATALOG + USE SCHEMA + SELECT ON CATALOG` for any that need it — covers all current and future schemas with no per-schema configuration
 3. **Import data** — browse UC catalog tree and select tables to register as data products
-4. **You're live** — wizard closes, catalog is populated
+4. **Ask AI** — sends a test question and shows what governs Ask AI: payload logging, rate limits and guardrails
+5. **You're live** — wizard closes, catalog is populated
 
 > **Admin access is automatic.** The deployer's email is auto-promoted to admin on first SSO login — no manual `app.yaml` editing required.
 
@@ -149,14 +153,14 @@ src/app/
 │   ├── users.js     # Identity resolution, user management, SCIM display names
 │   ├── insights.js  # Dashboard gallery
 │   ├── demo.js      # Demo data reset
-│   └── ask-catalog.js  # FMAPI natural language → catalog answer
+│   └── ask-catalog.js  # Ask AI: natural language → catalog answer, via AI Gateway or FMAPI
 └── src/
     ├── App.jsx
     ├── context/
     │   ├── PersonaContext.jsx      # Identity state (real SSO or demo persona)
     │   └── AppConfigContext.jsx    # Branding config from /api/portal/config
     ├── components/
-    │   ├── FirstRunWizard.jsx      # 4-step onboarding wizard
+    │   ├── FirstRunWizard.jsx      # 5-step onboarding wizard
     │   ├── ImportUCModal.jsx       # UC catalog tree browser + bulk import
     │   └── layout/
     │       └── DataMarketLayout.jsx
@@ -191,7 +195,7 @@ schema/
 | `access_requests` | Requests with status, reason, UC grant SQL, expiry |
 | `audit_log` | Every submit/approve/deny/revoke action |
 | `user_library` | Per-user pinned and approved products |
-| `app_settings` | Key/value store for in-app configuration (name, logo, warehouse ID, etc.) |
+| `settings` | Key/value store for in-app configuration (name, logo, warehouse ID, etc.) |
 
 ---
 
@@ -218,7 +222,8 @@ schema/
 | `POST` | `/api/portal/admin/import-uc` | Bulk import selected UC tables as data products |
 | `GET` | `/api/portal/admin/uc-access-check` | Check SP access across all UC catalogs |
 | `POST` | `/api/portal/admin/uc-run-grants` | Auto-execute UC grants for inaccessible catalogs |
-| `POST` | `/api/portal/ask-catalog` | FMAPI natural language → catalog answer |
+| `POST` | `/api/portal/ask-catalog` | Ask AI: natural language → catalog answer |
+| `GET` | `/api/portal/admin/ask-ai-check` | Test Ask AI and report its governance (setup wizard) |
 
 ---
 
@@ -228,8 +233,8 @@ schema/
 |---|---|---|
 | Cost | $500K–$1M+ licensing + implementation | Included in your Databricks investment |
 | Data ownership | Data piped into vendor layer | Stays in Unity Catalog |
-| Access control | Vendor UI + separate policy | UC GRANT/REVOKE, enforced at engine |
-| AI features | Add-on / roadmap | FMAPI + Genie, live day one |
+| Access control | Vendor UI + separate policy | UC GRANT/REVOKE, enforced at engine — no second permission store; row filters and column masks still apply |
+| AI features | Add-on / roadmap | Ask AI on day one, governed by AI Gateway (logging, rate limits, guardrails) |
 | Infrastructure | Containers, VMs to manage | Serverless Databricks Apps |
 | Login | New identity system | Existing SSO (Entra ID / SAML) |
 | Audit trail | Internal to vendor | Persistent Postgres, SQL-queryable |
