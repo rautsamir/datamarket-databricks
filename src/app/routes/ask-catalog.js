@@ -25,6 +25,17 @@ export function sanitizeEndpointName(name) {
  * An empty setting means "unset" — clearing the field in the UI reverts to the
  * deployment default rather than breaking Ask AI.
  */
+/**
+ * A three-part name (catalog.schema.service) is a Unity Catalog model service,
+ * which is queried through AI Gateway rather than /serving-endpoints.
+ */
+export function askAiRequest(endpoint, payload) {
+  if (/^[^.]+\.[^.]+\.[^.]+$/.test(endpoint)) {
+    return { path: '/ai-gateway/mlflow/v1/chat/completions', body: { model: endpoint, ...payload } };
+  }
+  return { path: `/serving-endpoints/${endpoint}/invocations`, body: payload };
+}
+
 export function askAiEndpoint() {
   const configured = String(getSetting('ask_ai_endpoint', '') || '').trim();
   return configured || process.env.ASK_AI_ENDPOINT || DEFAULT_ASK_AI_ENDPOINT;
@@ -78,16 +89,17 @@ If nothing is relevant, return: []`;
       }
 
       const { host, token } = await getUcAuth();
+      const { path, body } = askAiRequest(endpoint, {
+        messages: [{ role: 'user', content: prompt }],
+        max_tokens: 512,
+        temperature: 0.1
+      });
       const fmResp = await httpsJsonRequest({
         hostname: host.replace(/^https?:\/\//, ''),
-        path: `/serving-endpoints/${endpoint}/invocations`,
+        path,
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          messages: [{ role: 'user', content: prompt }],
-          max_tokens: 512,
-          temperature: 0.1
-        }),
+        body: JSON.stringify(body),
         timeoutMs: 25000
       });
 
@@ -98,8 +110,8 @@ If nothing is relevant, return: []`;
         console.warn(`[ask-catalog] endpoint "${endpoint}" returned ${fmResp.status}: ${detail}`);
         return res.status(502).json({
           error: `Ask AI endpoint "${endpoint}" is not reachable.`,
-          detail: fmResp.status === 404
-            ? 'No serving endpoint with that name exists in this workspace, or the app service principal lacks CAN_QUERY on it.'
+          detail: fmResp.status === 404 || fmResp.status === 403
+            ? 'No endpoint with that name exists, or the app service principal cannot query it (CAN_QUERY on a serving endpoint; EXECUTE plus USE SCHEMA on a model service).'
             : detail,
         });
       }

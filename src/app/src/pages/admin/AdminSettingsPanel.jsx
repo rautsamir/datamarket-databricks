@@ -308,7 +308,7 @@ export function AdminSettingsPanel() {
         </div>
         <div className="border-t border-gray-100 pt-4">
           {field('Ask AI serving endpoint', 'ask_ai_endpoint', 'databricks-meta-llama-3-3-70b-instruct',
-            'Databricks serving endpoint used for natural language search. Point this at an endpoint governed by Mosaic AI Gateway to get rate limits, usage tracking, payload logging, and guardrails. The app service principal needs CAN_QUERY on it.')}
+            'Serving endpoint name, or an AI Gateway model service as catalog.schema.service, used for natural language search. A model service gives Ask AI its own usage tracking, payload logging, rate limits, and guardrails. The app service principal needs CAN_QUERY on a serving endpoint, or EXECUTE (plus USE SCHEMA) on a model service.')}
         </div>
       </div>
 
