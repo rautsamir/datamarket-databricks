@@ -24,7 +24,7 @@ So we built a prototype on Databricks alone. DataMarket catalogs Power BI report
 - **Admin Approval Queue** — Data stewards approve/deny requests; each approval executes a real Unity Catalog `GRANT SELECT` via the SQL Statement Execution API
 - **UC Import** — Browse Unity Catalog (catalog → schema → table) in-app and bulk-register tables as data products in seconds
 - **Data Schema & Sensitivity** — Live column schema from Unity Catalog. Sensitivity comes from a column's `sensitivity` tag when set, otherwise it's inferred from the column name and labeled as inferred
-- **Ask AI** — Natural-language data discovery. Sends catalog metadata only, never table rows. Defaults to the pay-per-token Llama 3.3-70B endpoint; for governed AI, point it at an AI Gateway model service (`catalog.schema.service`) with payload logging, rate limits and guardrail policies. Questions a guardrail blocks are shown to the user with the policy's reason
+- **Ask AI** — Natural-language data discovery. Sends catalog metadata only, never table rows. The deploy gives it its own AI Gateway model service (`<catalog>.datamarket_ops.ask_ai`, pay-per-token Llama 3.3-70B) with payload logging; your governance team adds rate limits and guardrail policies as they see fit. Falls back to the shared foundation model endpoint where model services aren't available. Questions a guardrail blocks are shown to the user with the policy's reason
 - **Insights** — Curated gallery of AI/BI dashboards with access-gated "Open" buttons
 - **My Data** — Each user's approved data products and request history, with expiry dates and Explore / Copy SQL shortcuts
 - **Audit Trail** — Every action (request, approve, deny, revoke) logged persistently to Lakebase

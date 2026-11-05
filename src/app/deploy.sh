@@ -16,7 +16,7 @@
 #                                   users, and requests (default: true when --demo-mode true, else false)
 #   --ask-ai-gateway CATALOG.SCHEMA|auto|off
 #                                   Give Ask AI its own AI Gateway model service, CATALOG.SCHEMA.ask_ai
-#                                   (payload logging to ask_ai_payload, 60 requests/minute), grant the
+#                                   (payload logging to ask_ai_payload), grant the
 #                                   app EXECUTE on it, and point Ask AI at it. The schema is created if
 #                                   missing; catalogs never are. auto (default) uses datamarket.datamarket_ops
 #                                   if a datamarket catalog exists, else <workspace default catalog>.datamarket_ops,
@@ -1193,78 +1193,62 @@ except: print('')
   fi
 fi
 
-# ── Resource tagging for spend/consumption observability ─────────────────────
-step 10 "Tagging Databricks resources for spend observability"
+# ── Spend observability ──────────────────────────────────────────────────────
+step 10 "Spend observability"
 
-# Databricks Apps have no custom_tags field. Patching one in is not a harmless
-# no-op: the Apps update API replaces the whole spec, so a body of just
-# {"custom_tags": ...} silently drops the unknown field AND clears `resources`,
-# unbinding Lakebase. Removing that binding deletes the SP's Postgres role, so
-# the app authenticates for a couple of minutes and then fails every query with
-# "password authentication failed" — which the UI shows as the demo persona.
-#
-# Serverless app DBUs are attributed with a serverless budget policy instead,
-# which is what the app's effective_budget_policy_id refers to.
-info "Databricks Apps do not support custom tags — attributing app DBUs"
-info "requires a serverless budget policy:"
-info "  → Settings → Compute → Serverless budget policies → create one tagged app=datamarket"
-info "  → then attach it to '${APP_NAME}' under the app's Settings"
+# No tagging: the SQL warehouse is usually shared, so an app=datamarket tag would
+# label everyone's spend on it as DataMarket's, and it isn't ours to edit.
+# system.billing.usage already identifies each DataMarket resource precisely:
+# app compute by app name, Lakebase by project id, Ask AI by the app's service
+# principal (run_as) whether it calls a model service or the shared endpoint.
+# The table is account-wide, so the workspace filter matters.
+WORKSPACE_ID=$(databricks metastores current --profile "$PROFILE" -o json 2>/dev/null \
+  | python3 -c "import sys,json; print(json.load(sys.stdin).get('workspace_id',''))" 2>/dev/null || true)
+LAKEBASE_UID=$(databricks postgres get-project "projects/${LAKEBASE_PROJECT}" --profile "$PROFILE" -o json 2>/dev/null \
+  | python3 -c "import sys,json; print(json.load(sys.stdin).get('uid',''))" 2>/dev/null || true)
 
-# Tag the SQL Warehouse
-if [[ -n "$WAREHOUSE_ID" ]]; then
-  WH_TAGS_PAYLOAD="{\"tags\":{\"custom_tags\":[{\"key\":\"app\",\"value\":\"datamarket\"},{\"key\":\"purpose\",\"value\":\"data_marketplace\"},{\"key\":\"environment\",\"value\":\"${DEMO_MODE_FLAG:-production}\"}]}}"
-  WH_TAG_RESULT=$(databricks api post "/api/2.0/sql/warehouses/${WAREHOUSE_ID}/edit" \
-    --profile "$PROFILE" \
-    --json "$WH_TAGS_PAYLOAD" 2>&1 || echo "error")
-  if echo "$WH_TAG_RESULT" | grep -qi "error\|INTERNAL"; then
-    warn "Warehouse tagging skipped — apply manually in SQL Warehouse settings"
-    info "  Tag key: app, value: datamarket"
-  else
-    ok "Warehouse ${WAREHOUSE_ID} tagged: app=datamarket"
-  fi
-else
-  info "No warehouse ID — warehouse tagging skipped"
-fi
+info "DataMarket's cost, at list price, from system.billing.usage."
+info "New usage takes a few hours to appear there."
+cat <<QUERY
 
-info "Tags flow into system.billing.usage under the custom_tags column."
-info "Note: Lakebase custom_tags are UI-only (CLI API does not expose the field yet)."
-info "  → Workspace → Lakebase → ${LAKEBASE_PROJECT} → Settings → Custom tags → add app=datamarket"
-info "Note: FMAPI (Ask AI) usage has no taggable resource — filter by sku_name instead."
-info "Full DataMarket spend query:"
-cat <<'QUERY'
-
-  -- Full DataMarket spend across all resource types
-  SELECT usage_date,
-         usage_type,
-         CASE
-           WHEN custom_tags['app'] = 'datamarket'           THEN 'Warehouse'
-           WHEN sku_name LIKE '%LAKEBASE%'                  THEN 'Lakebase (Postgres)'
-           WHEN sku_name LIKE '%FOUNDATION_MODEL%'
-             OR sku_name LIKE '%LLAMA%'
-             OR sku_name LIKE '%PREMIUM_SERVING%'           THEN 'Ask AI (FMAPI)'
-           ELSE 'Other'
+  SELECT u.usage_date,
+         CASE u.billing_origin_product
+           WHEN 'APPS'     THEN 'App compute'
+           WHEN 'LAKEBASE' THEN 'Lakebase'
+           ELSE 'Ask AI'
          END AS resource,
-         SUM(usage_quantity) AS dbus
-  FROM system.billing.usage
-  WHERE (custom_tags['app'] = 'datamarket'
-      OR sku_name LIKE '%LAKEBASE%'
-      OR sku_name LIKE '%FOUNDATION_MODEL%'
-      OR sku_name LIKE '%PREMIUM_SERVING%')
-  GROUP BY 1, 2, 3
-  ORDER BY 1 DESC, dbus DESC;
+         ROUND(SUM(u.usage_quantity), 3)                                   AS dbus,
+         ROUND(SUM(u.usage_quantity * p.pricing.effective_list.default), 2) AS usd_list
+  FROM system.billing.usage u
+  JOIN system.billing.list_prices p
+    ON u.sku_name = p.sku_name AND u.cloud = p.cloud AND u.usage_unit = p.usage_unit
+   AND u.usage_end_time >= p.price_start_time
+   AND (p.price_end_time IS NULL OR u.usage_end_time < p.price_end_time)
+  WHERE u.workspace_id = '${WORKSPACE_ID:-<workspace id>}'
+    AND u.usage_date >= current_date() - 30
+    AND (u.usage_metadata.app_name = '${APP_NAME}'
+         OR u.usage_metadata.project_id = '${LAKEBASE_UID:-<Lakebase project uid>}'
+         OR (u.billing_origin_product = 'MODEL_SERVING'
+             AND u.identity_metadata.run_as = '${SP_UUID:-<app service principal id>}'))
+  GROUP BY ALL
+  ORDER BY u.usage_date DESC, dbus DESC;
 
 QUERY
+info "Not included: the SQL warehouse, which is shared. DataMarket only runs GRANT/REVOKE"
+info "and schema lookups there — see system.query.history WHERE executed_by = the app's service principal."
 
 # ── Ask AI endpoint verification ──────────────────────────────────────────────
 step 11 "Setting up Ask AI"
 
 # Optional: give Ask AI its own AI Gateway model service, so its traffic gets
-# usage tracking, payload logging and a rate limit separate from everyone else
+# usage tracking and payload logging separate from everyone else
 # using the shared foundation model endpoint. This runs as the deploying admin on
 # purpose: creating a service needs CREATE SERVICE, CREATE TABLE and EXECUTE on
 # the model, and a model service queries its destination with its owner's
 # privileges, so the owner should be a person or admin group, not the app.
-# Guardrail policies are left to the customer's governance team.
+# Rate limits and guardrail policies are left to the customer's governance team:
+# the right limits depend on their users and budget, and a wrong default throttles
+# real users or hides a policy decision inside an install script.
 #
 # Catalogs are never created: that usually needs metastore admin and, on older
 # metastores, a managed storage location. The schema is, since it only needs
@@ -1343,7 +1327,6 @@ if [[ -n "$ASK_AI_GATEWAY" ]]; then
       "pay_per_token_config": {"model": "models/${ASK_AI_MODEL}"},
       "traffic_percentage": 100
     }]},
-    "rate_limits": [{"key": "RATE_LIMIT_KEY_SERVICE", "renewal_period": "RATE_LIMIT_RENEWAL_PERIOD_MINUTE", "requests": "60"}],
     "inference_table": {"parent": "schemas/${ASK_AI_GATEWAY}", "table_name_prefix": "ask_ai"}
   }
 }
@@ -1352,7 +1335,8 @@ JSON
       if MS_OUT=$(databricks api post \
            "/api/2.1/unity-catalog/model-services?parent=schemas/${ASK_AI_GATEWAY}&model_service_id=ask_ai" \
            --profile "$PROFILE" --json "$MS_BODY" 2>&1); then
-        ok "Created ${ASK_AI_SERVICE} (payload logging → ${ASK_AI_GATEWAY}.ask_ai_payload, 60 requests/minute)"
+        ok "Created ${ASK_AI_SERVICE} (payload logging → ${ASK_AI_GATEWAY}.ask_ai_payload)"
+        info "  Rate limits and guardrail policies are your governance team's call: Catalog Explorer → the service."
         info "  You own it, and a model service calls the model with its owner's privileges."
         info "  Transfer it to an admin group so Ask AI keeps working if your access changes:"
         info "  Catalog Explorer → ${ASK_AI_SERVICE} → Owner → edit."

@@ -104,7 +104,7 @@ The script runs 11 steps end-to-end with no manual input:
 | 7 | Creates Lakebase schema via `schema.sql`, registers the SP as an OAuth role, applies grants |
 | 8 | Auto-detects a running SQL Warehouse, grants SP `CAN USE` |
 | 9 | Grants SP `USE CATALOG + BROWSE + SELECT` on all Unity Catalog catalogs and schemas |
-| 10 | Tags the App and SQL Warehouse (`app=datamarket`) for spend observability in `system.billing.usage` |
+| 10 | Prints a cost query for this deployment — app compute, Lakebase and Ask AI at list price from `system.billing.usage`. Changes nothing |
 | 11 | Creates Ask AI's AI Gateway model service (unless `--ask-ai-gateway off`) and points the app at it. Then verifies whatever Ask AI uses (model service or serving endpoint) and reports payload logging, rate limits and guardrails. Warns only — never fails the deploy |
 
 After deploy, an onboarding wizard opens in the app. The SQL Warehouse ID is auto-filled from what the script detected — just verify and continue. Its Ask AI step sends a test question and shows what governs Ask AI traffic.
@@ -120,7 +120,6 @@ After deploy, an onboarding wizard opens in the app. The SQL Warehouse ID is aut
 | Lakebase | App SP | `USAGE + CREATE` on schema, `ALL PRIVILEGES` on tables | 7 |
 | SQL Warehouse | App SP | `CAN USE` | 8 |
 | Unity Catalog | App SP | `USE CATALOG + BROWSE + SELECT` on all catalogs/schemas | 9 |
-| Databricks App + Warehouse | — | Tagged `app=datamarket` for cost attribution | 10 |
 | Unity Catalog | End users | `SELECT` on approved tables | via approval flow |
 | Ask AI model service | App SP | `EXECUTE` on the service, `USE SCHEMA` / `USE CATALOG` on its parent | 11 |
 
@@ -131,7 +130,6 @@ After deploy, an onboarding wizard opens in the app. The SQL Warehouse ID is aut
 Every deploy gives Ask AI its own AI Gateway model service, `<catalog>.datamarket_ops.ask_ai`, instead of sharing the workspace's pay-per-token foundation model endpoint with everyone else. It's still pay-per-token, with no idle cost, and comes with:
 
 - **Payload logging** to `<catalog>.datamarket_ops.ask_ai_payload` — every prompt and response Ask AI sends
-- **A rate limit** of 60 requests per minute for the service
 - **Usage** in `system.serving.endpoint_usage` and on the service's Metrics tab, separate from other workloads
 
 The script grants the app `EXECUTE` on the service and sets **Manage → Settings → Ask AI serving endpoint** to it.
@@ -148,9 +146,15 @@ The script grants the app `EXECUTE` on the service and sets **Manage → Setting
 
 **Who runs it:** the person deploying needs `USE CATALOG` and `CREATE SCHEMA` on the catalog (or `USE SCHEMA`, `CREATE SERVICE` and `CREATE TABLE` on an existing schema), and `EXECUTE` on the model. They become the service owner. A model service queries the model with its owner's privileges, so transfer ownership to an admin group afterwards (Catalog Explorer → the service → Owner); the script reminds you.
 
-**Guardrails are not created by the script.** Which sensitive data to detect, and whether to block or mask it, is a policy decision for your governance team: Catalog Explorer → the service → **Policies**. When a policy blocks a question, Ask AI tells the user which policy blocked it and why.
+**Rate limits and guardrails are not set by the script.** How much traffic to allow, which sensitive data to detect, and whether to block or mask it are decisions for your governance team: Catalog Explorer → the service → **Rate limits** / **Policies**. When a policy blocks a question, Ask AI tells the user which policy blocked it and why.
 
-**Doing it by hand instead:** Catalog Explorer → a schema → **Create → Service → Model service**, add payload logging, a rate limit and any policies, grant the app's service principal `EXECUTE` (and `USE SCHEMA` on the schema), then enter `catalog.schema.service` in Settings.
+**Doing it by hand instead:** Catalog Explorer → a schema → **Create → Service → Model service**, add payload logging and any rate limits or policies you want, grant the app's service principal `EXECUTE` (and `USE SCHEMA` on the schema), then enter `catalog.schema.service` in Settings.
+
+---
+
+## What it costs
+
+Step 10 prints a query, already filled in for your workspace, that shows DataMarket's daily cost at list price from `system.billing.usage`. It identifies app compute by app name, Lakebase by project ID, and Ask AI by the app's service principal. Nothing is tagged. New usage takes a few hours to appear. The shared SQL warehouse isn't included: DataMarket only runs grants and schema lookups there (`system.query.history` filtered to the app's service principal shows them).
 
 ---
 
