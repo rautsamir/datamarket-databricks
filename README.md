@@ -1,6 +1,6 @@
 # DataMarket — Self-Service Data Product Marketplace on Databricks
 
-![DataMarket — every data product in one place, with access in minutes instead of weeks](docs/datamarket-thumbnail.png)
+![DataMarket — every data product in one catalog: Unity Catalog, AI/BI dashboards, Genie, ML models, apps, Power BI, Tableau and any other source, with a data dictionary, AI search and governed access](docs/datamarket-thumbnail.png)
 
 A data product marketplace built **entirely on Databricks**: one place to find every report and dataset an organization has, and a governed, audited way to get access to it.
 
