@@ -51,8 +51,15 @@ function normalizeProduct(p) {
     sourceType: p.source_type || 'Databricks',
     reportUrl: p.report_url || null,
     tags,
-    status: p.status || 'Published'
+    status: p.is_active === false && (p.status || 'Published') === 'Published' ? 'Inactive' : (p.status || 'Published')
   }
+}
+
+const statusBadge = {
+  Pending:     { label: 'Pending review', color: 'bg-amber-50 text-amber-700 border-amber-200' },
+  Rejected:    { label: 'Rejected',       color: 'bg-red-50 text-red-700 border-red-200' },
+  Archived:    { label: 'Archived',       color: 'bg-gray-100 text-gray-600 border-gray-200' },
+  Unavailable: { label: 'Table missing',  color: 'bg-gray-100 text-gray-600 border-gray-200' },
 }
 
 // Returns a freshness label + color class based on how recently data was refreshed
@@ -108,6 +115,7 @@ export function DataMarketCatalogPage({ onOpenProduct, onNavigate, initialSearch
   const [loading, setLoading] = useState(true)
   const [showImport, setShowImport] = useState(false)
   const [lakebaseEmpty, setLakebaseEmpty] = useState(false)
+  const [showUnpublished, setShowUnpublished] = useState(false)
 
   // Derive categories dynamically from loaded products so filters always match real data
   const categories = useMemo(() => {
@@ -157,7 +165,10 @@ export function DataMarketCatalogPage({ onOpenProduct, onNavigate, initialSearch
 
   useEffect(() => { loadProducts() }, [currentPersona])
 
+  const unpublishedCount = allProducts.filter(p => p.status !== 'Published').length
+
   const filtered = allProducts.filter(p => {
+    if (p.status !== 'Published' && !showUnpublished) return false
     const words = search.toLowerCase().split(/\s+/).filter(Boolean)
     const matchesSearch = !search || words.every(w =>
       p.name.toLowerCase().includes(w) ||
@@ -189,6 +200,14 @@ export function DataMarketCatalogPage({ onOpenProduct, onNavigate, initialSearch
           </p>
         </div>
         <div className="flex items-center gap-3">
+          {isAdmin && unpublishedCount > 0 && (
+            <label className="flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer select-none">
+              <input type="checkbox" checked={showUnpublished}
+                onChange={e => { setShowUnpublished(e.target.checked); setPage(1) }}
+                className="rounded border-gray-300" />
+              Show unpublished ({unpublishedCount})
+            </label>
+          )}
           {isAdmin && (
             <button
               onClick={() => setShowImport(true)}
@@ -382,7 +401,14 @@ export function DataMarketCatalogPage({ onOpenProduct, onNavigate, initialSearch
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-start justify-between gap-3 flex-wrap">
-                        <h3 className="font-semibold text-gray-900 text-sm group-hover:text-blue-700 transition-colors">{product.name}</h3>
+                        <h3 className="font-semibold text-gray-900 text-sm group-hover:text-blue-700 transition-colors">
+                          {product.name}
+                          {product.status !== 'Published' && (
+                            <span className={`ml-2 align-middle text-[10px] px-1.5 py-0.5 rounded border font-medium ${(statusBadge[product.status] || statusBadge.Archived).color}`}>
+                              {(statusBadge[product.status] || { label: product.status }).label}
+                            </span>
+                          )}
+                        </h3>
                         <div className="flex flex-wrap gap-1 shrink-0">
                           {product.tags.map(tag => (
                             <span key={tag} className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${tagColors[tag] || 'bg-gray-100 text-gray-700'}`}>{tag}</span>

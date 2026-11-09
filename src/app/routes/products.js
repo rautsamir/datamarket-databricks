@@ -70,7 +70,9 @@ export function registerRoutes(app) {
   // ─── Data Products ────────────────────────────────────────────────────────────
   app.get('/api/portal/products', async (req, res) => {
     try {
-      const { domain, type, q, includeAll } = req.query;
+      const { domain, type, q } = req.query;
+      // Unpublished products (pending review, rejected, archived) are for stewards only.
+      const includeAll = req.query.includeAll === 'true' && req.user?.isAdmin === true;
       const cols = await getProductCols();
 
       // Build SELECT — only include optional columns if they exist in this schema
