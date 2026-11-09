@@ -110,10 +110,10 @@ export function DataMarketLibraryPage({ onNavigate, onOpenProduct, initialTab })
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">
-            {isSteward ? 'Product Management' : 'My Data'}
+            {isSteward ? 'Manage your data products' : 'My Data'}
           </h1>
           <p className="text-sm text-gray-500 mt-1">
-            {isSteward ? 'Manage data products, onboard from UC, and configure user roles' : 'Your saved and requested data products'}
+            {isSteward ? 'Review submissions and access requests, import from Unity Catalog, and manage users and settings' : 'Your saved and requested data products'}
           </p>
         </div>
         <div className="flex gap-2">
