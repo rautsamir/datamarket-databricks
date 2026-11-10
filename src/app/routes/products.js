@@ -1,10 +1,13 @@
 import {
   query,
+  getPool,
   getProductCols,
   resetProductColsCache,
   loadSettings,
   getSetting,
 } from '../db.js';
+import { actor } from '../lib/authz.js';
+import { validateRows, urlKey, MAX_ROWS } from '../lib/import-external.js';
 import {
   fetchUcSchema,
   fetchLastDataChange,
@@ -579,6 +582,118 @@ export function registerRoutes(app) {
         hint: 'Set a SQL warehouse in Manage → Settings to browse Unity Catalog.' });
     } catch (e) {
       res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ─── Import products from a file (Power BI, Tableau, anything with a link) ────
+  // Same validation for the preview (dryRun) and the real import, so what a steward
+  // previews is exactly what gets written. Rows are matched on their link: importing
+  // the same export again updates products instead of duplicating them.
+  // Under /api/portal/admin/, so lib/authz.js already makes it admin-only.
+  app.post('/api/portal/admin/import-external', async (req, res) => {
+    const { rows: rawRows, landAs = 'Pending', dryRun = false } = req.body || {};
+    if (!Array.isArray(rawRows) || rawRows.length === 0) return res.status(400).json({ error: 'rows array required' });
+    if (rawRows.length > MAX_ROWS) {
+      return res.status(400).json({ error: `Import up to ${MAX_ROWS} rows at a time (this file has ${rawRows.length}).` });
+    }
+    if (!['Pending', 'Published'].includes(landAs)) return res.status(400).json({ error: 'landAs must be Pending or Published' });
+
+    let client;
+    try {
+      const cols = await getProductCols();
+      if (!cols.has('product_url')) {
+        return res.status(409).json({ error: 'This database has no product_url column yet. Redeploy the app so its migrations run, then try again.' });
+      }
+
+      const { rows: existingRows } = await query(
+        `SELECT product_ref, product_url, COALESCE(status,'Published') AS status
+           FROM data_products WHERE product_url IS NOT NULL AND product_url <> ''`);
+      const existing = new Map();
+      for (const r of existingRows) {
+        const k = urlKey(r.product_url);
+        if (k && !existing.has(k)) existing.set(k, r);
+      }
+      const statusByRef = new Map(existingRows.map(r => [r.product_ref, r.status]));
+      const { rows: domainRows } = await query(`SELECT DISTINCT domain FROM data_products WHERE domain IS NOT NULL`);
+
+      const { rows: checked, summary } = validateRows(rawRows, { existing, knownDomains: domainRows.map(r => r.domain) });
+      const toClient = r => ({
+        rowNumber: r.rowNumber, name: r.name, link: r.link, sourceType: r.sourceType, action: r.action,
+        matchRef: r.matchRef, existingStatus: r.matchRef ? statusByRef.get(r.matchRef) : undefined,
+        problems: r.problems, warnings: r.warnings,
+      });
+
+      if (dryRun) return res.json({ dryRun: true, landAs, summary, rows: checked.map(toClient) });
+
+      const todo = checked.filter(r => r.action !== 'skip');
+      if (!todo.length) return res.status(422).json({ error: 'No valid rows to import.', summary, rows: checked.map(toClient) });
+
+      const live = landAs === 'Published';
+      const hasSourceType = cols.has('source_type');
+      const outcome = new Map();
+
+      client = await (await getPool()).connect();
+      await client.query('BEGIN');
+      // One import at a time, so two stewards can't be handed the same product number.
+      await client.query('SELECT pg_advisory_xact_lock(7314001)');
+      const { rows: [maxRow] } = await client.query(
+        `SELECT MAX(CAST(SUBSTRING(product_ref FROM 4) AS INTEGER)) AS max_id FROM data_products`);
+      let nextId = (maxRow.max_id || 12) + 1;
+
+      for (const r of todo) {
+        const p = r.product;
+        if (r.action === 'create') {
+          const ref = `DP-${String(nextId++).padStart(3, '0')}`;
+          // uc_full_name stays empty on purpose: it is what approval runs GRANT SELECT against,
+          // and for an external report the owner grants access in the source tool.
+          const fields = ['product_ref', 'display_name', 'description', 'type', 'source_system', 'tags', 'refresh_frequency',
+            'owner_email', 'classification', 'uc_full_name', 'domain', 'is_active', 'status', 'product_url'];
+          const values = [ref, p.name, p.description, p.type, p.sourceType, p.tags, p.refreshFrequency,
+            p.ownerEmail, p.classification, '', p.domain, live, landAs, p.link];
+          if (hasSourceType) { fields.push('source_type'); values.push(p.sourceType); }
+          await client.query(
+            `INSERT INTO data_products (${fields.join(', ')}) VALUES (${values.map((_, i) => `$${i + 1}`).join(', ')})`, values);
+          outcome.set(r.rowNumber, ref);
+        } else {
+          // Update only what the file actually said. Status and visibility are never touched.
+          const sets = ['display_name', 'type', 'source_system', 'product_url'];
+          const values = [p.name, p.type, p.sourceType, p.link];
+          const add = (col, val) => { values.push(val); sets.push(col); };
+          if (hasSourceType) add('source_type', p.sourceType);
+          if (p.provided.description)      add('description', p.description);
+          if (p.provided.ownerEmail)       add('owner_email', p.ownerEmail);
+          if (p.provided.domain)           add('domain', p.domain);
+          if (p.provided.classification)   add('classification', p.classification);
+          if (p.provided.refreshFrequency) add('refresh_frequency', p.refreshFrequency);
+          const assignments = sets.map((c, i) => `${c} = $${i + 1}`);
+          values.push(p.tags);
+          assignments.push(`tags = ARRAY(SELECT DISTINCT unnest(COALESCE(tags, '{}'::text[]) || $${values.length}::text[]))`);
+          assignments.push('updated_at = NOW()');
+          values.push(r.matchRef);
+          await client.query(`UPDATE data_products SET ${assignments.join(', ')} WHERE product_ref = $${values.length}`, values);
+          outcome.set(r.rowNumber, r.matchRef);
+        }
+      }
+      await client.query('COMMIT');
+
+      try {
+        await query(
+          `INSERT INTO audit_log (event_type, actor_email, target_name, metadata)
+           VALUES ('PRODUCTS_IMPORTED', $1, $2, $3)`,
+          [actor(req), `${summary.create} added, ${summary.update} updated`,
+           JSON.stringify({ added: summary.create, updated: summary.update, skipped: summary.skip, landAs })]);
+      } catch (_) { /* audit is best effort */ }
+
+      res.json({
+        dryRun: false, landAs, summary,
+        rows: checked.map(r => ({ ...toClient(r), productRef: outcome.get(r.rowNumber) })),
+      });
+    } catch (e) {
+      if (client) { try { await client.query('ROLLBACK'); } catch (_) {} }
+      console.error('[POST /api/portal/admin/import-external]', e.message);
+      res.status(500).json({ error: e.message });
+    } finally {
+      if (client) client.release();
     }
   });
 

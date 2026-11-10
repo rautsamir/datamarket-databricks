@@ -6,6 +6,7 @@ import { useAppConfig } from '../context/AppConfigContext'
 import { AdminSettingsPanel, AdminDemoControlsPanel } from './admin/AdminSettingsPanel'
 import { AdminUsersTab } from './admin/AdminUsersTab'
 import { AdminProductsTab } from './admin/AdminProductsTab'
+import { AdminImportPanel } from './admin/AdminImportPanel'
 import { AdminApprovalsTab } from './admin/AdminApprovalsTab'
 import { AnalystMyDataView } from './admin/AnalystMyDataView'
 import { DataMarket_BLUE } from './admin/adminConstants'
@@ -95,6 +96,7 @@ export function DataMarketLibraryPage({ onNavigate, onOpenProduct, initialTab })
     ? [
         { id: 'Data Products',    icon: Package,       label: 'Data Products',    desc: 'All registered products',         activeColor: 'bg-blue-600 text-white border-blue-600',     countColor: 'bg-blue-500 text-white' },
         { id: 'Manage Approvals', icon: ShieldCheck,   label: 'Manage Approvals', desc: 'Review access requests',          activeColor: 'bg-amber-500 text-white border-amber-500',   countColor: 'bg-red-500 text-white' },
+        { id: 'Import',           icon: Upload,        label: 'Import',           desc: 'Add many from a file',            activeColor: 'bg-teal-600 text-white border-teal-600',     countColor: 'bg-teal-500 text-white' },
         { id: 'Users',            icon: Users,         label: 'Users',            desc: 'Manage user roles',               activeColor: 'bg-purple-600 text-white border-purple-600', countColor: 'bg-purple-500 text-white' },
         { id: 'Settings',         icon: Settings,      label: 'Settings',         desc: 'Configure portal',                activeColor: 'bg-gray-700 text-white border-gray-700',     countColor: 'bg-gray-500 text-white' },
         { id: 'My Data',          icon: FolderOpen,    label: 'My Data',          desc: 'Your personal access & products', activeColor: 'bg-emerald-600 text-white border-emerald-600', countColor: 'bg-emerald-500 text-white' },
@@ -187,6 +189,9 @@ export function DataMarketLibraryPage({ onNavigate, onOpenProduct, initialTab })
       </div>
 
       {/* ── Admin Tabs ────────────────────────────────────────────────────────── */}
+      {activeTab === 'Import' && isSteward && (
+        <AdminImportPanel onImported={loadAllProducts} onViewProducts={() => setActiveTab('Data Products')} />
+      )}
       {activeTab === 'Users' && isSteward && <AdminUsersTab />}
       {activeTab === 'Settings' && isSteward && <AdminSettingsPanel />}
       {activeTab === 'Demo Controls' && isSteward && demoMode && <AdminDemoControlsPanel />}

@@ -44,7 +44,8 @@ app.use(helmet({
 }));
 app.use(compression());
 app.use(cors());
-app.use(express.json());
+// 2 MB leaves room for a 500-row file import; Express's 100 KB default would reject it.
+app.use(express.json({ limit: '2mb' }));
 app.use(express.static(DIST_DIR));
 app.use('/public', express.static(path.join(__dirname, 'public')));
 
