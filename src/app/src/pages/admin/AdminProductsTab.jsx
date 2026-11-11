@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { Search, Edit3, Check, X, ExternalLink, Link2, Database, AlertTriangle, CheckCircle2, Trash2 } from 'lucide-react'
+import { Search, Edit3, Check, X, ExternalLink, Link2, Database, AlertTriangle, CheckCircle2, Trash2, RefreshCw } from 'lucide-react'
 import { statusConfig } from './adminConstants'
 
 // ─── Inline Edit Row for Product ───────────────────────────────────────────────
@@ -66,7 +66,7 @@ function ProductEditRow({ product, onSave, onCancel }) {
 
 export function AdminProductsTab({
   allProducts, filteredProducts, loadingProducts, productsError,
-  syncResult, editingRef, setEditingRef, loadAllProducts,
+  syncResult, syncing, onSync, editingRef, setEditingRef, loadAllProducts,
   search, setSearch, onNavigate, fromRequests, persona, activeTab,
 }) {
   return (
@@ -75,7 +75,7 @@ export function AdminProductsTab({
       {syncResult && !syncResult.error && (
         <div className="mb-3 px-4 py-2.5 rounded-lg bg-emerald-50 border border-emerald-200 text-sm text-emerald-800 flex items-center gap-2">
           <CheckCircle2 className="h-4 w-4 shrink-0" />
-          Sync complete — {syncResult.synced} refreshed, {syncResult.unavailable} marked unavailable
+          Refreshed from Unity Catalog: {syncResult.synced} updated, {syncResult.unavailable} marked unavailable
         </div>
       )}
       {syncResult?.error && (
@@ -90,10 +90,23 @@ export function AdminProductsTab({
           </span>
         </div>
       )}
-      <div className="relative mb-4 max-w-sm">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-        <input type="text" placeholder="Search products" value={search} onChange={e => setSearch(e.target.value)}
-          className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+      <div className="mb-4 flex items-center gap-3">
+        <div className="relative flex-1 max-w-sm">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+          <input type="text" placeholder="Search products" value={search} onChange={e => setSearch(e.target.value)}
+            className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+        </div>
+        {onSync && (
+          <button
+            onClick={onSync}
+            disabled={syncing}
+            title="Update last-updated dates from Unity Catalog and flag products whose tables were removed"
+            className="ml-auto flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+          >
+            <RefreshCw className={`h-4 w-4 ${syncing ? 'animate-spin' : ''}`} />
+            {syncing ? 'Refreshing…' : 'Refresh from UC'}
+          </button>
+        )}
       </div>
 
       {activeTab === 'Data Products' && (

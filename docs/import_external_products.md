@@ -2,7 +2,7 @@
 
 Register many reports and dashboards at once: Power BI, Tableau, Looker, or anything that has a link. This is the quickest way to put non-Unity-Catalog content into the catalog, and it works for every tool because the file is the same no matter where it came from.
 
-**Where:** Manage → **Import** (stewards and admins only).
+**Where:** Manage → **Add products** → **Import from a file** (stewards and admins only).
 
 ## How it works
 
@@ -49,7 +49,7 @@ Approving a request for an imported product is **recorded in DataMarket**, but D
 
 ### Power BI, as yourself (no admin needed)
 
-`samples/export_powerbi_reports.py` lists the reports in the workspaces you belong to and writes a file the Import tab accepts.
+`samples/export_powerbi_reports.py` lists the reports in the workspaces you belong to and writes a file that "Import from a file" accepts.
 
 ```bash
 az login                       # the account you use for app.powerbi.com
@@ -83,7 +83,7 @@ Most tools can export a list of reports to CSV or Excel. Save it as CSV, make su
 
 ## Sample file
 
-`samples/external-products-sample.csv` is a synthetic file of 20 rows: 15 that import cleanly (Power BI, Tableau, Looker and a generic link) and 5 that are skipped on purpose, one for each kind of problem. Use it to try the Import tab without touching real content.
+`samples/external-products-sample.csv` is a synthetic file of 20 rows: 15 that import cleanly (Power BI, Tableau, Looker and a generic link) and 5 that are skipped on purpose, one for each kind of problem. Use it to try the import without touching real content.
 
 ## For deployers
 

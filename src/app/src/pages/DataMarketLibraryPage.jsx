@@ -1,20 +1,73 @@
-import React, { useState, useEffect, useCallback } from 'react'
-import { Plus, Upload, Users, FolderOpen, ShieldCheck, Settings, Package, Clock, RotateCcw, RefreshCw } from 'lucide-react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
+import { Plus, Users, FolderOpen, ShieldCheck, Settings, Package, Clock, ChevronDown, Database, FileUp, FilePlus } from 'lucide-react'
 import { usePersona } from '../context/PersonaContext'
 import { ImportUCModal } from '../components/ImportUCModal'
+import { ImportFileModal } from '../components/ImportFileModal'
 import { useAppConfig } from '../context/AppConfigContext'
-import { AdminSettingsPanel, AdminDemoControlsPanel } from './admin/AdminSettingsPanel'
+import { AdminSettingsPanel } from './admin/AdminSettingsPanel'
 import { AdminUsersTab } from './admin/AdminUsersTab'
 import { AdminProductsTab } from './admin/AdminProductsTab'
-import { AdminImportPanel } from './admin/AdminImportPanel'
 import { AdminApprovalsTab } from './admin/AdminApprovalsTab'
 import { AnalystMyDataView } from './admin/AnalystMyDataView'
 import { DataMarket_BLUE } from './admin/adminConstants'
 
+// ─── "Add products" menu: every way a product gets into the catalog ────────────
+function AddProductsMenu({ onImportUC, onImportFile, onRegister }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef(null)
+
+  useEffect(() => {
+    if (!open) return
+    const onClick = e => { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
+    const onKey = e => { if (e.key === 'Escape') setOpen(false) }
+    document.addEventListener('mousedown', onClick)
+    document.addEventListener('keydown', onKey)
+    return () => { document.removeEventListener('mousedown', onClick); document.removeEventListener('keydown', onKey) }
+  }, [open])
+
+  const items = [
+    { icon: Database, label: 'Import from Unity Catalog', desc: 'Pick tables to publish as products', onClick: onImportUC },
+    { icon: FileUp,   label: 'Import from a file',        desc: 'Power BI, Tableau, Looker or any link, from CSV or JSON', onClick: onImportFile },
+    { icon: FilePlus, label: 'Register one product',      desc: 'Fill in a form', onClick: onRegister },
+  ]
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white"
+        style={{ backgroundColor: DataMarket_BLUE }}
+      >
+        <Plus className="h-4 w-4" /> Add products <ChevronDown className={`h-4 w-4 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && (
+        <div role="menu" className="absolute right-0 mt-2 w-80 bg-white border border-gray-200 rounded-xl shadow-lg py-1.5 z-30">
+          {items.map(({ icon: Icon, label, desc, onClick }) => (
+            <button
+              key={label}
+              role="menuitem"
+              onClick={() => { setOpen(false); onClick() }}
+              className="w-full text-left px-4 py-2.5 hover:bg-gray-50 flex items-start gap-3"
+            >
+              <Icon className="h-4 w-4 mt-0.5 text-gray-500 shrink-0" />
+              <span>
+                <span className="block text-sm font-medium text-gray-900">{label}</span>
+                <span className="block text-xs text-gray-500">{desc}</span>
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Main Library Page ─────────────────────────────────────────────────────────
 export function DataMarketLibraryPage({ onNavigate, onOpenProduct, initialTab }) {
   const { myRequests, persona, pendingRequests, isAdmin, apiAvailable, products: catalogProducts } = usePersona()
-  const { demoMode, databricksHost } = useAppConfig()
+  const { databricksHost } = useAppConfig()
   const isSteward = isAdmin
   const [search, setSearch] = useState('')
   const [activeTab, setActiveTab] = useState(initialTab || (isSteward ? 'Data Products' : 'Data Product'))
@@ -24,6 +77,7 @@ export function DataMarketLibraryPage({ onNavigate, onOpenProduct, initialTab })
   const [productsError, setProductsError] = useState(null)
   const [editingRef, setEditingRef] = useState(null)
   const [showImport, setShowImport] = useState(false)
+  const [showFileImport, setShowFileImport] = useState(false)
   const [syncing, setSyncing] = useState(false)
   const [syncResult, setSyncResult] = useState(null)
 
@@ -88,6 +142,17 @@ export function DataMarketLibraryPage({ onNavigate, onOpenProduct, initialTab })
 
   const pendingApprovalCount = pendingRequests?.length || 0
 
+  const syncFromUC = async () => {
+    setSyncing(true); setSyncResult(null)
+    try {
+      const r = await fetch('/api/portal/admin/sync-uc-metadata', { method: 'POST' })
+      setSyncResult(await r.json())
+      loadAllProducts()
+      setTimeout(() => setSyncResult(null), 5000)
+    } catch (e) { setSyncResult({ error: e.message }) }
+    finally { setSyncing(false) }
+  }
+
   const tabCounts = isSteward
     ? { 'Data Products': allProducts.length, 'Manage Approvals': pendingApprovalCount || null, 'Users': null, 'Settings': null }
     : { 'Data Product': analystItems.filter(i => i.status === 'Approved').length, 'Request': analystItems.length }
@@ -96,11 +161,9 @@ export function DataMarketLibraryPage({ onNavigate, onOpenProduct, initialTab })
     ? [
         { id: 'Data Products',    icon: Package,       label: 'Data Products',    desc: 'All registered products',         activeColor: 'bg-blue-600 text-white border-blue-600',     countColor: 'bg-blue-500 text-white' },
         { id: 'Manage Approvals', icon: ShieldCheck,   label: 'Manage Approvals', desc: 'Review access requests',          activeColor: 'bg-amber-500 text-white border-amber-500',   countColor: 'bg-red-500 text-white' },
-        { id: 'Import',           icon: Upload,        label: 'Import',           desc: 'Add many from a file',            activeColor: 'bg-teal-600 text-white border-teal-600',     countColor: 'bg-teal-500 text-white' },
         { id: 'Users',            icon: Users,         label: 'Users',            desc: 'Manage user roles',               activeColor: 'bg-purple-600 text-white border-purple-600', countColor: 'bg-purple-500 text-white' },
         { id: 'Settings',         icon: Settings,      label: 'Settings',         desc: 'Configure portal',                activeColor: 'bg-gray-700 text-white border-gray-700',     countColor: 'bg-gray-500 text-white' },
         { id: 'My Data',          icon: FolderOpen,    label: 'My Data',          desc: 'Your personal access & products', activeColor: 'bg-emerald-600 text-white border-emerald-600', countColor: 'bg-emerald-500 text-white' },
-        ...(demoMode ? [{ id: 'Demo Controls', icon: RotateCcw, label: 'Demo Controls', desc: 'Reset or reload demo data', activeColor: 'bg-rose-600 text-white border-rose-600', countColor: 'bg-rose-500 text-white' }] : []),
       ]
     : [
         { id: 'Data Product', icon: FolderOpen, label: 'My Products',  desc: 'Data you have access to',  activeColor: 'bg-emerald-600 text-white border-emerald-600', countColor: 'bg-emerald-500 text-white' },
@@ -115,39 +178,16 @@ export function DataMarketLibraryPage({ onNavigate, onOpenProduct, initialTab })
             {isSteward ? 'Manage your data products' : 'My Data'}
           </h1>
           <p className="text-sm text-gray-500 mt-1">
-            {isSteward ? 'Review submissions and access requests, import from Unity Catalog, and manage users and settings' : 'Your saved and requested data products'}
+            {isSteward ? 'Add and curate products, review access requests, and manage users and settings' : 'Your saved and requested data products'}
           </p>
         </div>
-        <div className="flex gap-2">
-          {isSteward && (
-            <button
-              onClick={() => setShowImport(true)}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium border-2 border-dashed border-gray-300 text-gray-600 hover:border-blue-400 hover:text-blue-700 transition-colors"
-            >
-              <Upload className="h-4 w-4" /> Import from UC
-            </button>
-          )}
-          {isSteward && (
-            <button
-              onClick={async () => {
-                setSyncing(true); setSyncResult(null)
-                try {
-                  const r = await fetch('/api/portal/admin/sync-uc-metadata', { method: 'POST' })
-                  const d = await r.json()
-                  setSyncResult(d)
-                  loadAllProducts()
-                  setTimeout(() => setSyncResult(null), 5000)
-                } catch (e) { setSyncResult({ error: e.message }) }
-                finally { setSyncing(false) }
-              }}
-              disabled={syncing}
-              title="Re-sync last_refreshed dates and mark removed tables Unavailable"
-              className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-50 transition-colors"
-            >
-              <RefreshCw className={`h-4 w-4 ${syncing ? 'animate-spin' : ''}`} />
-              {syncing ? 'Syncing…' : 'Sync from UC'}
-            </button>
-          )}
+        {isSteward ? (
+          <AddProductsMenu
+            onImportUC={() => setShowImport(true)}
+            onImportFile={() => setShowFileImport(true)}
+            onRegister={() => onNavigate('register')}
+          />
+        ) : (
           <button
             onClick={() => onNavigate('register')}
             className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white"
@@ -155,7 +195,7 @@ export function DataMarketLibraryPage({ onNavigate, onOpenProduct, initialTab })
           >
             <Plus className="h-4 w-4" /> Register Product
           </button>
-        </div>
+        )}
       </div>
 
       {/* ── Pill Tabs ─────────────────────────────────────────────────────────── */}
@@ -189,12 +229,8 @@ export function DataMarketLibraryPage({ onNavigate, onOpenProduct, initialTab })
       </div>
 
       {/* ── Admin Tabs ────────────────────────────────────────────────────────── */}
-      {activeTab === 'Import' && isSteward && (
-        <AdminImportPanel onImported={loadAllProducts} onViewProducts={() => setActiveTab('Data Products')} />
-      )}
       {activeTab === 'Users' && isSteward && <AdminUsersTab />}
       {activeTab === 'Settings' && isSteward && <AdminSettingsPanel />}
-      {activeTab === 'Demo Controls' && isSteward && demoMode && <AdminDemoControlsPanel />}
       {activeTab === 'Manage Approvals' && isSteward && (
         <AdminApprovalsTab onSwitchToSettings={() => setActiveTab('Settings')} />
       )}
@@ -205,6 +241,8 @@ export function DataMarketLibraryPage({ onNavigate, onOpenProduct, initialTab })
           loadingProducts={loadingProducts}
           productsError={productsError}
           syncResult={syncResult}
+          syncing={syncing}
+          onSync={syncFromUC}
           editingRef={editingRef}
           setEditingRef={setEditingRef}
           loadAllProducts={loadAllProducts}
@@ -231,6 +269,13 @@ export function DataMarketLibraryPage({ onNavigate, onOpenProduct, initialTab })
 
       {showImport && (
         <ImportUCModal onClose={() => setShowImport(false)} onImported={loadAllProducts} />
+      )}
+      {showFileImport && (
+        <ImportFileModal
+          onClose={() => setShowFileImport(false)}
+          onImported={loadAllProducts}
+          onViewProducts={() => { setShowFileImport(false); setActiveTab('Data Products') }}
+        />
       )}
     </div>
   )

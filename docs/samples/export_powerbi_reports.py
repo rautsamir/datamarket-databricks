@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 List the Power BI reports you can see and write them to a CSV that DataMarket's
-Import tab accepts.
+"Import from a file" accepts (Manage -> Add products).
 
     az login
     python3 export_powerbi_reports.py                  # writes powerbi-reports.csv

@@ -29,7 +29,7 @@ export function AdminDemoControlsPanel() {
   }
 
   return (
-    <div className="max-w-xl space-y-6">
+    <div className="grid sm:grid-cols-2 gap-4">
       <div className="bg-rose-50 border border-rose-200 rounded-xl p-5">
         <h3 className="font-semibold text-rose-800 mb-1 flex items-center gap-2">
           <RotateCcw className="h-4 w-4" /> Reset Demo Data
@@ -72,8 +72,6 @@ export function AdminDemoControlsPanel() {
         {seedState === 'done'    && <span className="flex items-center gap-2 text-sm text-emerald-600 font-medium"><CheckCircle2 className="h-4 w-4" /> {seedCounts ? `Loaded — ${seedCounts.products} products, ${seedCounts.users} users` : 'Loaded'}</span>}
         {seedState === 'error'   && <span className="text-sm text-red-600">Seed failed — check app logs.</span>}
       </div>
-
-      <p className="text-xs text-gray-400">Demo Controls are only visible when <code className="font-mono bg-gray-100 px-1 rounded">DEMO_MODE=true</code>.</p>
     </div>
   )
 }
@@ -423,6 +421,16 @@ export function AdminSettingsPanel() {
         {saved && <span className="text-sm text-green-600 flex items-center gap-1"><Check className="h-4 w-4" /> Saved — changes are live</span>}
         {error && <span className="text-sm text-red-600">{error}</span>}
       </div>
+
+      {demoMode && (
+        <div className="pt-6 border-t border-gray-200">
+          <h3 className="text-sm font-semibold text-gray-900">Demo data</h3>
+          <p className="text-xs text-gray-500 mt-0.5 mb-4">
+            Shown only in demo mode. Clear activity before a live demo, or load sample products into an empty catalog.
+          </p>
+          <AdminDemoControlsPanel />
+        </div>
+      )}
     </div>
   )
 }
