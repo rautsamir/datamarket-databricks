@@ -33,6 +33,7 @@ export function registerRoutes(app) {
       let sql = `SELECT ar.request_id, ar.request_ref, ar.status, ar.business_reason, ar.access_level,
                         ar.requested_at, ar.resolved_at, ar.expires_at, ar.denial_reason, ar.uc_grant_sql,
                         dp.product_ref, dp.display_name AS product_name, dp.domain, dp.type AS product_type,
+                        dp.uc_full_name,
                         u.email AS requester_email, u.display_name AS requester_name, u.department AS requester_team
                  FROM access_requests ar
                  JOIN data_products dp ON dp.product_id = ar.product_id

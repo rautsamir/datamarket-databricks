@@ -8,19 +8,22 @@ const DataMarket_BLUE = '#003865'
 function UCGrantPanel({ request, action }) {
   const [open, setOpen] = useState(false)
 
-  const grantSQL = request.ucGrantSql || `-- Unity Catalog RBAC — executed automatically on approval
-GRANT SELECT ON TABLE <your_catalog>.<your_schema>.<your_table>
-  TO \`${request.requesterEmail}\`;
+  // The statement shown is the one approval will run (or did run). With no Unity Catalog
+  // table linked, approval runs no grant at all, so say that instead of showing a template.
+  const table = request.ucFullName
+  const linked = !!table
+  const grantSQL = request.ucGrantSql || (linked
+    ? `-- Runs when you approve\nGRANT SELECT ON TABLE ${table}\n  TO \`${request.requesterEmail}\`;`
+    : null)
+  const revokeSQL = linked
+    ? `-- Runs on revoke or after 90 days\nREVOKE SELECT ON TABLE ${table}\n  FROM \`${request.requesterEmail}\`;`
+    : null
 
--- Verify the grant was applied
-SHOW GRANTS ON TABLE <your_catalog>.<your_schema>.<your_table>;`
-
-  const revokeSQL = `-- Unity Catalog RBAC — executed automatically on denial
-REVOKE SELECT ON TABLE <your_catalog>.<your_schema>.<your_table>
-  FROM \`${request.requesterEmail}\`;`
-
-  // Pending requests always preview the GRANT that will be executed on approval
-  const sql = action === 'Denied' || action === 'Revoked' ? revokeSQL : grantSQL
+  const denied = action === 'Denied'
+  const sql = denied ? null : (action === 'Revoked' ? revokeSQL : grantSQL)
+  const noTableMessage = denied
+    ? 'Denied. No grant was issued.'
+    : 'No Unity Catalog table is linked to this product, so approving it runs no grant.\nIt records the decision. Access is governed by the source tool (for example Power BI).'
 
   return (
     <div className="mt-3">
@@ -29,7 +32,7 @@ REVOKE SELECT ON TABLE <your_catalog>.<your_schema>.<your_table>
         className="flex items-center gap-2 text-xs font-medium text-gray-500 hover:text-gray-800 transition-colors"
       >
         <Terminal className="h-3.5 w-3.5" />
-        {open ? 'Hide' : 'Show'} UC GRANT statement
+        {open ? 'Hide' : 'Show'} {linked && !denied ? 'UC GRANT statement' : 'what approval does'}
         {open ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
       </button>
       {open && (
@@ -38,9 +41,9 @@ REVOKE SELECT ON TABLE <your_catalog>.<your_schema>.<your_table>
             <div className="w-2 h-2 rounded-full bg-red-400" />
             <div className="w-2 h-2 rounded-full bg-yellow-400" />
             <div className="w-2 h-2 rounded-full bg-green-400" />
-            <span className="text-gray-400 text-[10px] ml-2">Unity Catalog — your_catalog</span>
+            <span className="text-gray-400 text-[10px] ml-2">{linked ? `Unity Catalog — ${table}` : 'No Unity Catalog table linked'}</span>
           </div>
-          <pre className="text-xs font-mono whitespace-pre text-green-400 leading-relaxed">{sql}</pre>
+          <pre className={`text-xs font-mono whitespace-pre-wrap leading-relaxed ${sql ? 'text-green-400' : 'text-gray-300'}`}>{sql || noTableMessage}</pre>
         </div>
       )}
     </div>
