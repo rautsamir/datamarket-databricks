@@ -72,7 +72,8 @@ function norm(r) {
 export function DataMarketAdminPage({ embedded = false }) {
   const { requests, approveRequest, denyRequest, revokeRequest, currentPersona, isAdmin } = usePersona()
   const { demoMode } = useAppConfig()
-  const [filter, setFilter] = useState(embedded ? 'Approved' : 'Pending')
+  // Pending is the action queue, so always land there — even when embedded in Manage.
+  const [filter, setFilter] = useState('Pending')
   const [activeView, setActiveView] = useState('access') // 'access' | 'products'
   const [denyModal, setDenyModal] = useState(null)
   const [denyReason, setDenyReason] = useState('')
