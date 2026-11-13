@@ -29,7 +29,10 @@ export async function databricksApi(method, apiPath, body = null) {
 
 // ─── RFA: Send access request notification to configured destinations ────────
 export async function rfaNotify(ucFullName, requesterEmail, comment) {
-  if (!RFA_ENABLED || !ucFullName) return null;
+  if (!ucFullName) return null;
+  // The Settings toggle wins over RFA_ENABLED; reload so a just-saved toggle applies.
+  await loadSettings();
+  if (getSetting('rfa_enabled', String(RFA_ENABLED)) !== 'true') return null;
   try {
     const parts = ucFullName.split('.');
     if (parts.length < 3) return null;

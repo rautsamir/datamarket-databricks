@@ -316,7 +316,7 @@ export function AdminSettingsPanel() {
         <div className="flex items-start justify-between gap-4">
           <div>
             <p className="text-sm font-medium text-gray-700">RFA Notifications</p>
-            <p className="text-xs text-gray-400 mt-0.5">Send Databricks RFA access-request notifications when a user requests access.</p>
+            <p className="text-xs text-gray-400 mt-0.5">When someone requests a product backed by a Unity Catalog table, also file a Databricks access request so the table's configured RFA destinations are notified. Works in demo mode too.</p>
           </div>
           {toggle('rfa_enabled')}
         </div>
