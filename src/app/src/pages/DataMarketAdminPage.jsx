@@ -12,11 +12,13 @@ function UCGrantPanel({ request, action }) {
   // table linked, approval runs no grant at all, so say that instead of showing a template.
   const table = request.ucFullName
   const linked = !!table
-  const grantSQL = request.ucGrantSql || (linked
-    ? `-- Runs when you approve\nGRANT SELECT ON TABLE ${table}\n  TO \`${request.requesterEmail}\`;`
+  const parts = linked ? table.split('.') : []
+  const grantSQL = request.ucGrantSql || (parts.length === 3
+    ? `-- Runs when you approve (USE so the table is visible, SELECT so it is readable)\nGRANT USE CATALOG ON CATALOG \`${parts[0]}\` TO \`${request.requesterEmail}\`;\nGRANT USE SCHEMA ON SCHEMA \`${parts[0]}\`.\`${parts[1]}\` TO \`${request.requesterEmail}\`;\nGRANT SELECT ON TABLE \`${parts[0]}\`.\`${parts[1]}\`.\`${parts[2]}\` TO \`${request.requesterEmail}\`;`
     : null)
-  const revokeSQL = linked
-    ? `-- Runs on revoke or after 90 days\nREVOKE SELECT ON TABLE ${table}\n  FROM \`${request.requesterEmail}\`;`
+  // Only SELECT is revoked. Parent USE privileges stay so other approved products in the same schema keep working.
+  const revokeSQL = parts.length === 3
+    ? `-- Runs on revoke or after 90 days\nREVOKE SELECT ON TABLE \`${parts[0]}\`.\`${parts[1]}\`.\`${parts[2]}\` FROM \`${request.requesterEmail}\`;`
     : null
 
   const denied = action === 'Denied'

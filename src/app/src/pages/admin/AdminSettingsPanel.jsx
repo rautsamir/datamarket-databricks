@@ -300,7 +300,7 @@ export function AdminSettingsPanel() {
         <div className={`rounded-lg px-4 py-2.5 text-xs border flex items-center gap-2 ${form.sql_warehouse_id ? 'bg-emerald-50 border-emerald-100' : 'bg-amber-50 border-amber-100'}`}>
           <span className={`w-2 h-2 rounded-full shrink-0 ${form.sql_warehouse_id ? 'bg-emerald-400' : 'bg-amber-400'}`} />
           {form.sql_warehouse_id
-            ? <span className="text-emerald-700 font-medium">UC grants enabled — GRANT SELECT will execute on approval</span>
+            ? <span className="text-emerald-700 font-medium">UC grants enabled — USE CATALOG, USE SCHEMA, and SELECT run on approval</span>
             : <span className="text-amber-700">UC grants disabled — approvals are logged but no UC permissions are set</span>
           }
         </div>
@@ -315,8 +315,8 @@ export function AdminSettingsPanel() {
         <h3 className="font-semibold text-gray-900 text-sm uppercase tracking-wide">Mode</h3>
         <div className="flex items-start justify-between gap-4">
           <div>
-            <p className="text-sm font-medium text-gray-700">RFA Notifications</p>
-            <p className="text-xs text-gray-400 mt-0.5">When someone requests a product backed by a Unity Catalog table, also file a Databricks access request so the table's configured RFA destinations are notified. Works in demo mode too.</p>
+            <p className="text-sm font-medium text-gray-700">Also notify Unity Catalog owners</p>
+            <p className="text-xs text-gray-400 mt-0.5">Optional. Files a Databricks Request for Access so the table's owners get an email. They can approve outside DataMarket, which bypasses this app's audit trail and 90-day expiry. Leave off unless you want that parallel path. Off by default.</p>
           </div>
           {toggle('rfa_enabled')}
         </div>

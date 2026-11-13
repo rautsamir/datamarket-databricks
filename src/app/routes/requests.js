@@ -1,16 +1,23 @@
 import { query } from '../db.js';
-import { rfaNotify, executeUcStatement } from '../databricks.js';
+import { rfaNotify, executeUcStatement, executeUcStatements } from '../databricks.js';
 import { actor } from '../lib/authz.js';
+import { buildAccessGrantSql, buildAccessRevokeSql } from '../lib/uc-grants.js';
 
 /** Revokes approved grants past expires_at so the 90-day window is enforced in UC, not just hidden in the UI. */
 export async function expireAccess() {
   const { rows } = await query(`
-    SELECT request_id, request_ref, uc_grant_sql FROM access_requests
-    WHERE status = 'Approved' AND expires_at IS NOT NULL AND expires_at < NOW()`);
+    SELECT ar.request_id, ar.request_ref, ar.uc_grant_sql,
+           dp.uc_full_name, u.email AS requester_email
+    FROM access_requests ar
+    JOIN data_products dp ON dp.product_id = ar.product_id
+    JOIN users u ON u.user_id = ar.requester_id
+    WHERE ar.status = 'Approved' AND ar.expires_at IS NOT NULL AND ar.expires_at < NOW()`);
   for (const r of rows) {
-    const revokeSql = r.uc_grant_sql?.startsWith('GRANT')
-      ? r.uc_grant_sql.replace(/^GRANT/, 'REVOKE').replace(/ TO /, ' FROM ')
-      : null;
+    const revokeSql = buildAccessRevokeSql({
+      ucFullName: r.uc_full_name,
+      principal: r.requester_email,
+      grantSql: r.uc_grant_sql,
+    });
     const result = revokeSql ? await executeUcStatement(revokeSql) : { executed: false, reason: 'no_uc_table' };
     // Leave it Approved if UC refused, so the next sweep retries instead of hiding a live grant.
     if (revokeSql && !result.executed && result.reason !== 'demo_mode') continue;
@@ -141,13 +148,14 @@ export function registerRoutes(app) {
         return res.status(409).json({ error: `Request is already ${req_.status}.` });
       }
 
+      // USE CATALOG + USE SCHEMA + SELECT so the analyst can actually open the table.
       const ucGrantSql = req_.uc_full_name
-        ? `GRANT SELECT ON ${req_.uc_full_name} TO \`${req_.requester_email}\`;`
+        ? buildAccessGrantSql(req_.uc_full_name, req_.requester_email)
         : `-- No UC table linked for ${req_.product_name} (set uc_full_name on the product to enable automatic grants)`;
 
       // Execute the real GRANT in UC first (skipped in demo mode or when no table is linked)
       const grantResult = req_.uc_full_name
-        ? await executeUcStatement(ucGrantSql)
+        ? await executeUcStatements(ucGrantSql)
         : { executed: false, reason: 'no_uc_table' };
 
       // Approving without the grant would tell the requester they have access they don't.
@@ -225,15 +233,22 @@ export function registerRoutes(app) {
       const { reason = 'Access revoked by administrator' } = req.body;
       const adminEmail = actor(req);
       const isUUID = /^[0-9a-f-]{36}$/i.test(id);
-      const { rows: [req_] } = await query(
-        `SELECT request_id, request_ref, uc_grant_sql FROM access_requests
-         WHERE ${isUUID ? 'request_id = $1::uuid' : 'request_ref = $1'}`, [id]);
+      const { rows: [req_] } = await query(`
+        SELECT ar.request_id, ar.request_ref, ar.uc_grant_sql,
+               dp.uc_full_name, u.email AS requester_email
+        FROM access_requests ar
+        JOIN data_products dp ON dp.product_id = ar.product_id
+        JOIN users u ON u.user_id = ar.requester_id
+        WHERE ${isUUID ? 'ar.request_id = $1::uuid' : 'ar.request_ref = $1'}`, [id]);
       if (!req_) return res.status(404).json({ error: 'Request not found' });
 
-      // Generate REVOKE SQL mirroring the original GRANT
-      const revokeSql = req_.uc_grant_sql
-        ? req_.uc_grant_sql.replace(/^GRANT/, 'REVOKE').replace(/ TO /, ' FROM ')
-        : `-- No UC table linked; manual revocation required`;
+      // Only revoke SELECT on the table. Parent USE privileges stay so other
+      // approved products in the same catalog/schema keep working.
+      const revokeSql = buildAccessRevokeSql({
+        ucFullName: req_.uc_full_name,
+        principal: req_.requester_email,
+        grantSql: req_.uc_grant_sql,
+      }) || '-- No UC table linked; manual revocation required';
 
       await query(`UPDATE access_requests SET status = 'Revoked', resolved_at = NOW(),
         denial_reason = $1, uc_grant_sql = $2, updated_at = NOW()

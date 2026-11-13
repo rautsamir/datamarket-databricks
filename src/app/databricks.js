@@ -2,6 +2,7 @@ import https from 'https';
 import { getDatabricksHost, getWorkspaceOAuthToken, httpsJsonRequest } from './auth.js';
 import { DEMO_MODE, getSetting, loadSettings, RFA_ENABLED } from './db.js';
 import { fileAccessRequest } from './lib/rfa.js';
+import { splitStatements } from './lib/uc-grants.js';
 
 function getWarehouseId() {
   return getSetting('sql_warehouse_id', process.env.SQL_WAREHOUSE_ID || '');
@@ -71,6 +72,21 @@ export async function executeUcStatement(sql) {
     console.warn('[UC] Statement execution failed (non-fatal):', e.message);
     return { executed: false, reason: e.message };
   }
+}
+
+/** Runs each statement in a multi-line script. Stops on the first hard failure. */
+export async function executeUcStatements(sql) {
+  const parts = splitStatements(sql);
+  if (!parts.length) return { executed: false, reason: 'empty_sql' };
+  let last = { executed: false, reason: 'no_statements' };
+  for (const stmt of parts) {
+    last = await executeUcStatement(stmt);
+    if (!last.executed && !last.pending && last.reason !== 'demo_mode' && last.reason !== 'no_warehouse') {
+      return last;
+    }
+    if (last.reason === 'demo_mode' || last.reason === 'no_warehouse') return last;
+  }
+  return last;
 }
 
 // ─── UC: Fetch column schema + tags for a table ─────────────────────────────
