@@ -1,6 +1,7 @@
 import https from 'https';
 import { getDatabricksHost, getWorkspaceOAuthToken, httpsJsonRequest } from './auth.js';
 import { DEMO_MODE, getSetting, loadSettings, RFA_ENABLED } from './db.js';
+import { fileAccessRequest } from './lib/rfa.js';
 
 function getWarehouseId() {
   return getSetting('sql_warehouse_id', process.env.SQL_WAREHOUSE_ID || '');
@@ -33,25 +34,13 @@ export async function rfaNotify(ucFullName, requesterEmail, comment) {
   // The Settings toggle wins over RFA_ENABLED; reload so a just-saved toggle applies.
   await loadSettings();
   if (getSetting('rfa_enabled', String(RFA_ENABLED)) !== 'true') return null;
-  try {
-    const parts = ucFullName.split('.');
-    if (parts.length < 3) return null;
-    const securableType = parts.length === 3 ? 'TABLE' : 'CATALOG';
-    const result = await databricksApi('POST', '/api/3.0/rfa/access-requests', {
-      requests: [{
-        comment: comment || `Access requested via DataMarket`,
-        securable_permissions: [{
-          permissions: ['SELECT'],
-          securable: { full_name: ucFullName, type: securableType }
-        }]
-      }]
-    });
-    console.log(`[RFA] Notification sent for ${ucFullName} → status ${result.status}`);
-    return result;
-  } catch (e) {
-    console.warn('[RFA] Notification failed (non-fatal):', e.message);
+  const result = await fileAccessRequest(databricksApi, { ucFullName, requester: requesterEmail, comment });
+  if (!result.ok) {
+    console.warn(`[RFA] Not sent for ${ucFullName} (non-fatal): ${result.reason}`);
     return null;
   }
+  console.log(`[RFA] Access request filed for ${ucFullName}; notifying ${result.destinations.join(', ') || 'configured destinations'}`);
+  return result;
 }
 
 // ─── UC: Execute GRANT/REVOKE via SQL Statement Execution API ────────────────
