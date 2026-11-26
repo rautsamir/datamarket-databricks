@@ -661,11 +661,15 @@ function ProductGrantedAccessPanel({ productRef, revokeRequest, onRevoked }) {
 
   const handleRevoke = async (requestRef) => {
     setRevoking(requestRef)
-    await revokeRequest(requestRef, revokeReason || 'Access revoked by administrator')
+    try {
+      await revokeRequest(requestRef, revokeReason || 'Access revoked by administrator')
+      onRevoked?.()
+    } catch (e) {
+      window.alert(e.message)
+    }
     setRevokeReason('')
     setRevoking(null)
     loadGrants()
-    onRevoked?.()
   }
 
   return (

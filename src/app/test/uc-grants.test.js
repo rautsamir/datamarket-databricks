@@ -5,27 +5,27 @@ import {
 } from '../lib/uc-grants.js';
 
 test('parseTableName accepts only catalog.schema.table', () => {
-  assert.deepEqual(parseTableName('demo.county_audit_demo.vendor_payments'), {
-    catalog: 'demo', schema: 'county_audit_demo', table: 'vendor_payments',
+  assert.deepEqual(parseTableName('demo.audit_demo.vendor_payments'), {
+    catalog: 'demo', schema: 'audit_demo', table: 'vendor_payments',
   });
   assert.equal(parseTableName('demo.schema'), null);
   assert.equal(parseTableName(''), null);
 });
 
 test('grant covers catalog, schema, and table', () => {
-  const sql = buildAccessGrantSql('demo.county_audit_demo.vendor_payments', 'a@b.org');
+  const sql = buildAccessGrantSql('demo.audit_demo.vendor_payments', 'a@b.org');
   assert.match(sql, /GRANT USE CATALOG ON CATALOG `demo` TO `a@b\.org`;/);
-  assert.match(sql, /GRANT USE SCHEMA ON SCHEMA `demo`\.`county_audit_demo` TO `a@b\.org`;/);
-  assert.match(sql, /GRANT SELECT ON TABLE `demo`\.`county_audit_demo`\.`vendor_payments` TO `a@b\.org`;/);
+  assert.match(sql, /GRANT USE SCHEMA ON SCHEMA `demo`\.`audit_demo` TO `a@b\.org`;/);
+  assert.match(sql, /GRANT SELECT ON TABLE `demo`\.`audit_demo`\.`vendor_payments` TO `a@b\.org`;/);
   assert.equal(splitStatements(sql).length, 3);
 });
 
 test('revoke drops only SELECT, never parent USE privileges', () => {
   const sql = buildAccessRevokeSql({
-    ucFullName: 'demo.county_audit_demo.vendor_payments',
+    ucFullName: 'demo.audit_demo.vendor_payments',
     principal: 'a@b.org',
   });
-  assert.equal(sql, 'REVOKE SELECT ON TABLE `demo`.`county_audit_demo`.`vendor_payments` FROM `a@b.org`;');
+  assert.equal(sql, 'REVOKE SELECT ON TABLE `demo`.`audit_demo`.`vendor_payments` FROM `a@b.org`;');
   assert.doesNotMatch(sql, /USE CATALOG|USE SCHEMA/);
 });
 
@@ -37,9 +37,9 @@ test('revoke falls back to the SELECT line of a stored multi-grant script', () =
 
 test('legacy single-line GRANT SELECT still revokes cleanly', () => {
   const sql = buildAccessRevokeSql({
-    grantSql: 'GRANT SELECT ON demo.county_audit_demo.vendor_payments TO `a@b.org`;',
+    grantSql: 'GRANT SELECT ON demo.audit_demo.vendor_payments TO `a@b.org`;',
   });
-  assert.equal(sql, 'REVOKE SELECT ON demo.county_audit_demo.vendor_payments FROM `a@b.org`;');
+  assert.equal(sql, 'REVOKE SELECT ON demo.audit_demo.vendor_payments FROM `a@b.org`;');
 });
 
 test('bad inputs return null', () => {

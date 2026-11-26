@@ -265,17 +265,23 @@ export function PersonaProvider({ children }) {
 
   const revokeRequest = async (reqRef, reason = '') => {
     if (apiAvailable) {
+      let res
       try {
-        await fetch(`/api/portal/requests/${reqRef}/revoke`, {
+        res = await fetch(`/api/portal/requests/${reqRef}/revoke`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ adminEmail: persona.email, reason })
         })
+      } catch (e) { console.warn('revokeRequest API failed', e) }
+      if (res) {
+        const body = await res.json().catch(() => ({}))
         await loadRequests()
         await loadLibrary()
         await loadNotifications()
-        return
-      } catch (e) { console.warn('revokeRequest API failed', e) }
+        // Surface UC refusals: the grant is still live, so don't show it as revoked.
+        if (!res.ok) throw new Error(body.error || `Revoke failed (${res.status})`)
+        return body
+      }
     }
     setRequests(prev => prev.map(r =>
       (r.request_ref === reqRef || r.id === reqRef)

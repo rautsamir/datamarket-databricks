@@ -155,11 +155,16 @@ export function DataMarketAdminPage({ embedded = false }) {
     setDenyReason('')
   }
 
-  const handleRevoke = () => {
-    revokeRequest(revokeModal, revokeReason)
-    setJustActed(prev => ({ ...prev, [revokeModal]: 'revoked' }))
+  const handleRevoke = async () => {
+    const reqId = revokeModal
     setRevokeModal(null)
     setRevokeReason('')
+    try {
+      await revokeRequest(reqId, revokeReason)
+      setJustActed(prev => ({ ...prev, [reqId]: 'revoked' }))
+    } catch (e) {
+      window.alert(e.message)
+    }
   }
 
   const timeAgo = (iso) => {

@@ -2,6 +2,7 @@ import { query } from '../db.js';
 import { rfaNotify, executeUcStatement, executeUcStatements } from '../databricks.js';
 import { actor } from '../lib/authz.js';
 import { buildAccessGrantSql, buildAccessRevokeSql } from '../lib/uc-grants.js';
+import { readScopeFor, filingFor } from '../lib/request-scope.js';
 
 /** Revokes approved grants past expires_at so the 90-day window is enforced in UC, not just hidden in the UI. */
 export async function expireAccess() {
@@ -36,7 +37,8 @@ export function registerRoutes(app) {
   // ─── Access Requests ──────────────────────────────────────────────────────────
   app.get('/api/portal/requests', async (req, res) => {
     try {
-      const { email, status } = req.query;
+      const { email: requestedEmail, status } = req.query;
+      const email = readScopeFor({ isAdmin: !!req.user?.isAdmin, actorEmail: actor(req), requestedEmail });
       let sql = `SELECT ar.request_id, ar.request_ref, ar.status, ar.business_reason, ar.access_level,
                         ar.requested_at, ar.resolved_at, ar.expires_at, ar.denial_reason, ar.uc_grant_sql,
                         dp.product_ref, dp.display_name AS product_name, dp.domain, dp.type AS product_type,
@@ -80,10 +82,16 @@ export function registerRoutes(app) {
 
   app.post('/api/portal/requests', async (req, res) => {
     try {
-      const { productRef, requesterEmail, team, reason, accessLevel = 'Read Only' } = req.body;
-      if (!productRef || !requesterEmail || !reason) {
-        return res.status(400).json({ error: 'productRef, requesterEmail, and reason are required' });
+      const { productRef, requesterEmail: bodyRequesterEmail, team, reason, accessLevel = 'Read Only' } = req.body;
+      if (!productRef || !reason) {
+        return res.status(400).json({ error: 'productRef and reason are required' });
       }
+      // The signed-in user files the request. Only admins may file on behalf of someone else.
+      const filing = filingFor({ isAdmin: !!req.user?.isAdmin, actorEmail: actor(req), bodyRequesterEmail });
+      if (!filing.ok) {
+        return res.status(403).json({ error: 'You can only request access for yourself.' });
+      }
+      const requesterEmail = filing.requester;
 
       const { rows: [product] } = await query('SELECT product_id FROM data_products WHERE product_ref = $1', [productRef]);
       if (!product) return res.status(404).json({ error: `Product ${productRef} not found` });
@@ -110,7 +118,9 @@ export function registerRoutes(app) {
 
       await query(`INSERT INTO audit_log (event_type, actor_email, target_type, target_id, target_name, metadata)
         VALUES ('REQUEST_SUBMITTED', $1, 'access_request', $2, $3, $4)`,
-        [requesterEmail, newReq.request_id, ref, JSON.stringify({ productRef, reason })]);
+        [filing.filedBy, newReq.request_id, ref, JSON.stringify({
+          productRef, reason, requester: requesterEmail, on_behalf_of: filing.onBehalfOf,
+        })]);
 
       // Fire RFA notification (best-effort, non-blocking)
       const { rows: [prod] } = await query('SELECT uc_full_name FROM data_products WHERE product_ref = $1', [productRef]);
@@ -234,13 +244,16 @@ export function registerRoutes(app) {
       const adminEmail = actor(req);
       const isUUID = /^[0-9a-f-]{36}$/i.test(id);
       const { rows: [req_] } = await query(`
-        SELECT ar.request_id, ar.request_ref, ar.uc_grant_sql,
+        SELECT ar.request_id, ar.request_ref, ar.uc_grant_sql, ar.status,
                dp.uc_full_name, u.email AS requester_email
         FROM access_requests ar
         JOIN data_products dp ON dp.product_id = ar.product_id
         JOIN users u ON u.user_id = ar.requester_id
         WHERE ${isUUID ? 'ar.request_id = $1::uuid' : 'ar.request_ref = $1'}`, [id]);
       if (!req_) return res.status(404).json({ error: 'Request not found' });
+      if (req_.status !== 'Approved') {
+        return res.status(409).json({ error: `Only approved access can be revoked. This request is ${req_.status}.` });
+      }
 
       // Only revoke SELECT on the table. Parent USE privileges stay so other
       // approved products in the same catalog/schema keep working.
@@ -250,15 +263,29 @@ export function registerRoutes(app) {
         grantSql: req_.uc_grant_sql,
       }) || '-- No UC table linked; manual revocation required';
 
+      // Revoke in UC first, then record it. If UC refuses, the grant is still live,
+      // so the request stays Approved and the admin sees the error.
+      const revokeResult = revokeSql.startsWith('REVOKE')
+        ? await executeUcStatement(revokeSql)
+        : { executed: false, reason: 'no_uc_table' };
+      const revokeSkipped = ['demo_mode', 'no_warehouse', 'no_uc_table'].includes(revokeResult.reason);
+      if (!revokeResult.executed && !revokeResult.pending && !revokeSkipped) {
+        try {
+          await query(`INSERT INTO audit_log (event_type, actor_email, target_type, target_id, target_name, metadata)
+            VALUES ('REVOKE_FAILED', $1, 'access_request', $2, $3, $4)`,
+            [adminEmail, req_.request_id, req_.request_ref, JSON.stringify({ reason, revokeSql, error: revokeResult.reason })]);
+        } catch (_) {}
+        return res.status(502).json({
+          error: `Unity Catalog rejected the revoke: ${(revokeResult.reason || 'unknown error').replace(/\.$/, '')}. The access is still active and the request is still Approved.`,
+          revoke_sql: revokeSql,
+        });
+      }
+
       await query(`UPDATE access_requests SET status = 'Revoked', resolved_at = NOW(),
         denial_reason = $1, uc_grant_sql = $2, updated_at = NOW()
         WHERE request_ref = $3`,
         [reason, revokeSql, req_.request_ref]);
 
-      // Execute the real REVOKE in UC (skipped in demo mode)
-      const revokeResult = revokeSql.startsWith('REVOKE')
-        ? await executeUcStatement(revokeSql)
-        : { executed: false, reason: 'no_uc_table' };
       const ucResult = { uc_executed: revokeResult.executed, uc_status: revokeResult.status || null, uc_error: revokeResult.reason || null };
 
       try {
@@ -296,7 +323,7 @@ export function registerRoutes(app) {
   // ─── Get notifications for a user ─────────────────────────────────────────────
   app.get('/api/portal/notifications', async (req, res) => {
     try {
-      const { email } = req.query;
+      const email = readScopeFor({ isAdmin: !!req.user?.isAdmin, actorEmail: actor(req), requestedEmail: req.query.email });
       if (!email) return res.json([]);
       const { rows } = await query(`
         SELECT ar.request_ref, ar.status, ar.resolved_at, ar.expires_at, ar.denial_reason,
@@ -332,12 +359,12 @@ export function registerRoutes(app) {
   app.post('/api/portal/requests/:id/nudge', async (req, res) => {
     try {
       const { id } = req.params;
-      const { requesterEmail, productName } = req.body;
+      const { productName } = req.body;
       await query(`
         INSERT INTO audit_log (event_type, actor_email, target_name, metadata)
         VALUES ('NUDGE_SENT', $1, $2, $3)
       `, [
-        requesterEmail || 'unknown',
+        actor(req),
         id,
         JSON.stringify({ productName, message: 'Requester sent a reminder to approver via DataMarket Assistant' })
       ]);
@@ -351,7 +378,7 @@ export function registerRoutes(app) {
   // ─── User Library ─────────────────────────────────────────────────────────────
   app.get('/api/portal/library', async (req, res) => {
     try {
-      const { email } = req.query;
+      const email = readScopeFor({ isAdmin: !!req.user?.isAdmin, actorEmail: actor(req), requestedEmail: req.query.email });
       if (!email) return res.status(400).json({ error: 'email required' });
 
       // Approved requests + pinned library entries
